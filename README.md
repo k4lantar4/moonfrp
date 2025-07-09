@@ -19,14 +19,14 @@
 ### Ubuntu 22.04 LTS (One-liner)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/moonfrp/install.sh/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh | sudo bash
 ```
 
 ### Manual Installation
 
 ```bash
 # Download the script
-wget https://raw.githubusercontent.com/moonfrp/install.sh/main/moonfrp.sh
+wget https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh
 
 # Make it executable
 chmod +x moonfrp.sh
@@ -35,7 +35,7 @@ chmod +x moonfrp.sh
 sudo mv moonfrp.sh /usr/local/bin/moonfrp
 
 # Create symlink (optional)
-sudo ln -sf /usr/local/bin/moonfrp /usr/bin/mv
+sudo ln -sf /usr/local/bin/moonfrp /usr/bin/moonfrp
 ```
 
 ## Usage 🎯
@@ -45,9 +45,6 @@ sudo ln -sf /usr/local/bin/moonfrp /usr/bin/mv
 ```bash
 # Using the command
 moonfrp
-
-# Or if symlink was created
-mv
 ```
 
 ### Main Menu Options
@@ -58,6 +55,8 @@ mv
 ║    Advanced FRP Management Tool     ║
 ║          Version 1.0.0              ║
 ╚══════════════════════════════════════╝
+
+✅ FRP Status: Installed
 
 Main Menu:
 1. Create FRP Configuration
@@ -303,8 +302,8 @@ We welcome contributions! Please follow these steps:
 
 ```bash
 # Clone the repository
-git clone https://github.com/moonfrp/install.sh.git
-cd install.sh
+git clone https://github.com/k4lantar4/moonfrp.git
+cd moonfrp
 
 # Make scripts executable
 chmod +x moonfrp.sh install.sh
@@ -319,9 +318,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support 💬
 
-- **Issues**: [GitHub Issues](https://github.com/moonfrp/install.sh/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/moonfrp/install.sh/discussions)
-- **Documentation**: [Wiki](https://github.com/moonfrp/install.sh/wiki)
+- **Issues**: [GitHub Issues](https://github.com/k4lantar4/moonfrp/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/k4lantar4/moonfrp/discussions)
+- **Documentation**: [Wiki](https://github.com/k4lantar4/moonfrp/wiki)
 
 ## Changelog 📝
 
@@ -350,7 +349,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments 🙏
 
 - [fatedier/frp](https://github.com/fatedier/frp) - The amazing FRP project
-- [MVTunnel Project](https://github.com/moonfrp) - Inspiration for this tool
+- [MVTunnel Project](https://github.com/k4lantar4/moonfrp) - Inspiration for this tool
 - All contributors and users of MoonFRP
 
 ---

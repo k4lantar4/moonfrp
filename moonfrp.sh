@@ -64,9 +64,10 @@ trap 'handle_error $LINENO' ERR
 
 # Signal handler for Ctrl+C
 signal_handler() {
-    log "INFO" "Received interrupt signal, returning to main menu..."
+    echo -e "\n${YELLOW}[CTRL+C] Returning to main menu...${NC}"
     sleep 1
-    main_menu
+    # Don't call main_menu recursively, just continue the loop
+    return
 }
 
 trap signal_handler SIGINT
@@ -303,8 +304,34 @@ get_service_status() {
     systemctl is-active "$service_name" 2>/dev/null || echo "inactive"
 }
 
+# Check if FRP is already installed
+check_frp_installation() {
+    if [[ -f "$FRP_DIR/frps" ]] && [[ -f "$FRP_DIR/frpc" ]]; then
+        return 0  # Already installed
+    else
+        return 1  # Not installed
+    fi
+}
+
 # Download and install FRP
 download_and_install_frp() {
+    # Check if already installed
+    if check_frp_installation; then
+        echo -e "\n${YELLOW}FRP is already installed!${NC}"
+        echo -e "${CYAN}Current installation:${NC}"
+        echo -e "  frps: $FRP_DIR/frps"
+        echo -e "  frpc: $FRP_DIR/frpc"
+        echo -e "\n${YELLOW}Do you want to reinstall? (y/N):${NC} "
+        read -r reinstall
+        
+        if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
+            log "INFO" "Installation cancelled by user"
+            return 0
+        fi
+        
+        log "INFO" "Proceeding with reinstallation..."
+    fi
+    
     local download_url="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_${FRP_ARCH}.tar.gz"
     local temp_file="$TEMP_DIR/frp_${FRP_VERSION}_${FRP_ARCH}.tar.gz"
     
@@ -334,6 +361,23 @@ download_and_install_frp() {
 
 # Install from local archive
 install_from_local() {
+    # Check if already installed
+    if check_frp_installation; then
+        echo -e "\n${YELLOW}FRP is already installed!${NC}"
+        echo -e "${CYAN}Current installation:${NC}"
+        echo -e "  frps: $FRP_DIR/frps"
+        echo -e "  frpc: $FRP_DIR/frpc"
+        echo -e "\n${YELLOW}Do you want to reinstall from local archive? (y/N):${NC} "
+        read -r reinstall
+        
+        if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
+            log "INFO" "Installation cancelled by user"
+            return 0
+        fi
+        
+        log "INFO" "Proceeding with reinstallation from local archive..."
+    fi
+    
     local archive_path="/root/frp_${FRP_VERSION}_${FRP_ARCH}.tar.gz"
     
     if [[ ! -f "$archive_path" ]]; then
@@ -766,6 +810,13 @@ main_menu() {
         echo -e "${PURPLE}║          Version 1.0.0              ║${NC}"
         echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
         
+        # Show FRP installation status
+        if check_frp_installation; then
+            echo -e "\n${GREEN}✅ FRP Status: Installed${NC}"
+        else
+            echo -e "\n${RED}❌ FRP Status: Not Installed${NC}"
+        fi
+        
         echo -e "\n${CYAN}Main Menu:${NC}"
         echo "1. Create FRP Configuration"
         echo "2. Service Management"
@@ -785,7 +836,7 @@ main_menu() {
             5) service_removal_menu ;;
             0) 
                 echo -e "\n${GREEN}Thank you for using MoonFRP! 🚀${NC}"
-                exit 0
+                cleanup_and_exit
                 ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
@@ -827,6 +878,18 @@ init() {
     check_dependencies
     create_directories
     log "INFO" "MoonFRP script initialized successfully"
+}
+
+# Cleanup and exit function
+cleanup_and_exit() {
+    # Clean up temporary files
+    [[ -d "$TEMP_DIR" ]] && rm -rf "$TEMP_DIR"
+    
+    # Log exit
+    log "INFO" "MoonFRP session ended"
+    
+    # Exit gracefully
+    exit 0
 }
 
 # Main execution
