@@ -170,10 +170,10 @@ install_moonfrp() {
 
 # Create symlink for global access
 create_symlink() {
-    local symlink_path="/usr/bin/mv"
+    local symlink_path="/usr/bin/moonfrp"
     
     if [[ -L "$symlink_path" ]] || [[ -f "$symlink_path" ]]; then
-        log "WARN" "Command 'mv' already exists, creating alternative symlink"
+        log "WARN" "Command 'moonfrp' already exists, creating alternative symlink"
         symlink_path="/usr/bin/moonfrp"
     fi
     
@@ -203,10 +203,10 @@ display_summary() {
     echo -e "${CYAN}Installation Details:${NC}"
     echo -e "  Version: $MOONFRP_VERSION"
     echo -e "  Location: $INSTALL_DIR/$SCRIPT_NAME"
-    echo -e "  Command: moonfrp (or mv if available)"
+    echo -e "  Command: moonfrp"
     echo
     echo -e "${CYAN}Quick Start:${NC}"
-    echo -e "  1. Run: ${GREEN}moonfrp${NC} or ${GREEN}mv${NC}"
+    echo -e "  1. Run: ${GREEN}moonfrp${NC}"
     echo -e "  2. Choose option 3 to download and install FRP"
     echo -e "  3. Choose option 1 to create configurations"
     echo
