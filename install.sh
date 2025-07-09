@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MoonFRP Installation Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/moonfrp/install.sh/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh | bash
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 MOONFRP_VERSION="1.0.0"
 INSTALL_DIR="/usr/local/bin"
 SCRIPT_NAME="moonfrp"
-SCRIPT_URL="https://raw.githubusercontent.com/moonfrp/install.sh/main/moonfrp.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 TEMP_DIR="/tmp/moonfrp-install"
 
 # Logging function
@@ -211,8 +211,8 @@ display_summary() {
     echo -e "  3. Choose option 1 to create configurations"
     echo
     echo -e "${CYAN}Support:${NC}"
-    echo -e "  Repository: https://github.com/moonfrp/install.sh"
-    echo -e "  Issues: https://github.com/moonfrp/install.sh/issues"
+    echo -e "  Repository: https://github.com/k4lantar4/moonfrp"
+    echo -e "  Issues: https://github.com/k4lantar4/moonfrp/issues"
     echo
     echo -e "${GREEN}🚀 Ready to use MoonFRP!${NC}"
 }
