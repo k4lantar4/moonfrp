@@ -352,9 +352,14 @@ select_proxy_type() {
         echo -e "   • Suitable for: private games, secure UDP services"
         echo -e "   • Requires: secret key authentication"
         
+        echo -e "\n${GREEN}8. TCPMUX-Direct${NC} ${YELLOW}(TCP-like access with TCPMUX benefits)${NC}"
+        echo -e "   • Provides TCP-like access while maintaining TCPMUX benefits"
+        echo -e "   • Suitable for: corporate firewalls, secure remote access"
+        echo -e "   • Requires: secret key authentication"
+        
         echo -e "\n${CYAN}0. Back${NC}"
         
-        echo -e "\n${YELLOW}Enter your choice [0-7] (default: 1):${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-8] (default: 1):${NC} "
         read -r choice
         
         # Check for Ctrl+C after read
@@ -400,6 +405,11 @@ select_proxy_type() {
             7) 
                 SELECTED_PROXY_TYPE="sudp"
                 SELECTED_PROXY_NAME="SUDP"
+                return 0
+                ;;
+            8) 
+                SELECTED_PROXY_TYPE="tcpmux-direct"
+                SELECTED_PROXY_NAME="TCPMUX-Direct"
                 return 0
                 ;;
             0) 
@@ -1103,20 +1113,66 @@ log.to = "$LOG_DIR/frps.log"
 log.level = "info"
 log.maxDays = 7
 
-# Basic port range for client connections
+# HTTP/HTTPS proxy settings
+vhostHTTPPort = 80
+vhostHTTPSPort = 443
+
+# TCPMUX settings - Required for TCPMUX protocol support
+tcpmuxHTTPConnectPort = 5002
+
+# Transport settings (Updated based on official FRP documentation)
+transport.tls.enable = true
+transport.maxPoolCount = 10
+transport.tcpMux = true
+transport.tcpMuxKeepaliveInterval = 60
+
+# Performance settings (Optimized for better connection handling)
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+# Security settings (Enhanced authentication scopes)
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
+
+# Subdomain settings for HTTP/HTTPS proxies
+subdomainHost = "moonfrp.local"
+
+# Connection limits per client (Balanced for performance)
+maxProxiesPerClient = 50
+maxPortsPerClient = 50
+
+# Advanced TCPMUX settings for better multiplexing
+transport.poolCount = 5
+transport.protocol = "tcp"
+
+# Enable Prometheus monitoring (optional)
+# webServer.enablePrometheus = true
+
+# Extended port ranges for better compatibility
 allowPorts = [
-    { start = 1000, end = 65535 }
+    { start = 1000, end = 1999 },
+    { start = 2000, end = 2999 },
+    { start = 3000, end = 3999 },
+    { start = 4000, end = 4999 },
+    { start = 5000, end = 5999 },
+    { start = 6000, end = 6999 },
+    { start = 8000, end = 8999 },
+    { start = 9000, end = 9999 },
+    { start = 10000, end = 19999 },
+    { start = 20000, end = 65535 }
 ]
 EOF
     
     # Verify configuration file was created successfully
     if [[ -f "$CONFIG_DIR/frps.toml" && -s "$CONFIG_DIR/frps.toml" ]]; then
-        log "INFO" "Generated simple frps.toml configuration"
+        log "INFO" "Generated advanced frps.toml configuration with protocol support"
         if [[ -n "$dashboard_port" ]]; then
             log "INFO" "Dashboard: http://server-ip:$dashboard_port (User: $dashboard_user, Pass: $dashboard_password)"
         fi
         log "INFO" "Token: $token"
-        log "INFO" "Allowed ports: 1000-65535"
+        log "INFO" "HTTP Port: 80, HTTPS Port: 443"
+        log "INFO" "TCPMUX Port: 5002"
+        log "INFO" "Allowed ports: 1000-65535 (extended ranges)"
+        log "WARN" "Remember to configure firewall to allow ports 80, 443, 5002, and 1000-65535"
         return 0
     else
         log "ERROR" "Configuration file was not created or is empty"
@@ -1142,6 +1198,7 @@ generate_frpc_config() {
     cat > "$config_file" << EOF
 # MoonFRP Client Configuration for IP ending with $ip_suffix
 # Generated on $(date)
+# Enhanced configuration based on official FRP documentation
 
 # Server connection settings
 serverAddr = "$server_ip"
@@ -1155,6 +1212,22 @@ auth.token = "$token"
 log.to = "$LOG_DIR/frpc_${ip_suffix}.log"
 log.level = "info"
 log.maxDays = 7
+
+# Transport settings (Optimized for TCPMUX and performance)
+transport.tls.enable = true
+transport.poolCount = 5
+transport.protocol = "tcp"
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+# Client identification (Unique per IP to avoid conflicts)
+user = "moonfrp_${ip_suffix}_${timestamp}"
+
+# Admin web server (optional - for monitoring)
+webServer.addr = "127.0.0.1"
+webServer.port = $((7400 + ip_suffix))
+webServer.user = "admin"
+webServer.password = "admin"
 
 EOF
 
@@ -1183,6 +1256,9 @@ EOF
             ;;
         "sudp")
             generate_sudp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            ;;
+        "tcpmux-direct")
+            generate_tcpmux_direct_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         *)
             log "WARN" "Unknown proxy type: $proxy_type, defaulting to TCP"
@@ -1387,12 +1463,13 @@ generate_tcpmux_proxies_simple() {
         local unique_name="tcpmux-${port}-${ip_suffix}"
         local domain=""
         
-        # Use corresponding domain if available, otherwise generate default
+        # Use corresponding domain if available, otherwise generate unique default
         if [[ $port_index -lt ${#DOMAIN_ARRAY[@]} ]] && [[ -n "${DOMAIN_ARRAY[$port_index]}" ]]; then
             domain="${DOMAIN_ARRAY[$port_index]}"
             domain=$(echo "$domain" | tr -d ' ')
         else
-            domain="tunnel${port}"
+            # Create unique domain per IP+Port combination to avoid conflicts
+            domain="p${port}-ip${ip_suffix}.moonfrp.local"
         fi
         
         cat >> "$config_file" << EOF
@@ -1408,6 +1485,107 @@ EOF
         
         ((port_index++))
     done
+    
+    # Add usage instructions for TCPMUX
+    cat >> "$config_file" << EOF
+# TCPMUX Usage Instructions:
+# 
+# Method 1: HTTP CONNECT Proxy (Recommended)
+# Configure your application to use HTTP CONNECT proxy:
+# Proxy Server: SERVER_IP:5002
+# Target: DOMAIN_NAME:80 (e.g., p9016-ip1.moonfrp.local:80)
+#
+# Method 2: SSH ProxyCommand
+# ssh -o 'ProxyCommand socat - PROXY:SERVER_IP:%h:%p,proxyport=5002' user@p9016-ip1.moonfrp.local
+#
+# Method 3: Browser/Application Proxy Settings
+# HTTP Proxy: SERVER_IP:5002
+# Then access: http://p9016-ip1.moonfrp.local/
+#
+# Method 4: curl with proxy
+# curl -x http://SERVER_IP:5002 http://p9016-ip1.moonfrp.local/
+
+EOF
+}
+
+# Generate TCPMUX-Direct proxy configurations (TCP-like access with TCPMUX benefits)
+generate_tcpmux_direct_proxies() {
+    local config_file="$1"
+    local ports="$2"
+    local ip_suffix="$3"
+    local timestamp="$4"
+    
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local unique_name="tcpmux-direct-${port}-${ip_suffix}"
+        # Use a predictable domain pattern for direct access
+        local domain="direct-${port}-${ip_suffix}.moonfrp.local"
+        
+        cat >> "$config_file" << EOF
+[[proxies]]
+name = "$unique_name"
+type = "tcpmux"
+multiplexer = "httpconnect"
+localIP = "127.0.0.1"
+localPort = $port
+customDomains = ["$domain"]
+
+EOF
+    done
+    
+    # Add comprehensive usage instructions for TCPMUX-Direct
+    cat >> "$config_file" << EOF
+# TCPMUX-Direct Usage Instructions:
+# This configuration provides TCP-like access while maintaining TCPMUX benefits
+#
+# 🚀 Quick Access Methods:
+#
+# 1. VMess/V2Ray Configuration:
+# {
+#   "outbounds": [{
+#     "protocol": "vmess",
+#     "settings": {
+#       "vnext": [{
+#         "address": "SERVER_IP",
+#         "port": 5002,
+#         "users": [{"id": "your-uuid", "security": "auto"}]
+#       }]
+#     },
+#     "streamSettings": {
+#       "network": "tcp",
+#       "tcpSettings": {
+#         "header": {
+#           "type": "http",
+#           "request": {
+#             "method": "CONNECT",
+#             "path": ["/"],
+#             "headers": {
+#               "Host": ["direct-PORT-${ip_suffix}.moonfrp.local:80"]
+#             }
+#           }
+#         }
+#       }
+#     }
+#   }]
+# }
+#
+# 2. SSH Tunnel:
+# ssh -o 'ProxyCommand socat - PROXY:SERVER_IP:%h:%p,proxyport=5002' user@direct-PORT-${ip_suffix}.moonfrp.local
+#
+# 3. Application Proxy Settings:
+# HTTP Proxy: SERVER_IP:5002
+# Target: direct-PORT-${ip_suffix}.moonfrp.local:80
+#
+# 4. Browser Access (for web services):
+# Set proxy: SERVER_IP:5002
+# Visit: http://direct-PORT-${ip_suffix}.moonfrp.local/
+#
+# 5. Command Line Tools:
+# curl -x http://SERVER_IP:5002 http://direct-PORT-${ip_suffix}.moonfrp.local/
+# wget -e use_proxy=yes -e http_proxy=SERVER_IP:5002 http://direct-PORT-${ip_suffix}.moonfrp.local/
+
+EOF
 }
 
 # Generate STCP proxy configurations
@@ -2686,10 +2864,11 @@ create_foreign_client_config() {
         echo "5. TCPMUX (TCP multiplexing over HTTP CONNECT)"
         echo "6. STCP (Secret TCP - P2P secure tunneling)"
         echo "7. SUDP (Secret UDP - P2P secure tunneling)"
+        echo "8. TCPMUX-Direct (TCP-like access with TCPMUX benefits)"
         
         local proxy_choice=""
         while true; do
-            echo -e "${CYAN}Choose proxy type [1-7] (default: 1):${NC} "
+            echo -e "${CYAN}Choose proxy type [1-8] (default: 1):${NC} "
             read -r proxy_choice
             [[ -z "$proxy_choice" ]] && proxy_choice=1
             
@@ -2701,7 +2880,8 @@ create_foreign_client_config() {
                 5) proxy_type="tcpmux"; echo -e "${GREEN}✅ TCPMUX proxy selected${NC}"; break ;;
                 6) proxy_type="stcp"; echo -e "${GREEN}✅ STCP proxy selected${NC}"; break ;;
                 7) proxy_type="sudp"; echo -e "${GREEN}✅ SUDP proxy selected${NC}"; break ;;
-                *) echo -e "${RED}❌ Please enter 1, 2, 3, 4, 5, 6, or 7${NC}" ;;
+                8) proxy_type="tcpmux-direct"; echo -e "${GREEN}✅ TCPMUX-Direct proxy selected${NC}"; break ;;
+                *) echo -e "${RED}❌ Please enter 1, 2, 3, 4, 5, 6, 7, or 8${NC}" ;;
             esac
         done
     fi
