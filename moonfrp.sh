@@ -1004,15 +1004,8 @@ webServer.password = "admin"
 
 EOF
 
-    # Ask about bandwidth management
-    local enable_bandwidth="false"
-    echo -e "\n${CYAN}🚦 Performance Options:${NC}"
-    echo -e "${YELLOW}Would you like to configure bandwidth limits? (y/N):${NC} "
-    read -r enable_bw
-    
-    if [[ "$enable_bw" =~ ^[Yy]$ ]]; then
-        enable_bandwidth="true"
-    fi
+    # Bandwidth management flag (will be passed from caller)
+    local enable_bandwidth="${9:-false}"
 
     # Add proxy configurations based on type
     case "$proxy_type" in
@@ -1034,15 +1027,24 @@ EOF
             ;;
     esac
     
-    log "INFO" "Generated frpc configuration: $config_file (Type: $proxy_type)"
-    log "INFO" "Unique client user: moonfrp_${ip_suffix}_${timestamp}"
+    # Verify configuration was created successfully
+    if [[ -f "$config_file" && -s "$config_file" ]]; then
+        log "INFO" "Generated frpc configuration: $config_file (Type: $proxy_type)"
+        log "INFO" "Unique client user: moonfrp_${ip_suffix}_${timestamp}"
+        return 0
+    else
+        log "ERROR" "Failed to generate configuration file or file is empty: $config_file"
+        return 1
+    fi
 }
 
-# Bandwidth management configuration
-configure_bandwidth_limits() {
-    local config_file="$1"
-    local proxy_name="$2"
-    
+# Global bandwidth configuration (set during initial setup)
+GLOBAL_BANDWIDTH_PROFILE=""
+GLOBAL_BANDWIDTH_IN=""
+GLOBAL_BANDWIDTH_OUT=""
+
+# Configure bandwidth limits globally
+configure_global_bandwidth() {
     echo -e "\n${CYAN}🚀 Bandwidth Management (Optional):${NC}"
     echo -e "${YELLOW}Configure bandwidth limits for better performance control${NC}"
     echo "1. No limits (Default)"
@@ -1054,51 +1056,67 @@ configure_bandwidth_limits() {
     read -p "Select bandwidth profile [1-5] (default: 1): " bw_choice
     [[ -z "$bw_choice" ]] && bw_choice=1
     
-    local bandwidth_in=""
-    local bandwidth_out=""
-    
     case $bw_choice in
         1)
-            # No limits
-            return 0
+            GLOBAL_BANDWIDTH_PROFILE="none"
             ;;
         2)
-            bandwidth_in="1MB"
-            bandwidth_out="500KB"
+            GLOBAL_BANDWIDTH_PROFILE="light"
+            GLOBAL_BANDWIDTH_IN="1MB"
+            GLOBAL_BANDWIDTH_OUT="500KB"
             ;;
         3)
-            bandwidth_in="5MB"
-            bandwidth_out="2MB"
+            GLOBAL_BANDWIDTH_PROFILE="medium"
+            GLOBAL_BANDWIDTH_IN="5MB"
+            GLOBAL_BANDWIDTH_OUT="2MB"
             ;;
         4)
-            bandwidth_in="10MB"
-            bandwidth_out="5MB"
+            GLOBAL_BANDWIDTH_PROFILE="heavy"
+            GLOBAL_BANDWIDTH_IN="10MB"
+            GLOBAL_BANDWIDTH_OUT="5MB"
             ;;
         5)
+            GLOBAL_BANDWIDTH_PROFILE="custom"
             echo -e "\n${CYAN}Custom Bandwidth Configuration:${NC}"
-            read -p "Incoming bandwidth limit (e.g., 2MB, 500KB): " bandwidth_in
-            read -p "Outgoing bandwidth limit (e.g., 1MB, 200KB): " bandwidth_out
+            read -p "Incoming bandwidth limit (e.g., 2MB, 500KB): " GLOBAL_BANDWIDTH_IN
+            read -p "Outgoing bandwidth limit (e.g., 1MB, 200KB): " GLOBAL_BANDWIDTH_OUT
             
-            if [[ -z "$bandwidth_in" || -z "$bandwidth_out" ]]; then
-                log "WARN" "Invalid bandwidth values, skipping limits"
-                return 0
+            if [[ -z "$GLOBAL_BANDWIDTH_IN" || -z "$GLOBAL_BANDWIDTH_OUT" ]]; then
+                log "WARN" "Invalid bandwidth values, using no limits"
+                GLOBAL_BANDWIDTH_PROFILE="none"
             fi
             ;;
         *)
-            log "WARN" "Invalid choice, skipping bandwidth limits"
-            return 0
+            log "WARN" "Invalid choice, using no limits"
+            GLOBAL_BANDWIDTH_PROFILE="none"
             ;;
     esac
     
+    if [[ "$GLOBAL_BANDWIDTH_PROFILE" != "none" ]]; then
+        log "INFO" "Bandwidth profile selected: $GLOBAL_BANDWIDTH_PROFILE"
+        [[ -n "$GLOBAL_BANDWIDTH_IN" ]] && log "INFO" "Incoming limit: $GLOBAL_BANDWIDTH_IN"
+        [[ -n "$GLOBAL_BANDWIDTH_OUT" ]] && log "INFO" "Outgoing limit: $GLOBAL_BANDWIDTH_OUT"
+    fi
+}
+
+# Apply bandwidth limits to proxy configuration
+apply_bandwidth_limits() {
+    local config_file="$1"
+    local proxy_name="$2"
+    
+    if [[ "$GLOBAL_BANDWIDTH_PROFILE" == "none" ]]; then
+        return 0
+    fi
+    
     # Add bandwidth limiting configuration
     cat >> "$config_file" << EOF
-# Bandwidth limits for $proxy_name
-transport.bandwidthLimit = "$bandwidth_in"
+# Bandwidth limits for $proxy_name (Profile: $GLOBAL_BANDWIDTH_PROFILE)
+transport.bandwidthLimit = "$GLOBAL_BANDWIDTH_IN"
 transport.bandwidthLimitMode = "client"
 
 EOF
     
-    log "INFO" "Bandwidth limits configured: In=$bandwidth_in, Out=$bandwidth_out"
+    log "INFO" "Applied bandwidth limits to $proxy_name: $GLOBAL_BANDWIDTH_IN"
 }
 
 # Generate TCP proxy configurations
@@ -1132,7 +1150,7 @@ EOF
         
         # Add bandwidth management if enabled
         if [[ "$enable_bandwidth" == "true" ]]; then
-            configure_bandwidth_limits "$config_file" "$unique_name"
+            apply_bandwidth_limits "$config_file" "$unique_name"
         fi
     done
 }
@@ -1188,7 +1206,7 @@ EOF
         
         # Add bandwidth management if enabled
         if [[ "$enable_bandwidth" == "true" ]]; then
-            configure_bandwidth_limits "$config_file" "$unique_name"
+            apply_bandwidth_limits "$config_file" "$unique_name"
         fi
         
         ((port_index++))
@@ -1227,6 +1245,25 @@ create_systemd_service() {
     local config_file="$3"
     local ip_suffix="${4:-}"
     
+    # Validate inputs
+    if [[ -z "$service_name" || -z "$service_type" || -z "$config_file" ]]; then
+        log "ERROR" "Missing required parameters for service creation"
+        return 1
+    fi
+    
+    # Check if FRP binary exists
+    if [[ ! -f "$FRP_DIR/$service_type" ]]; then
+        log "ERROR" "FRP binary not found: $FRP_DIR/$service_type"
+        log "ERROR" "Please install FRP first using menu option 3"
+        return 1
+    fi
+    
+    # Check if config file exists
+    if [[ ! -f "$config_file" ]]; then
+        log "ERROR" "Configuration file not found: $config_file"
+        return 1
+    fi
+    
     local service_file="$SERVICE_DIR/${service_name}.service"
     local description="MoonFRP ${service_type^^} Service"
     
@@ -1234,7 +1271,8 @@ create_systemd_service() {
         description="$description (IP suffix: $ip_suffix)"
     fi
     
-    cat > "$service_file" << EOF
+    # Create service file
+    if cat > "$service_file" << EOF
 [Unit]
 Description=$description
 After=network.target
@@ -1255,17 +1293,52 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    systemctl daemon-reload
-    log "INFO" "Created systemd service: $service_name"
+    then
+        # Reload systemd daemon
+        if systemctl daemon-reload; then
+            log "INFO" "Created systemd service: $service_name"
+            return 0
+        else
+            log "ERROR" "Failed to reload systemd daemon"
+            return 1
+        fi
+    else
+        log "ERROR" "Failed to create service file: $service_file"
+        return 1
+    fi
 }
 
 # Service management functions
 start_service() {
     local service_name="$1"
-    systemctl start "$service_name"
-    systemctl enable "$service_name"
-    log "INFO" "Started and enabled service: $service_name"
+    
+    if [[ -z "$service_name" ]]; then
+        log "ERROR" "Service name is required"
+        return 1
+    fi
+    
+    # Check if service file exists
+    if [[ ! -f "$SERVICE_DIR/${service_name}.service" ]]; then
+        log "ERROR" "Service file not found: $SERVICE_DIR/${service_name}.service"
+        return 1
+    fi
+    
+    # Start service
+    if systemctl start "$service_name"; then
+        log "INFO" "Started service: $service_name"
+        
+        # Enable service
+        if systemctl enable "$service_name"; then
+            log "INFO" "Enabled service: $service_name"
+            return 0
+        else
+            log "WARN" "Service started but failed to enable: $service_name"
+            return 0  # Still consider this success as service is running
+        fi
+    else
+        log "ERROR" "Failed to start service: $service_name"
+        return 1
+    fi
 }
 
 stop_service() {
@@ -1827,6 +1900,7 @@ create_foreign_client_config() {
     
     # Configure proxy type (either from template or manual selection)
     local custom_domains=""
+    local enable_bandwidth="false"
     
     if [[ "$config_method" == "1" ]]; then
         # Use proxy type from template
@@ -1856,6 +1930,16 @@ create_foreign_client_config() {
     if [[ "$SELECTED_PROXY_TYPE" == "http" || "$SELECTED_PROXY_TYPE" == "https" ]]; then
         get_custom_domains "$ports"
         custom_domains="$CUSTOM_DOMAINS"
+    fi
+    
+    # Ask about bandwidth management
+    echo -e "\n${CYAN}🚦 Performance Options:${NC}"
+    echo -e "${YELLOW}Would you like to configure bandwidth limits? (y/N):${NC} "
+    read -r enable_bw
+    
+    if [[ "$enable_bw" =~ ^[Yy]$ ]]; then
+        enable_bandwidth="true"
+        configure_global_bandwidth
     fi
     
     # Check for existing configurations and handle conflicts
@@ -1888,6 +1972,18 @@ create_foreign_client_config() {
         fi
     fi
     
+    # Debug information
+    echo -e "\n${CYAN}🔍 Debug Information:${NC}"
+    echo -e "  • Server IPs: $server_ips"
+    echo -e "  • Server Port: $server_port"
+    echo -e "  • Token: ${token:0:8}..."
+    echo -e "  • Ports: $ports"
+    echo -e "  • Proxy Type: $SELECTED_PROXY_TYPE"
+    echo -e "  • Custom Domains: $custom_domains"
+    echo -e "  • Bandwidth Enabled: $enable_bandwidth"
+    echo -e "  • FRP Binary Check: $(ls -la $FRP_DIR/frpc 2>/dev/null || echo 'NOT FOUND')"
+    echo -e "  • Config Directory: $CONFIG_DIR ($(ls -la $CONFIG_DIR 2>/dev/null | wc -l) files)"
+    
     # Process each IP with progress indicator
     local config_count=0
     local failed_count=0
@@ -1913,19 +2009,30 @@ create_foreign_client_config() {
         echo -ne "\r${CYAN}Progress: [${bar}] ${progress}% (${current_ip}/${total_ips}) - Processing IP: $ip${NC}"
         
         # Generate client configuration
-        if generate_frpc_config "$ip" "$server_port" "$token" "$ip" "$ports" "$ip_suffix" "$SELECTED_PROXY_TYPE" "$custom_domains" 2>/dev/null; then
+        echo -e "${CYAN}Generating configuration for IP: $ip (suffix: $ip_suffix)${NC}"
+        if generate_frpc_config "$ip" "$server_port" "$token" "$ip" "$ports" "$ip_suffix" "$SELECTED_PROXY_TYPE" "$custom_domains" "$enable_bandwidth"; then
+            echo -e "${GREEN}✅ Configuration generated successfully${NC}"
             # Validate the generated configuration
-            if validate_frp_config "$CONFIG_DIR/frpc_${ip_suffix}.toml" >/dev/null 2>&1; then
-                echo -e "\n${GREEN}✅ Configuration validation passed for IP: $ip${NC}"
+            echo -e "${CYAN}Validating configuration...${NC}"
+            if validate_frp_config "$CONFIG_DIR/frpc_${ip_suffix}.toml"; then
+                echo -e "${GREEN}✅ Configuration validation passed for IP: $ip${NC}"
             else
-                echo -e "\n${YELLOW}⚠️  Configuration validation failed for IP: $ip, but proceeding...${NC}"
+                echo -e "${YELLOW}⚠️  Configuration validation failed for IP: $ip, but proceeding...${NC}"
             fi
             
             # Create systemd service
-            create_systemd_service "moonfrp-client-$ip_suffix" "frpc" "$CONFIG_DIR/frpc_${ip_suffix}.toml" "$ip_suffix" >/dev/null 2>&1
+            echo -e "\n${CYAN}Creating systemd service for IP: $ip${NC}"
+            if create_systemd_service "moonfrp-client-$ip_suffix" "frpc" "$CONFIG_DIR/frpc_${ip_suffix}.toml" "$ip_suffix"; then
+                echo -e "${GREEN}✅ Service created: moonfrp-client-$ip_suffix${NC}"
+            else
+                echo -e "${RED}❌ Failed to create service for IP: $ip${NC}"
+                ((failed_count++))
+                continue
+            fi
             
             # Start service
-            if start_service "moonfrp-client-$ip_suffix" >/dev/null 2>&1; then
+            echo -e "${CYAN}Starting service: moonfrp-client-$ip_suffix${NC}"
+            if start_service "moonfrp-client-$ip_suffix"; then
                 ((config_count++))
                 echo -e "${GREEN}✅ Successfully configured client for IP: $ip${NC}"
             else
