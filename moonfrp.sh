@@ -5,7 +5,8 @@
 # Author: MoonFRP Team
 # Description: Modular FRP configuration and service management tool
 
-set -euo pipefail
+# Use safer bash settings, but allow for graceful error handling
+set -uo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -49,18 +50,23 @@ log() {
         "DEBUG") echo -e "${BLUE}[DEBUG]${NC} $message" ;;
     esac
     
-    echo "[$timestamp] [$level] $message" >> "$LOG_DIR/moonfrp.log"
+    # Safe logging to file
+    if [[ -d "$LOG_DIR" ]]; then
+        echo "[$timestamp] [$level] $message" >> "$LOG_DIR/moonfrp.log" 2>/dev/null || true
+    fi
 }
 
 # Error handling
 handle_error() {
     local exit_code=$?
     local line_number=$1
-    log "ERROR" "Script failed at line $line_number with exit code $exit_code"
-    exit $exit_code
+    echo -e "${RED}[ERROR]${NC} Script failed at line $line_number with exit code $exit_code"
+    # Don't exit immediately, just log the error
+    return 0
 }
 
-trap 'handle_error $LINENO' ERR
+# Only trap errors for critical functions, not the entire script
+# trap 'handle_error $LINENO' ERR
 
 # Signal handler for Ctrl+C
 signal_handler() {
