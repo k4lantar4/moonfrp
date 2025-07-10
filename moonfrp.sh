@@ -35,7 +35,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.3"
+MOONFRP_VERSION="1.0.3dfg"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/bin/moonfrp"
@@ -660,7 +660,7 @@ monitor_all_proxies() {
     
     echo -e "\n${CYAN}🔍 Scanning for active FRP services...${NC}"
     
-    local services=($(systemctl list-units --type=service --state=active | grep -E "(frpc|frps)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --state=active --no-legend --plain | grep -E "(frpc|frps)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "\n${YELLOW}No active FRP services found${NC}"
@@ -1977,7 +1977,7 @@ list_frp_services() {
     local current_time=$(date +%s)
     if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
         # More comprehensive service detection with new naming
-        CACHED_SERVICES=($(systemctl list-units --type=service --all 2>/dev/null | \
+        CACHED_SERVICES=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
             grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
             grep -v "@" | \
             awk '{print $1}' | \
@@ -3835,7 +3835,7 @@ real_time_status_monitor() {
         echo ""
         
         # Get all services
-        local services=($(systemctl list-units --type=service --all 2>/dev/null | \
+        local services=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
             grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
             awk '{print $1}' | sed 's/\.service//' | grep -v "^$"))
         
