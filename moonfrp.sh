@@ -3961,9 +3961,13 @@ show_current_config_summary() {
         echo -e "  ${CYAN}Auth Token:${NC} ${GREEN}${token:0:8}...${NC}"
         [[ -n "$dashboard_port" ]] && echo -e "  ${CYAN}Dashboard:${NC} ${GREEN}http://SERVER-IP:$dashboard_port${NC}"
         
-        # Share with clients information
+        # Share with clients information - Auto-detect public IPs
+        local primary_ip=$(hostname -I | awk '{print $1}')
+        local public_ips=$(hostname -I | tr ' ' '\n' | grep -E '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$' | grep -v -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|127\.)' | tr '\n' ',' | sed 's/,$//')
+        [[ -z "$public_ips" ]] && public_ips="$primary_ip"
+        
         echo -e "\n  ${CYAN}3. Share with clients:${NC}"
-        echo -e "     ${YELLOW}• Server IPs:${NC} ${GREEN}45.94.214.223,89.47.198.149,62.60.193.202,89.47.198.185${NC}"
+        echo -e "     ${YELLOW}• Server IPs:${NC} ${GREEN}$public_ips${NC}"
         echo -e "     ${YELLOW}• Server Port:${NC} ${GREEN}$bind_port${NC}"
         echo -e "     ${YELLOW}• Token:${NC} ${GREEN}$token${NC}"
         
