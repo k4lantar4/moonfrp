@@ -885,7 +885,19 @@ generate_frps_config() {
     local dashboard_user="${4:-admin}"
     local dashboard_password="${5:-$(generate_token | cut -c1-12)}"
     
-    cat > "$CONFIG_DIR/frps.toml" << EOF
+    # Validate inputs
+    if ! validate_port "$bind_port"; then
+        log "ERROR" "Invalid bind port: $bind_port"
+        return 1
+    fi
+    
+    if ! validate_port "$dashboard_port"; then
+        log "ERROR" "Invalid dashboard port: $dashboard_port"
+        return 1
+    fi
+    
+    # Create configuration file
+    if cat > "$CONFIG_DIR/frps.toml" << EOF
 # MoonFRP Server Configuration
 # Generated on $(date)
 
@@ -948,11 +960,22 @@ transport.tcpMuxKeepaliveInterval = 60
 maxProxiesPerClient = 50
 maxPortsPerClient = 50
 EOF
-
-    log "INFO" "Generated frps.toml configuration with extended port ranges"
-    log "INFO" "Dashboard: http://server-ip:$dashboard_port (User: $dashboard_user, Pass: $dashboard_password)"
-    log "INFO" "Token: $token"
-    log "WARN" "Remember to configure firewall to allow ports 1000-65535 for FRP services"
+    then
+        # Verify configuration file was created successfully
+        if [[ -f "$CONFIG_DIR/frps.toml" && -s "$CONFIG_DIR/frps.toml" ]]; then
+            log "INFO" "Generated frps.toml configuration with extended port ranges"
+            log "INFO" "Dashboard: http://server-ip:$dashboard_port (User: $dashboard_user, Pass: $dashboard_password)"
+            log "INFO" "Token: $token"
+            log "WARN" "Remember to configure firewall to allow ports 1000-65535 for FRP services"
+            return 0
+        else
+            log "ERROR" "Configuration file was not created or is empty"
+            return 1
+        fi
+    else
+        log "ERROR" "Failed to write configuration file: $CONFIG_DIR/frps.toml"
+        return 1
+    fi
 }
 
 # Generate frpc.toml configuration for multiple IPs and proxy types
@@ -1773,34 +1796,153 @@ create_iran_server_config() {
     local bind_port dashboard_port dashboard_user dashboard_password
     
     echo -e "\n${CYAN}Server Settings:${NC}"
-    read -p "Bind Port (default: 7000): " bind_port
-    [[ -z "$bind_port" ]] && bind_port=7000
     
-    read -p "Dashboard Port (default: 7500): " dashboard_port
-    [[ -z "$dashboard_port" ]] && dashboard_port=7500
+    # Bind port input with validation
+    while true; do
+        read -p "Bind Port (default: 7000): " bind_port
+        [[ -z "$bind_port" ]] && bind_port=7000
+        
+        if validate_port "$bind_port"; then
+            break
+        else
+            echo -e "${RED}❌ Invalid port number. Please enter a port between 1-65535.${NC}"
+        fi
+    done
     
+    # Dashboard port input with validation
+    while true; do
+        read -p "Dashboard Port (default: 7500): " dashboard_port
+        [[ -z "$dashboard_port" ]] && dashboard_port=7500
+        
+        if validate_port "$dashboard_port"; then
+            if [[ "$dashboard_port" == "$bind_port" ]]; then
+                echo -e "${RED}❌ Dashboard port cannot be the same as bind port.${NC}"
+            else
+                break
+            fi
+        else
+            echo -e "${RED}❌ Invalid port number. Please enter a port between 1-65535.${NC}"
+        fi
+    done
+    
+    # Dashboard username
     read -p "Dashboard Username (default: admin): " dashboard_user
     [[ -z "$dashboard_user" ]] && dashboard_user="admin"
     
+    # Dashboard password
     read -p "Dashboard Password (default: auto-generated): " dashboard_password
     [[ -z "$dashboard_password" ]] && dashboard_password=$(generate_token | cut -c1-12)
     
+    # Port conflict check
+    echo -e "\n${CYAN}🔍 Checking for port conflicts...${NC}"
+    for port in "$bind_port" "$dashboard_port"; do
+        if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
+            echo -e "${YELLOW}⚠️  Warning: Port $port is already in use by another process${NC}"
+            echo -e "${CYAN}Continue anyway? (y/N):${NC} "
+            read -r continue_anyway
+            if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+                log "INFO" "Configuration cancelled due to port conflict"
+                read -p "Press Enter to continue..."
+                return
+            fi
+        else
+            echo -e "${GREEN}✅ Port $port is available${NC}"
+        fi
+    done
+    
+    # Debug information
+    echo -e "\n${CYAN}🔍 Server Configuration Debug:${NC}"
+    echo -e "  • Token: ${token:0:8}..."
+    echo -e "  • Bind Port: $bind_port"
+    echo -e "  • Dashboard Port: $dashboard_port"
+    echo -e "  • Dashboard User: $dashboard_user"
+    echo -e "  • Dashboard Password: ${dashboard_password:0:4}..."
+    echo -e "  • FRP Binary Check: $(ls -la $FRP_DIR/frps 2>/dev/null || echo 'NOT FOUND')"
+    echo -e "  • Config Directory: $CONFIG_DIR"
+    
     # Generate configuration
-    generate_frps_config "$token" "$bind_port" "$dashboard_port" "$dashboard_user" "$dashboard_password"
-    
-    # Create systemd service
-    create_systemd_service "moonfrp-server" "frps" "$CONFIG_DIR/frps.toml"
-    
-    # Start service
-    start_service "moonfrp-server"
-    
-    echo -e "\n${GREEN}✅ Iran server configuration created successfully!${NC}"
-    echo -e "${CYAN}Service:${NC} moonfrp-server"
-    echo -e "${CYAN}Config:${NC} $CONFIG_DIR/frps.toml"
-    echo -e "${CYAN}Dashboard:${NC} http://YOUR-SERVER-IP:$dashboard_port"
-    echo -e "${CYAN}Username:${NC} $dashboard_user"
-    echo -e "${CYAN}Password:${NC} $dashboard_password"
-    echo -e "${CYAN}Token:${NC} $token"
+    echo -e "\n${CYAN}Generating server configuration...${NC}"
+    if generate_frps_config "$token" "$bind_port" "$dashboard_port" "$dashboard_user" "$dashboard_password"; then
+        echo -e "${GREEN}✅ Server configuration generated successfully${NC}"
+        
+        # Verify config file was created
+        if [[ -f "$CONFIG_DIR/frps.toml" && -s "$CONFIG_DIR/frps.toml" ]]; then
+            echo -e "${GREEN}✅ Configuration file verified: $CONFIG_DIR/frps.toml${NC}"
+        else
+            echo -e "${RED}❌ Configuration file not found or empty${NC}"
+            read -p "Press Enter to continue..."
+            return
+        fi
+        
+        # Create systemd service
+        echo -e "\n${CYAN}Creating systemd service...${NC}"
+        if create_systemd_service "moonfrp-server" "frps" "$CONFIG_DIR/frps.toml"; then
+            echo -e "${GREEN}✅ Service created: moonfrp-server${NC}"
+        else
+            echo -e "${RED}❌ Failed to create service${NC}"
+            read -p "Press Enter to continue..."
+            return
+        fi
+        
+        # Start service
+        echo -e "\n${CYAN}Starting service: moonfrp-server${NC}"
+        if start_service "moonfrp-server"; then
+            echo -e "${GREEN}✅ Service started successfully${NC}"
+            
+            # Wait a moment and check service status
+            sleep 3
+            local service_status=$(get_service_status "moonfrp-server")
+            if [[ "$service_status" == "active" ]]; then
+                echo -e "${GREEN}✅ Service is running properly${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Service status: $service_status${NC}"
+                echo -e "${CYAN}Checking logs for errors...${NC}"
+                journalctl -u moonfrp-server -n 5 --no-pager
+            fi
+        else
+            echo -e "${RED}❌ Failed to start service${NC}"
+            echo -e "${CYAN}Checking logs for errors...${NC}"
+            journalctl -u moonfrp-server -n 10 --no-pager
+            read -p "Press Enter to continue..."
+            return
+        fi
+        
+        # Enhanced success summary
+        clear
+        echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}║     Server Setup Complete!          ║${NC}"
+        echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+        
+        echo -e "\n${GREEN}🎉 Iran server configuration created successfully!${NC}"
+        
+        echo -e "\n${CYAN}📋 Server Information:${NC}"
+        echo -e "${GREEN}Service Name:${NC} moonfrp-server"
+        echo -e "${GREEN}Configuration:${NC} $CONFIG_DIR/frps.toml"
+        echo -e "${GREEN}Service Status:${NC} $(get_service_status "moonfrp-server")"
+        
+        echo -e "\n${CYAN}🌐 Access Information:${NC}"
+        echo -e "${GREEN}Dashboard URL:${NC} http://YOUR-SERVER-IP:$dashboard_port"
+        echo -e "${GREEN}Username:${NC} $dashboard_user"
+        echo -e "${GREEN}Password:${NC} $dashboard_password"
+        echo -e "${GREEN}Auth Token:${NC} $token"
+        echo -e "${GREEN}FRP Port:${NC} $bind_port"
+        
+        echo -e "\n${CYAN}💡 Next Steps:${NC}"
+        echo -e "  • Configure firewall: ${YELLOW}ufw allow $bind_port/tcp && ufw allow $dashboard_port/tcp${NC}"
+        echo -e "  • Test dashboard: ${YELLOW}http://$(hostname -I | awk '{print $1}'):$dashboard_port${NC}"
+        echo -e "  • Share token with clients for connection"
+        echo -e "  • Use menu option 6 for troubleshooting if needed"
+        
+        echo -e "\n${CYAN}🔧 Quick Commands:${NC}"
+        echo -e "  • Check status: ${GREEN}systemctl status moonfrp-server${NC}"
+        echo -e "  • View logs: ${GREEN}journalctl -u moonfrp-server -f${NC}"
+        echo -e "  • Restart: ${GREEN}systemctl restart moonfrp-server${NC}"
+        
+    else
+        echo -e "${RED}❌ Failed to generate server configuration${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
     
     read -p "Press Enter to continue..."
 }
