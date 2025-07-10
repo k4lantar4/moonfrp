@@ -8,6 +8,11 @@
 # Use safer bash settings, but allow for graceful error handling
 set -uo pipefail
 
+# Performance optimizations
+export TERM=${TERM:-xterm}
+export SYSTEMD_COLORS=0
+export SYSTEMD_PAGER=""
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -76,13 +81,55 @@ handle_error() {
 
 # Signal handler for Ctrl+C
 signal_handler() {
-    echo -e "\n${YELLOW}[CTRL+C] Returning to main menu...${NC}"
+    echo -e "\n${YELLOW}[CTRL+C] Operation cancelled, returning to main menu...${NC}"
     sleep 1
-    # Don't call main_menu recursively, just continue the loop
-    return
+    # Set flag to break out of current operation
+    CTRL_C_PRESSED=true
+    return 130  # Standard exit code for SIGINT
 }
 
-trap signal_handler SIGINT
+# Global flag for Ctrl+C detection
+CTRL_C_PRESSED=false
+
+# Setup signal trapping
+setup_signal_handlers() {
+    trap signal_handler SIGINT
+}
+
+# Function to check if Ctrl+C was pressed during input
+check_ctrl_c() {
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        return 1  # Return to main menu
+    fi
+    return 0
+}
+
+# Enhanced read function that handles Ctrl+C properly
+safe_read() {
+    local prompt="$1"
+    local var_name="$2"
+    local default_value="${3:-}"
+    
+    # Reset Ctrl+C flag
+    CTRL_C_PRESSED=false
+    
+    # Use regular read but check for Ctrl+C interrupt
+    if read -r $var_name; then
+        # Input received successfully
+        local input_value=$(eval echo \$$var_name)
+        if [[ -z "$input_value" && -n "$default_value" ]]; then
+            eval $var_name="$default_value"
+        fi
+        return 0
+    else
+        # Read was interrupted (likely by Ctrl+C)
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            return 1  # Ctrl+C was pressed
+        fi
+        return 0  # Normal completion
+    fi
+}
 
 # Quick help for common errors
 show_quick_help() {
@@ -1319,6 +1366,8 @@ EOF
     then
         # Reload systemd daemon
         if systemctl daemon-reload; then
+            # Invalidate services cache
+            CACHED_SERVICES=""
             log "INFO" "Created systemd service: $service_name"
             return 0
         else
@@ -1434,6 +1483,9 @@ download_and_install_frp() {
     rm -rf "$TEMP_DIR/frp_${FRP_VERSION}_${FRP_ARCH}"
     rm -f "$temp_file"
     
+    # Invalidate cache
+    FRP_INSTALLATION_STATUS="installed"
+    
     log "INFO" "FRP v$FRP_VERSION installed successfully"
 }
 
@@ -1476,6 +1528,9 @@ install_from_local() {
     
     # Cleanup
     rm -rf "$TEMP_DIR/frp_${FRP_VERSION}_${FRP_ARCH}"
+    
+    # Invalidate cache
+    FRP_INSTALLATION_STATUS="installed"
     
     log "INFO" "FRP installed from local archive successfully"
 }
@@ -1634,13 +1689,46 @@ check_updates_at_startup() {
     fi
 }
 
-# List all FRP services
+# Cache for service list
+CACHED_SERVICES=""
+SERVICES_CACHE_TIME=0
+
+# Fast loading spinner for operations
+show_spinner() {
+    local pid=$1
+    local delay=0.1
+    local spinner='|/-\'
+    
+    while kill -0 "$pid" 2>/dev/null; do
+        for i in $(seq 0 3); do
+            echo -ne "\r${CYAN}Loading ${spinner:$i:1}${NC}"
+            sleep $delay
+        done
+    done
+    echo -ne "\r"
+}
+
+# Optimized system check functions
+optimize_systemctl_calls() {
+    # Reduce systemctl timeout for faster responses
+    export SYSTEMD_COLORS=0
+    alias systemctl='systemctl --no-pager --quiet'
+}
+
+# List all FRP services with caching
 list_frp_services() {
     echo -e "\n${CYAN}=== FRP Services Status ===${NC}"
     
-    local services=($(systemctl list-units --type=service --all | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//'))
+    # Cache services list for 5 seconds to improve performance
+    local current_time=$(date +%s)
+    if [[ -z "$CACHED_SERVICES" ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
+        CACHED_SERVICES=($(systemctl list-units --type=service --all 2>/dev/null | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
+        SERVICES_CACHE_TIME=$current_time
+    fi
     
-    if [[ ${#services[@]} -eq 0 ]]; then
+    local services=("${CACHED_SERVICES[@]}")
+    
+    if [[ ${#services[@]} -eq 0 ]] || [[ "${services[0]}" == "" ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
         return
     fi
@@ -1649,6 +1737,8 @@ list_frp_services() {
     printf "%-20s %-10s %-15s\n" "-------" "------" "----"
     
     for service in "${services[@]}"; do
+        [[ -z "$service" ]] && continue
+        
         local status=$(get_service_status "$service")
         local type="Unknown"
         
@@ -1683,9 +1773,11 @@ service_management_menu() {
         echo "4. View Service Status"
         echo "5. View Service Logs"
         echo "6. Reload Service"
+        echo "7. Remove Service"
+        echo "8. Remove All Services"
         echo "0. Back to Main Menu"
         
-        echo -e "\n${YELLOW}Enter your choice [0-6]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-8]:${NC} "
         read -r choice
         
         case $choice in
@@ -1695,6 +1787,8 @@ service_management_menu() {
             4) manage_service_action "status" ;;
             5) manage_service_action "logs" ;;
             6) manage_service_action "reload" ;;
+            7) remove_single_service ;;
+            8) remove_all_services ;;
             0) return ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
@@ -1799,8 +1893,10 @@ create_iran_server_config() {
     
     # Bind port input with validation
     while true; do
-        read -p "Bind Port (default: 7000): " bind_port
-        [[ -z "$bind_port" ]] && bind_port=7000
+        echo -n "Bind Port (default: 7000): "
+        if ! safe_read "" bind_port "7000"; then
+            return  # Ctrl+C pressed, return to main menu
+        fi
         
         if validate_port "$bind_port"; then
             break
@@ -1920,8 +2016,14 @@ create_iran_server_config() {
         echo -e "${GREEN}Configuration:${NC} $CONFIG_DIR/frps.toml"
         echo -e "${GREEN}Service Status:${NC} $(get_service_status "moonfrp-server")"
         
+        # Get server IP information
+        local primary_ip=$(hostname -I | awk '{print $1}')
+        local all_ips=$(hostname -I | tr ' ' ',' | sed 's/,$//')
+        
         echo -e "\n${CYAN}🌐 Access Information:${NC}"
-        echo -e "${GREEN}Dashboard URL:${NC} http://YOUR-SERVER-IP:$dashboard_port"
+        echo -e "${GREEN}Primary Server IP:${NC} $primary_ip"
+        echo -e "${GREEN}All Server IPs:${NC} $all_ips"
+        echo -e "${GREEN}Dashboard URL:${NC} http://$primary_ip:$dashboard_port"
         echo -e "${GREEN}Username:${NC} $dashboard_user"
         echo -e "${GREEN}Password:${NC} $dashboard_password"
         echo -e "${GREEN}Auth Token:${NC} $token"
@@ -1929,8 +2031,9 @@ create_iran_server_config() {
         
         echo -e "\n${CYAN}💡 Next Steps:${NC}"
         echo -e "  • Configure firewall: ${YELLOW}ufw allow $bind_port/tcp && ufw allow $dashboard_port/tcp${NC}"
-        echo -e "  • Test dashboard: ${YELLOW}http://$(hostname -I | awk '{print $1}'):$dashboard_port${NC}"
-        echo -e "  • Share token with clients for connection"
+        echo -e "  • Test dashboard: ${YELLOW}http://$primary_ip:$dashboard_port${NC}"
+        echo -e "  • Share server IPs with clients: ${YELLOW}$all_ips${NC}"
+        echo -e "  • Share token with clients: ${YELLOW}$token${NC}"
         echo -e "  • Use menu option 6 for troubleshooting if needed"
         
         echo -e "\n${CYAN}🔧 Quick Commands:${NC}"
@@ -2421,41 +2524,97 @@ remove_service() {
     # Reload systemd
     systemctl daemon-reload
     
+    # Invalidate services cache
+    CACHED_SERVICES=""
+    
     log "INFO" "Removed service: $service_name"
+}
+
+# Global cache variables for performance
+FRP_INSTALLATION_STATUS=""
+UPDATE_CHECK_DONE=false
+LAST_UPDATE_CHECK=""
+
+# Fast FRP installation check with caching
+check_frp_installation_cached() {
+    if [[ -z "$FRP_INSTALLATION_STATUS" ]]; then
+        if [[ -f "$FRP_DIR/frps" ]] && [[ -f "$FRP_DIR/frpc" ]]; then
+            FRP_INSTALLATION_STATUS="installed"
+        else
+            FRP_INSTALLATION_STATUS="not_installed"
+        fi
+    fi
+    
+    [[ "$FRP_INSTALLATION_STATUS" == "installed" ]]
+}
+
+# Check updates only once per session
+check_updates_cached() {
+    if [[ "$UPDATE_CHECK_DONE" == "false" ]]; then
+        UPDATE_CHECK_DONE=true
+        
+        # Run update check in background to avoid blocking
+        (
+            local update_status=0
+            check_moonfrp_updates >/dev/null 2>&1
+            update_status=$?
+            
+            if [[ $update_status -eq 0 ]]; then
+                LAST_UPDATE_CHECK="available"
+            else
+                LAST_UPDATE_CHECK="none"
+            fi
+        ) &
+        
+        # Don't wait for background process
+        disown
+    fi
 }
 
 # Main menu
 main_menu() {
+    # Initialize cached values on first run
+    [[ -z "$FRP_INSTALLATION_STATUS" ]] && check_frp_installation_cached >/dev/null
+    [[ "$UPDATE_CHECK_DONE" == "false" ]] && check_updates_cached
+    
     while true; do
-        clear
+        # Fast clear with optimized escape sequences
+        printf '\033[2J\033[H'
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
         echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
         echo -e "${PURPLE}║    Advanced FRP Management Tool     ║${NC}"
         echo -e "${PURPLE}║          Version $MOONFRP_VERSION              ║${NC}"
         echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
         
-        # Show FRP installation status
-        if check_frp_installation; then
+        # Show FRP installation status (cached)
+        if check_frp_installation_cached; then
             echo -e "\n${GREEN}✅ FRP Status: Installed${NC}"
         else
             echo -e "\n${RED}❌ FRP Status: Not Installed${NC}"
         fi
         
-        # Check for MoonFRP updates (non-blocking)
-        check_updates_at_startup
+        # Show update notification only if available (non-blocking)
+        if [[ "$LAST_UPDATE_CHECK" == "available" ]]; then
+            echo -e "\n${YELLOW}🔔 Update Available!${NC} ${GREEN}A new version of MoonFRP is available${NC}"
+            echo -e "${CYAN}   Use menu option 7 to update${NC}"
+        fi
         
         echo -e "\n${CYAN}Main Menu:${NC}"
         echo "1. Create FRP Configuration"
         echo "2. Service Management"
         echo "3. Download & Install FRP v$FRP_VERSION"
         echo "4. Install from Local Archive"
-        echo "5. Remove Services"
-        echo "6. Troubleshooting & Diagnostics"
-        echo "7. Update MoonFRP Script"
-        echo "8. About & Version Info"
+        echo "5. Troubleshooting & Diagnostics"
+        echo "6. Update MoonFRP Script"
+        echo "7. About & Version Info"
         echo "0. Exit"
         
-        echo -e "\n${YELLOW}Enter your choice [0-8]:${NC} "
+        # Show performance info in debug mode
+        if [[ "${DEBUG:-}" == "1" ]]; then
+            echo -e "\n${GRAY}[Debug] Menu load time: $(date +%T) | Services cached: ${#CACHED_SERVICES[@]} | FRP status: $FRP_INSTALLATION_STATUS${NC}"
+        fi
+        
+        echo -e "\n${YELLOW}Enter your choice [0-7]:${NC} "
         read -r choice
         
         case $choice in
@@ -2463,10 +2622,9 @@ main_menu() {
             2) service_management_menu ;;
             3) download_and_install_frp ;;
             4) install_from_local ;;
-            5) service_removal_menu ;;
-            6) troubleshooting_menu ;;
-            7) update_moonfrp_script ;;
-            8) show_about_info ;;
+            5) troubleshooting_menu ;;
+            6) update_moonfrp_script ;;
+            7) show_about_info ;;
             0) 
                 echo -e "\n${GREEN}Thank you for using MoonFRP! 🚀${NC}"
                 cleanup_and_exit
@@ -2526,8 +2684,25 @@ check_dependencies() {
 # Initialize script
 init() {
     check_root
-    check_dependencies
-    create_directories
+    
+    # Setup signal handlers first
+    setup_signal_handlers
+    
+    # Run non-critical checks in background for faster startup
+    (
+        check_dependencies
+        create_directories
+    ) >/dev/null 2>&1 &
+    
+    # Apply performance optimizations
+    optimize_systemctl_calls >/dev/null 2>&1
+    
+    # Initialize caches and flags
+    FRP_INSTALLATION_STATUS=""
+    UPDATE_CHECK_DONE=false
+    CACHED_SERVICES=""
+    CTRL_C_PRESSED=false
+    
     log "INFO" "MoonFRP script initialized successfully"
 }
 
