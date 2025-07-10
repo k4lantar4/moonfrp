@@ -2060,21 +2060,12 @@ create_iran_server_config() {
         
         # Get server IP information
         local primary_ip=$(hostname -I | awk '{print $1}')
-        local public_ips=""
-        for ip in $(hostname -I); do
-            if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-                if [[ ! $ip =~ ^10\. ]] && 
-                   [[ ! $ip =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && 
-                   [[ ! $ip =~ ^192\.168\. ]] && 
-                   [[ ! $ip =~ ^127\. ]]; then
-                    [[ -z "$public_ips" ]] && public_ips="$ip" || public_ips="$public_ips,$ip"
-                fi
-            fi
-        done
+        # Get public IPv4 addresses (exclude local, private, and IPv6)
+        local public_ips=$(hostname -I | tr ' ' '\n' | grep -E '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$' | grep -v -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|127\.)' | tr '\n' ',' | sed 's/,$//')
         [[ -z "$public_ips" ]] && public_ips="$primary_ip"
         
         echo -e "\n${CYAN}🌐 Connection Information:${NC}"
-        echo -e "${GREEN}• Server IP:${NC} $primary_ip"
+        echo -e "${GREEN}• Server Public IPs:${NC} $public_ips"
         echo -e "${GREEN}• FRP Port:${NC} $bind_port"
         echo -e "${GREEN}• Auth Token:${NC} $token"
         
@@ -2091,7 +2082,7 @@ create_iran_server_config() {
             echo -e "  2. Allow dashboard: ${GREEN}ufw allow $dashboard_port/tcp${NC}"
         fi
         echo -e "  3. Share with clients:"
-        echo -e "     ${YELLOW}• Server IP: $primary_ip${NC}"
+        echo -e "     ${YELLOW}• Server IPs: $public_ips${NC}"
         echo -e "     ${YELLOW}• Server Port: $bind_port${NC}"
         echo -e "     ${YELLOW}• Token: $token${NC}"
         
