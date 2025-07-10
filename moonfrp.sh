@@ -1793,6 +1793,15 @@ update_moonfrp_script() {
         1)
             echo -e "\n${GREEN}✅ MoonFRP is already up to date!${NC}"
             echo -e "${CYAN}Current version: v$MOONFRP_VERSION${NC}"
+            echo -e "\n${YELLOW}Force update anyway? (Y/n):${NC} "
+            read -r force_update
+            
+            # Default to Y if user just presses Enter
+            if [[ -z "$force_update" ]] || [[ "$force_update" =~ ^[Yy]$ ]]; then
+                perform_moonfrp_update
+            else
+                log "INFO" "Update cancelled by user"
+            fi
             ;;
         2)
             echo -e "\n${RED}❌ Error extracting version from remote script${NC}"
@@ -4070,7 +4079,7 @@ show_current_config_summary() {
     
     # Services overview
     local active_services=$(systemctl list-units --type=service --state=active --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
-    local total_services=$(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
+    local total_services=$(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)sd
     
     echo -e "  ${CYAN}Services:${NC} ${GREEN}$active_services active${NC} / ${YELLOW}$total_services total${NC}"
     
