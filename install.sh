@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # Global variables
 MOONFRP_VERSION="1.0.1"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="/usr/bin"
 SCRIPT_NAME="moonfrp"
 SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 TEMP_DIR="/tmp/moonfrp-install"
