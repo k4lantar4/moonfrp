@@ -15,7 +15,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Global variables
-MOONFRP_VERSION="1.0.0"
+MOONFRP_VERSION="1.0.1"
 INSTALL_DIR="/usr/local/bin"
 SCRIPT_NAME="moonfrp"
 SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
