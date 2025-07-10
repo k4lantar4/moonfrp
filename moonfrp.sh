@@ -89,13 +89,25 @@ handle_error() {
 # Only trap errors for critical functions, not the entire script
 # trap 'handle_error $LINENO' ERR
 
+# Menu depth tracking for proper Ctrl+C handling
+MENU_DEPTH=0
+MENU_STACK=()
+
 # Signal handler for Ctrl+C
 signal_handler() {
-    echo -e "\n${YELLOW}[CTRL+C] Operation cancelled, returning to main menu...${NC}"
-    sleep 1
-    # Set flag to break out of current operation
-    CTRL_C_PRESSED=true
-    return 130  # Standard exit code for SIGINT
+    echo -e "\n${YELLOW}[CTRL+C] Operation cancelled...${NC}"
+    
+    # If we're in main menu (depth 0), exit gracefully
+    if [[ $MENU_DEPTH -eq 0 ]]; then
+        echo -e "${GREEN}Exiting MoonFRP. Goodbye! 🚀${NC}"
+        cleanup_and_exit
+    else
+        # In submenu, return to previous menu
+        echo -e "${CYAN}Returning to previous menu...${NC}"
+        sleep 1
+        CTRL_C_PRESSED=true
+        return 130  # Standard exit code for SIGINT
+    fi
 }
 
 # Global flag for Ctrl+C detection
@@ -104,6 +116,23 @@ CTRL_C_PRESSED=false
 # Setup signal trapping
 setup_signal_handlers() {
     trap signal_handler SIGINT
+}
+
+# Enter a submenu (increase depth)
+enter_submenu() {
+    local menu_name="$1"
+    ((MENU_DEPTH++))
+    MENU_STACK+=("$menu_name")
+    CTRL_C_PRESSED=false
+}
+
+# Exit a submenu (decrease depth)
+exit_submenu() {
+    if [[ $MENU_DEPTH -gt 0 ]]; then
+        ((MENU_DEPTH--))
+        unset MENU_STACK[-1]
+    fi
+    CTRL_C_PRESSED=false
 }
 
 # Function to check if Ctrl+C was pressed during input
@@ -139,6 +168,30 @@ safe_read() {
         fi
         return 0  # Normal completion
     fi
+}
+
+# Safe read with automatic Ctrl+C handling for menus
+safe_read_menu() {
+    local prompt="$1"
+    local var_name="$2"
+    local default_value="${3:-}"
+    
+    echo -e "$prompt"
+    read -r $var_name
+    
+    # Check for Ctrl+C after read
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        return 1
+    fi
+    
+    # Apply default value if needed
+    local input_value=$(eval echo \$$var_name)
+    if [[ -z "$input_value" && -n "$default_value" ]]; then
+        eval $var_name="$default_value"
+    fi
+    
+    return 0
 }
 
 # Quick help for common errors
@@ -251,6 +304,12 @@ validate_domain() {
 # Proxy type selection menu
 select_proxy_type() {
     while true; do
+        # Check for Ctrl+C signal
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return 1
+        fi
+        
         clear
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
         echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
@@ -297,6 +356,12 @@ select_proxy_type() {
         
         echo -e "\n${YELLOW}Enter your choice [0-7] (default: 1):${NC} "
         read -r choice
+        
+        # Check for Ctrl+C after read
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return 1
+        fi
         
         # Default to TCP if no input
         [[ -z "$choice" ]] && choice=1
@@ -1952,6 +2017,12 @@ list_frp_services() {
 # Service management menu
 service_management_menu() {
     while true; do
+        # Check for Ctrl+C signal
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         clear
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
         echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
@@ -1976,6 +2047,12 @@ service_management_menu() {
         echo -e "\n${YELLOW}Enter your choice [0-10]:${NC} "
         read -r choice
         
+        # Check for Ctrl+C after read
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         case $choice in
             1) manage_service_action "start" ;;
             2) manage_service_action "stop" ;;
@@ -1998,7 +2075,7 @@ manage_service_action() {
     local action="$1"
     
     echo -e "\n${CYAN}Available services:${NC}"
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -2127,6 +2204,12 @@ manage_service_action() {
 # Configuration creation menu
 config_creation_menu() {
     while true; do
+        # Check for Ctrl+C signal
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         clear
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
         echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
@@ -2140,6 +2223,12 @@ config_creation_menu() {
         
         echo -e "\n${YELLOW}Enter your choice [0-2] (default: 1):${NC} "
         read -r choice
+        
+        # Check for Ctrl+C after read
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
         
         # Default to Iran if no input
         [[ -z "$choice" ]] && choice=1
@@ -2283,7 +2372,7 @@ create_iran_server_config() {
     
     # Configuration Summary
     # Check for existing server services
-    local existing_servers=($(systemctl list-units --type=service --all 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
+    local existing_servers=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
     if [[ ${#existing_servers[@]} -gt 0 ]]; then
         echo -e "\n${YELLOW}⚠️  Existing server service(s) detected:${NC}"
         for server in "${existing_servers[@]}"; do
@@ -2643,7 +2732,7 @@ create_foreign_client_config() {
     fi
     
     # Check for existing configurations and services
-    local existing_clients=($(systemctl list-units --type=service --all 2>/dev/null | grep moonfrpc | awk '{print $1}' | sed 's/\.service//'))
+    local existing_clients=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep moonfrpc | awk '{print $1}' | sed 's/\.service//'))
     local existing_configs=($(ls "$CONFIG_DIR"/frpc_*.toml 2>/dev/null))
     
     if [[ ${#existing_clients[@]} -gt 0 ]] || [[ ${#existing_configs[@]} -gt 0 ]]; then
@@ -2906,7 +2995,7 @@ service_removal_menu() {
 
 # Remove single service
 remove_single_service() {
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -2947,7 +3036,7 @@ remove_single_service() {
 
 # Remove all services
 remove_all_services() {
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -3065,11 +3154,21 @@ main_menu() {
     [[ -z "$FRP_INSTALLATION_STATUS" ]] && check_frp_installation_cached >/dev/null
     [[ "$UPDATE_CHECK_DONE" == "false" ]] && check_updates_cached
     
+    # Set main menu depth
+    MENU_DEPTH=0
+    MENU_STACK=()
+    
     # Add safety check to prevent infinite loops
     local menu_iterations=0
     local max_iterations=1000
     
     while true; do
+        # Check for Ctrl+C in main menu
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            echo -e "\n${GREEN}Thank you for using MoonFRP! 🚀${NC}"
+            cleanup_and_exit
+        fi
+        
         # Safety check
         ((menu_iterations++))
         if [[ $menu_iterations -gt $max_iterations ]]; then
@@ -3118,32 +3217,48 @@ main_menu() {
         
         case $choice in
             1) 
+                enter_submenu "config_creation"
                 config_creation_menu
+                exit_submenu
                 ;;
             2) 
+                enter_submenu "service_management"
                 service_management_menu
+                exit_submenu
                 ;;
             3) 
+                enter_submenu "download_install"
                 download_and_install_frp
+                exit_submenu
                 read -p "Press Enter to continue..."
                 ;;
             4) 
+                enter_submenu "install_local"
                 install_from_local
+                exit_submenu
                 read -p "Press Enter to continue..."
                 ;;
             5) 
+                enter_submenu "troubleshooting"
                 troubleshooting_menu
+                exit_submenu
                 ;;
             6) 
+                enter_submenu "update_script"
                 update_moonfrp_script
+                exit_submenu
                 read -p "Press Enter to continue..."
                 ;;
             7) 
+                enter_submenu "about_info"
                 show_about_info
+                exit_submenu
                 read -p "Press Enter to continue..."
                 ;;
             8) 
+                enter_submenu "config_summary"
                 show_current_config_summary
+                exit_submenu
                 read -p "Press Enter to continue..."
                 ;;
             0) 
@@ -3242,6 +3357,12 @@ cleanup_and_exit() {
 # Troubleshooting and diagnostics menu
 troubleshooting_menu() {
     while true; do
+        # Check for Ctrl+C signal
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         clear
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
         echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
@@ -3262,6 +3383,12 @@ troubleshooting_menu() {
         
         echo -e "\n${YELLOW}Enter your choice [0-9]:${NC} "
         read -r choice
+        
+        # Check for Ctrl+C after read
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
         
         case $choice in
             1) check_all_proxy_conflicts; read -p "Press Enter to continue..." ;;
@@ -3413,7 +3540,7 @@ view_service_logs_menu() {
     clear
     echo -e "${CYAN}📋 Service Logs Viewer${NC}"
     
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -3492,7 +3619,7 @@ fix_common_issues() {
             log "INFO" "Cleared all log files"
             ;;
         5)
-            local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+            local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
             for service in "${services[@]}"; do
                 restart_service "$service"
             done
@@ -3531,7 +3658,7 @@ generate_diagnostic_report() {
         echo
         
         echo "=== Services Status ==="
-        systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" || echo "No FRP services found"
+        systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" || echo "No FRP services found"
         echo
         
         echo "=== Network Connectivity ==="
@@ -3557,7 +3684,7 @@ generate_diagnostic_report() {
         echo
         
         echo "=== Recent Logs ==="
-        for service in $(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'); do
+        for service in $(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'); do
             echo "--- $service ---"
             journalctl -u "$service" -n 5 --no-pager 2>/dev/null || echo "No logs found"
             echo
@@ -3612,7 +3739,7 @@ show_about_info() {
     fi
     
     # Check services
-    local services=($(systemctl list-units --type=service --all 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
     if [[ ${#services[@]} -gt 0 ]] && [[ "${services[0]}" != "" ]]; then
         echo -e "  Active Services: ${GREEN}${#services[@]} service(s)${NC}"
         for service in "${services[@]}"; do
@@ -3832,7 +3959,7 @@ show_current_config_summary() {
         echo -e "     ${YELLOW}• Token:${NC} ${GREEN}$token${NC}"
         
         # Check server status
-        local server_services=($(systemctl list-units --type=service --state=active 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
+        local server_services=($(systemctl list-units --type=service --state=active --no-legend --plain 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
         if [[ ${#server_services[@]} -gt 0 ]]; then
             echo -e "  ${CYAN}Status:${NC} ${GREEN}✅ Active (${#server_services[@]} service(s))${NC}"
         else
@@ -3942,8 +4069,8 @@ show_current_config_summary() {
     echo -e "  ${CYAN}Log Directory:${NC} ${GREEN}$LOG_DIR${NC}"
     
     # Services overview
-    local active_services=$(systemctl list-units --type=service --state=active 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
-    local total_services=$(systemctl list-units --type=service --all 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
+    local active_services=$(systemctl list-units --type=service --state=active --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
+    local total_services=$(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
     
     echo -e "  ${CYAN}Services:${NC} ${GREEN}$active_services active${NC} / ${YELLOW}$total_services total${NC}"
     

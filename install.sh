@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # Global variables
 MOONFRP_VERSION="1.0.2"
-INSTALL_DIR="/usr/bin"
+INSTALL_DIR="/usr/local/bin"
 SCRIPT_NAME="moonfrp"
 SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 TEMP_DIR="/tmp/moonfrp-install"
@@ -162,6 +162,9 @@ install_moonfrp() {
     # Make it executable
     chmod +x "$TEMP_DIR/$SCRIPT_NAME"
     
+    # Ensure installation directory exists
+    mkdir -p "$INSTALL_DIR"
+    
     # Move to installation directory
     mv "$TEMP_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$SCRIPT_NAME"
     
@@ -173,7 +176,7 @@ create_symlink() {
     local symlink_path="/usr/bin/moonfrp"
     
     # Remove any existing moonfrp installations in common paths
-    local existing_paths=("/usr/local/bin/moonfrp" "/usr/bin/moonfrp" "/opt/moonfrp/moonfrp")
+    local existing_paths=("/usr/bin/moonfrp" "/opt/moonfrp/moonfrp")
     
     for path in "${existing_paths[@]}"; do
         if [[ -f "$path" ]] && [[ "$path" != "$INSTALL_DIR/$SCRIPT_NAME" ]]; then
@@ -182,21 +185,20 @@ create_symlink() {
         fi
     done
     
-    # Check if the target already exists and is the same file
+    # Remove existing symlinks that don't point to our installation
     if [[ -L "$symlink_path" ]]; then
-        # If it's a symlink, remove it first
-        rm -f "$symlink_path"
-        log "INFO" "Removed existing symlink"
-    elif [[ -f "$symlink_path" ]]; then
-        # If it's a regular file, check if it's the same as our target
-        if [[ "$symlink_path" -ef "$INSTALL_DIR/$SCRIPT_NAME" ]]; then
-            log "INFO" "Command 'moonfrp' already points to correct location"
-            return 0
-        else
-            # Remove old version
+        local current_target=$(readlink "$symlink_path")
+        if [[ "$current_target" != "$INSTALL_DIR/$SCRIPT_NAME" ]]; then
             rm -f "$symlink_path"
-            log "INFO" "Removed old version"
+            log "INFO" "Removed existing symlink pointing to: $current_target"
+        else
+            log "INFO" "Symlink already points to correct location"
+            return 0
         fi
+    elif [[ -f "$symlink_path" ]]; then
+        # If it's a regular file, remove it
+        rm -f "$symlink_path"
+        log "INFO" "Removed existing file: $symlink_path"
     fi
     
     # Create the symlink
