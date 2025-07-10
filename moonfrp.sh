@@ -569,7 +569,6 @@ monitor_all_proxies() {
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "\n${YELLOW}No active FRP services found${NC}"
-        read -p "Press Enter to continue..."
         return
     fi
     
@@ -631,7 +630,6 @@ monitor_all_proxies() {
     done
     
     echo -e "\n${YELLOW}💡 Tip: Use 'journalctl -u SERVICE_NAME -f' for real-time logs${NC}"
-    read -p "Press Enter to continue..."
 }
 
 # Configuration templates for different use cases
@@ -1475,43 +1473,44 @@ install_from_local() {
 check_moonfrp_updates() {
     log "INFO" "Checking for MoonFRP updates..."
     
-    # Get latest version from GitHub API with improved parsing
-    local latest_info=""
-    if latest_info=$(curl -s --connect-timeout 10 "$MOONFRP_REPO_URL" 2>/dev/null); then
-        # Multiple parsing methods for better compatibility
-        local latest_version=""
-        
-        # Method 1: Standard tag_name parsing
-        latest_version=$(echo "$latest_info" | grep '"tag_name"' | head -n1 | cut -d'"' -f4 | sed 's/^v//')
-        
-        # Method 2: Alternative parsing if first method fails
-        if [[ -z "$latest_version" ]]; then
-            latest_version=$(echo "$latest_info" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | cut -d'"' -f4 | sed 's/^v//')
-        fi
-        
-        # Method 3: JSON-style parsing fallback
-        if [[ -z "$latest_version" ]]; then
-            latest_version=$(echo "$latest_info" | grep -o 'tag_name[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | cut -d'"' -f2 | sed 's/^v//')
-        fi
-        
-        if [[ -n "$latest_version" && "$latest_version" != "" ]]; then
-            log "INFO" "Current version: v$MOONFRP_VERSION"
-            log "INFO" "Latest version: v$latest_version"
+    # Since no releases are published, we'll check the script file directly
+    # Download the latest script and compare versions
+    local temp_script="/tmp/moonfrp_check_$(date +%s).sh"
+    
+    if curl -fsSL "$MOONFRP_SCRIPT_URL" -o "$temp_script" 2>/dev/null; then
+        # Verify download
+        if [[ -f "$temp_script" ]] && [[ -s "$temp_script" ]]; then
+            # Extract version from downloaded script
+            local remote_version=""
+            if grep -q "MOONFRP_VERSION=" "$temp_script"; then
+                remote_version=$(grep "MOONFRP_VERSION=" "$temp_script" | head -1 | cut -d'"' -f2)
+            fi
             
-            # Better version comparison
-            if [[ "$latest_version" != "$MOONFRP_VERSION" ]]; then
-                return 0  # Update available
+            # Clean up temp file
+            rm -f "$temp_script"
+            
+            if [[ -n "$remote_version" ]]; then
+                log "INFO" "Current version: v$MOONFRP_VERSION"
+                log "INFO" "Remote version: v$remote_version"
+                
+                # Compare versions
+                if [[ "$remote_version" != "$MOONFRP_VERSION" ]]; then
+                    return 0  # Update available
+                else
+                    return 1  # Already up to date
+                fi
             else
-                return 1  # Already up to date
+                log "WARN" "Could not extract version from remote script"
+                return 2  # Error parsing
             fi
         else
-            log "WARN" "Could not parse version information from API response"
-            log "DEBUG" "API Response preview: $(echo "$latest_info" | head -c 200)..."
-            return 2  # Error parsing
+            log "WARN" "Downloaded file is empty or invalid"
+            rm -f "$temp_script"
+            return 3  # Download error
         fi
     else
-        log "WARN" "Could not connect to GitHub API"
-        return 3  # Connection error
+        log "WARN" "Could not download script from repository"
+        return 4  # Connection error
     fi
 }
 
@@ -1546,8 +1545,8 @@ update_moonfrp_script() {
             echo -e "${CYAN}Current version: v$MOONFRP_VERSION${NC}"
             ;;
         2)
-            echo -e "\n${RED}❌ Error parsing version information${NC}"
-            echo -e "${YELLOW}You can still force update if needed${NC}"
+            echo -e "\n${RED}❌ Error extracting version from remote script${NC}"
+            echo -e "${YELLOW}The remote script may have a different format${NC}"
             echo -e "\n${YELLOW}Force update anyway? (y/N):${NC} "
             read -r force_update
             
@@ -1556,8 +1555,19 @@ update_moonfrp_script() {
             fi
             ;;
         3)
+            echo -e "\n${RED}❌ Downloaded file is empty or invalid${NC}"
+            echo -e "${YELLOW}There may be an issue with the repository${NC}"
+            echo -e "\n${YELLOW}Force update anyway? (y/N):${NC} "
+            read -r force_update
+            
+            if [[ "$force_update" =~ ^[Yy]$ ]]; then
+                perform_moonfrp_update
+            fi
+            ;;
+        4)
             echo -e "\n${RED}❌ Cannot connect to GitHub repository${NC}"
             echo -e "${YELLOW}Please check your internet connection${NC}"
+            echo -e "${YELLOW}Repository: https://github.com/k4lantar4/moonfrp${NC}"
             echo -e "\n${YELLOW}Force update anyway? (y/N):${NC} "
             read -r force_update
             
@@ -1601,11 +1611,27 @@ perform_moonfrp_update() {
     if curl -fsSL "$MOONFRP_SCRIPT_URL" -o "$temp_script"; then
         # Verify download
         if [[ -f "$temp_script" ]] && [[ -s "$temp_script" ]]; then
-            # Make executable
-            chmod +x "$temp_script"
-            
-            # Replace current script
-            mv "$temp_script" "$MOONFRP_INSTALL_PATH"
+            # Basic validation - check if it's a valid bash script
+            if head -1 "$temp_script" | grep -q "#!/bin/bash"; then
+                # Check if it contains MoonFRP signatures
+                if grep -q "MoonFRP" "$temp_script" && grep -q "MOONFRP_VERSION" "$temp_script"; then
+                    log "INFO" "Downloaded script validated successfully"
+                    
+                    # Make executable
+                    chmod +x "$temp_script"
+                    
+                    # Replace current script
+                    mv "$temp_script" "$MOONFRP_INSTALL_PATH"
+                else
+                    log "ERROR" "Downloaded file doesn't appear to be a valid MoonFRP script"
+                    [[ -f "$temp_script" ]] && rm -f "$temp_script"
+                    return 1
+                fi
+            else
+                log "ERROR" "Downloaded file is not a valid bash script"
+                [[ -f "$temp_script" ]] && rm -f "$temp_script"
+                return 1
+            fi
             
             # Update symlinks if they exist
             [[ -L "/usr/bin/moonfrp" ]] && ln -sf "$MOONFRP_INSTALL_PATH" "/usr/bin/moonfrp"
@@ -2825,7 +2851,17 @@ main_menu() {
     [[ -z "$FRP_INSTALLATION_STATUS" ]] && check_frp_installation_cached >/dev/null
     [[ "$UPDATE_CHECK_DONE" == "false" ]] && check_updates_cached
     
+    # Add safety check to prevent infinite loops
+    local menu_iterations=0
+    local max_iterations=1000
+    
     while true; do
+        # Safety check
+        ((menu_iterations++))
+        if [[ $menu_iterations -gt $max_iterations ]]; then
+            log "ERROR" "Menu exceeded maximum iterations, exiting..."
+            cleanup_and_exit
+        fi
         # Fast clear with optimized escape sequences
         printf '\033[2J\033[H'
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
@@ -2867,19 +2903,43 @@ main_menu() {
         read -r choice
         
         case $choice in
-            1) config_creation_menu ;;
-            2) service_management_menu ;;
-            3) download_and_install_frp; read -p "Press Enter to continue..." ;;
-            4) install_from_local; read -p "Press Enter to continue..." ;;
-            5) troubleshooting_menu ;;
-            6) update_moonfrp_script ;;
-            7) show_about_info ;;
-            8) show_current_config_summary ;;
+            1) 
+                config_creation_menu
+                ;;
+            2) 
+                service_management_menu
+                ;;
+            3) 
+                download_and_install_frp
+                read -p "Press Enter to continue..."
+                ;;
+            4) 
+                install_from_local
+                read -p "Press Enter to continue..."
+                ;;
+            5) 
+                troubleshooting_menu
+                ;;
+            6) 
+                update_moonfrp_script
+                read -p "Press Enter to continue..."
+                ;;
+            7) 
+                show_about_info
+                read -p "Press Enter to continue..."
+                ;;
+            8) 
+                show_current_config_summary
+                read -p "Press Enter to continue..."
+                ;;
             0) 
                 echo -e "\n${GREEN}Thank you for using MoonFRP! 🚀${NC}"
                 cleanup_and_exit
                 ;;
-            *) log "WARN" "Invalid choice. Please try again."; sleep 1 ;;
+            *) 
+                log "WARN" "Invalid choice. Please try again."
+                sleep 1
+                ;;
         esac
     done
 }
@@ -2965,15 +3025,6 @@ cleanup_and_exit() {
     exit 0
 }
 
-# Main execution
-main() {
-    init
-    main_menu
-}
-
-# Run main function
-main "$@" 
-
 # Troubleshooting and diagnostics menu
 troubleshooting_menu() {
     while true; do
@@ -2999,15 +3050,15 @@ troubleshooting_menu() {
         read -r choice
         
         case $choice in
-            1) check_all_proxy_conflicts ;;
-            2) check_all_port_conflicts ;;
-            3) validate_all_connections ;;
-            4) view_service_logs_menu ;;
-            5) fix_common_issues ;;
-            6) generate_diagnostic_report ;;
-            7) show_quick_help ;;
-            8) fix_web_panel_issues ;;
-            9) monitor_all_proxies ;;
+            1) check_all_proxy_conflicts; read -p "Press Enter to continue..." ;;
+            2) check_all_port_conflicts; read -p "Press Enter to continue..." ;;
+            3) validate_all_connections; read -p "Press Enter to continue..." ;;
+            4) view_service_logs_menu; read -p "Press Enter to continue..." ;;
+            5) fix_common_issues; read -p "Press Enter to continue..." ;;
+            6) generate_diagnostic_report; read -p "Press Enter to continue..." ;;
+            7) show_quick_help; read -p "Press Enter to continue..." ;;
+            8) fix_web_panel_issues; read -p "Press Enter to continue..." ;;
+            9) monitor_all_proxies; read -p "Press Enter to continue..." ;;
             0) return ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
@@ -3054,8 +3105,6 @@ check_all_proxy_conflicts() {
         echo -e "  2. Remove duplicate configurations"
         echo -e "  3. Regenerate configurations with unique names"
     fi
-    
-    read -p "Press Enter to continue..."
 }
 
 # Check all port conflicts
@@ -3101,8 +3150,6 @@ check_all_port_conflicts() {
         log "INFO" "✅ No port conflicts found in FRP configurations"
         echo -e "${GREEN}Total ports configured: ${#used_ports[@]}${NC}"
     fi
-    
-    read -p "Press Enter to continue..."
 }
 
 # Validate all server connections
@@ -3140,9 +3187,11 @@ validate_all_connections() {
     echo -e "\n${CYAN}📊 Connection Summary:${NC}"
     echo -e "  Servers tested: $servers_checked"
     echo -e "  Failed connections: $servers_failed"
-    echo -e "  Success rate: $(( (servers_checked - servers_failed) * 100 / servers_checked ))%"
-    
-    read -p "Press Enter to continue..."
+    if [[ $servers_checked -gt 0 ]]; then
+        echo -e "  Success rate: $(( (servers_checked - servers_failed) * 100 / servers_checked ))%"
+    else
+        echo -e "  No servers found to test"
+    fi
 }
 
 # View service logs
@@ -3154,7 +3203,6 @@ view_service_logs_menu() {
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
-        read -p "Press Enter to continue..."
         return
     fi
     
@@ -3183,8 +3231,6 @@ view_service_logs_menu() {
     else
         log "ERROR" "Invalid service number"
     fi
-    
-    read -p "Press Enter to continue..."
 }
 
 # Fix common issues
@@ -3245,8 +3291,6 @@ fix_common_issues() {
             log "ERROR" "Invalid choice"
             ;;
     esac
-    
-    read -p "Press Enter to continue..."
 }
 
 # Generate diagnostic report
@@ -3311,8 +3355,6 @@ generate_diagnostic_report() {
     echo -e "\n${CYAN}Report preview:${NC}"
     head -30 "$report_file"
     echo -e "\n${YELLOW}... (truncated, see full report in file)${NC}"
-    
-    read -p "Press Enter to continue..."
 } 
 
 # Show about and version information
@@ -3762,7 +3804,6 @@ fix_web_panel_issues() {
     else
         echo -e "\n${RED}❌ Server configuration file not found: $CONFIG_DIR/frps.toml${NC}"
         echo -e "${YELLOW}Please create server configuration first${NC}"
-        read -p "Press Enter to continue..."
         return
     fi
     
@@ -3956,6 +3997,16 @@ fix_web_panel_issues() {
             echo -e "${RED}❌ Invalid option${NC}"
             ;;
     esac
-    
-    read -p "Press Enter to continue..."
-} 
+}
+
+# Main execution function
+main() {
+    init
+    main_menu
+}
+
+# Run main function only if script is executed directly
+# and not during testing or sourcing
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]] && [[ -z "${MOONFRP_TESTING:-}" ]]; then
+    main "$@"
+fi
