@@ -35,7 +35,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.2"
+MOONFRP_VERSION="1.0.3"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/bin/moonfrp"
@@ -4079,7 +4079,7 @@ show_current_config_summary() {
     
     # Services overview
     local active_services=$(systemctl list-units --type=service --state=active --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
-    local total_services=$(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)sd
+    local total_services=$(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
     
     echo -e "  ${CYAN}Services:${NC} ${GREEN}$active_services active${NC} / ${YELLOW}$total_services total${NC}"
     
