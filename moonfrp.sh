@@ -3604,6 +3604,12 @@ show_current_config_summary() {
         echo -e "  ${CYAN}Auth Token:${NC} ${GREEN}${token:0:8}...${NC}"
         [[ -n "$dashboard_port" ]] && echo -e "  ${CYAN}Dashboard:${NC} ${GREEN}http://SERVER-IP:$dashboard_port${NC}"
         
+        # Share with clients information
+        echo -e "\n  ${CYAN}3. Share with clients:${NC}"
+        echo -e "     ${YELLOW}• Server IPs:${NC} ${GREEN}45.94.214.223,89.47.198.149,62.60.193.202,89.47.198.185${NC}"
+        echo -e "     ${YELLOW}• Server Port:${NC} ${GREEN}$bind_port${NC}"
+        echo -e "     ${YELLOW}• Token:${NC} ${GREEN}$token${NC}"
+        
         # Check server status
         local server_services=($(systemctl list-units --type=service --state=active 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
         if [[ ${#server_services[@]} -gt 0 ]]; then
