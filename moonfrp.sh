@@ -880,32 +880,19 @@ cleanup_old_configs() {
             log "INFO" "Backed up existing configurations to: $backup_dir"
             ;;
         "remove")
-            echo -e "\n${YELLOW}Found existing FRP client configurations.${NC}"
-            echo -e "${CYAN}Choose action:${NC}"
-            echo "1. Backup and remove existing configs"
-            echo "2. Keep existing configs (may cause conflicts)"
-            echo "3. Cancel operation"
+            echo -e "\n${YELLOW}⚠️  Existing FRP client configurations found.${NC}"
+            echo -e "${CYAN}Remove existing configurations? (Y/n):${NC} "
+            read -r remove_choice
             
-            read -p "Enter choice [1-3]: " choice
-            
-            case "$choice" in
-                1)
-                    cleanup_old_configs "backup"
-                    rm -f "$CONFIG_DIR"/frpc_*.toml
-                    log "INFO" "Removed existing client configurations"
-                    ;;
-                2)
-                    log "WARN" "Keeping existing configs - conflicts may occur"
-                    ;;
-                3)
-                    log "INFO" "Operation cancelled by user"
-                    return 1
-                    ;;
-                *)
-                    log "ERROR" "Invalid choice"
-                    return 1
-                    ;;
-            esac
+            if [[ ! "$remove_choice" =~ ^[Nn]$ ]]; then
+                # Backup first
+                cleanup_old_configs "backup"
+                # Remove old configs
+                rm -f "$CONFIG_DIR"/frpc_*.toml
+                log "INFO" "Removed existing client configurations"
+            else
+                log "WARN" "Keeping existing configs - conflicts may occur"
+            fi
             ;;
     esac
     
@@ -1842,8 +1829,34 @@ manage_service_action() {
         ((i++))
     done
     
-    echo -e "\n${YELLOW}Select service number:${NC} "
+    echo -e "\n${YELLOW}Select service number (or 'all' for all services):${NC} "
     read -r service_num
+    
+    if [[ "$service_num" == "all" ]]; then
+        # Handle all services
+        echo -e "\n${CYAN}Performing '$action' on all services...${NC}"
+        for service in "${services[@]}"; do
+            echo -e "${CYAN}Processing: $service${NC}"
+            case "$action" in
+                "start") start_service "$service" ;;
+                "stop") stop_service "$service" ;;
+                "restart") restart_service "$service" ;;
+                "reload") systemctl reload "$service" 2>/dev/null || systemctl restart "$service" ;;
+                "status"|"logs") 
+                    echo -e "${YELLOW}Skipping '$action' for $service (not supported for bulk operations)${NC}"
+                    ;;
+            esac
+        done
+        
+        if [[ "$action" == "stop" ]]; then
+            echo -e "${CYAN}Running systemctl daemon-reload...${NC}"
+            systemctl daemon-reload
+        fi
+        
+        log "INFO" "Completed '$action' operation on all services"
+        read -p "Press Enter to continue..."
+        return
+    fi
     
     if [[ ! "$service_num" =~ ^[0-9]+$ ]] || [[ $service_num -lt 1 ]] || [[ $service_num -gt ${#services[@]} ]]; then
         log "ERROR" "Invalid service number"
@@ -2080,40 +2093,21 @@ create_iran_server_config() {
             echo -e "  • $server: ${server_status}"
         done
         
-        echo -e "\n${CYAN}What would you like to do?${NC}"
-        echo "1. Keep existing and create additional server"
-        echo "2. Remove existing servers and create new one"
-        echo "3. Cancel operation"
+        echo -e "\n${CYAN}Remove existing servers and create new one? (Y/n):${NC} "
+        read -r remove_servers
         
-        local service_choice=""
-        while true; do
-            echo -e "${YELLOW}Enter choice [1-3]:${NC} "
-            read -r service_choice
-            
-            case $service_choice in
-                1) 
-                    echo -e "${GREEN}Creating additional server service...${NC}"
-                    break 
-                    ;;
-                2) 
-                    echo -e "${YELLOW}Removing existing server services...${NC}"
-                    for server in "${existing_servers[@]}"; do
-                        systemctl stop "$server" 2>/dev/null || true
-                        systemctl disable "$server" 2>/dev/null || true
-                        rm -f "/etc/systemd/system/${server}.service"
-                    done
-                    systemctl daemon-reload
-                    echo -e "${GREEN}Existing servers removed${NC}"
-                    break 
-                    ;;
-                3) 
-                    log "INFO" "Operation cancelled by user"
-                    read -p "Press Enter to continue..."
-                    return
-                    ;;
-                *) echo -e "${RED}❌ Please enter 1, 2, or 3${NC}" ;;
-            esac
-        done
+        if [[ ! "$remove_servers" =~ ^[Nn]$ ]]; then
+            echo -e "${YELLOW}Removing existing server services...${NC}"
+            for server in "${existing_servers[@]}"; do
+                systemctl stop "$server" 2>/dev/null || true
+                systemctl disable "$server" 2>/dev/null || true
+                rm -f "/etc/systemd/system/${server}.service"
+            done
+            systemctl daemon-reload
+            echo -e "${GREEN}✅ Existing servers removed${NC}"
+        else
+            echo -e "${GREEN}Creating additional server service...${NC}"
+        fi
     fi
 
     echo -e "\n${CYAN}📋 Configuration Summary:${NC}"
@@ -2466,48 +2460,29 @@ create_foreign_client_config() {
             done
         fi
         
-        echo -e "\n${CYAN}What would you like to do?${NC}"
-        echo "1. Keep existing and add new configurations"
-        echo "2. Remove all existing configurations and services"
-        echo "3. Cancel operation"
+        echo -e "\n${CYAN}Remove all existing configurations and services? (Y/n):${NC} "
+        read -r remove_existing
         
-        local cleanup_choice=""
-        while true; do
-            echo -e "${YELLOW}Enter choice [1-3]:${NC} "
-            read -r cleanup_choice
+        if [[ ! "$remove_existing" =~ ^[Nn]$ ]]; then
+            echo -e "${YELLOW}Removing existing configurations and services...${NC}"
             
-            case $cleanup_choice in
-                1) 
-                    echo -e "${GREEN}Keeping existing configurations...${NC}"
-                    break 
-                    ;;
-                2) 
-                    echo -e "${YELLOW}Removing existing configurations and services...${NC}"
-                    
-                    # Stop and remove services
-                    for client in "${existing_clients[@]}"; do
-                        systemctl stop "$client" 2>/dev/null || true
-                        systemctl disable "$client" 2>/dev/null || true
-                        rm -f "/etc/systemd/system/${client}.service"
-                    done
-                    
-                    # Remove config files
-                    for config in "${existing_configs[@]}"; do
-                        rm -f "$config"
-                    done
-                    
-                    systemctl daemon-reload
-                    echo -e "${GREEN}✅ Existing configurations and services removed${NC}"
-                    break
-                    ;;
-                3) 
-                    log "INFO" "Operation cancelled by user"
-                    read -p "Press Enter to continue..."
-                    return
-                    ;;
-                *) echo -e "${RED}❌ Please enter 1, 2, or 3${NC}" ;;
-            esac
-        done
+            # Stop and remove services
+            for client in "${existing_clients[@]}"; do
+                systemctl stop "$client" 2>/dev/null || true
+                systemctl disable "$client" 2>/dev/null || true
+                rm -f "/etc/systemd/system/${client}.service"
+            done
+            
+            # Remove config files
+            for config in "${existing_configs[@]}"; do
+                rm -f "$config"
+            done
+            
+            systemctl daemon-reload
+            echo -e "${GREEN}✅ Existing configurations and services removed${NC}"
+        else
+            echo -e "${GREEN}Keeping existing configurations...${NC}"
+        fi
     fi
     
     # Server Connection Validation
@@ -2763,9 +2738,15 @@ remove_all_services() {
     read -r confirm
     
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "\n${CYAN}Removing all FRP services...${NC}"
         for service in "${services[@]}"; do
             remove_service "$service"
         done
+        
+        # Final cleanup and daemon reload
+        echo -e "\n${CYAN}Performing final cleanup...${NC}"
+        systemctl daemon-reload
+        
         log "INFO" "All FRP services removed successfully"
     else
         log "INFO" "Service removal cancelled"
@@ -2778,30 +2759,42 @@ remove_all_services() {
 remove_service() {
     local service_name="$1"
     
-    # Stop and disable service
-    stop_service "$service_name"
+    # Stop and disable service with improved error handling
+    echo -e "${CYAN}Stopping service: $service_name${NC}"
+    systemctl stop "$service_name" 2>/dev/null || true
+    systemctl disable "$service_name" 2>/dev/null || true
     
     # Remove service file
     local service_file="$SERVICE_DIR/${service_name}.service"
-    [[ -f "$service_file" ]] && rm -f "$service_file"
+    if [[ -f "$service_file" ]]; then
+        rm -f "$service_file"
+        echo -e "${GREEN}✅ Removed service file: $service_file${NC}"
+    fi
     
     # Remove configuration file
     if [[ "$service_name" =~ (frps|moonfrps) ]]; then
-        [[ -f "$CONFIG_DIR/frps.toml" ]] && rm -f "$CONFIG_DIR/frps.toml"
+        if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+            rm -f "$CONFIG_DIR/frps.toml"
+            echo -e "${GREEN}✅ Removed server configuration: $CONFIG_DIR/frps.toml${NC}"
+        fi
     elif [[ "$service_name" =~ (frpc|moonfrpc) ]]; then
         local config_pattern="$CONFIG_DIR/frpc_*.toml"
         for config_file in $config_pattern; do
-            [[ -f "$config_file" ]] && rm -f "$config_file"
+            if [[ -f "$config_file" ]]; then
+                rm -f "$config_file"
+                echo -e "${GREEN}✅ Removed client configuration: $config_file${NC}"
+            fi
         done
     fi
     
-    # Reload systemd
+    # Reload systemd daemon
+    echo -e "${CYAN}Reloading systemd daemon...${NC}"
     systemctl daemon-reload
     
     # Invalidate services cache
     CACHED_SERVICES=()
     
-    log "INFO" "Removed service: $service_name"
+    log "INFO" "Successfully removed service: $service_name"
 }
 
 # Global cache variables for performance
