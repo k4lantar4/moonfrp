@@ -1893,10 +1893,8 @@ create_iran_server_config() {
     
     # Bind port input with validation
     while true; do
-        echo -n "Bind Port (default: 7000): "
-        if ! safe_read "" bind_port "7000"; then
-            return  # Ctrl+C pressed, return to main menu
-        fi
+        read -p "Bind Port (default: 7000): " bind_port
+        [[ -z "$bind_port" ]] && bind_port=7000
         
         if validate_port "$bind_port"; then
             break
@@ -2016,13 +2014,34 @@ create_iran_server_config() {
         echo -e "${GREEN}Configuration:${NC} $CONFIG_DIR/frps.toml"
         echo -e "${GREEN}Service Status:${NC} $(get_service_status "moonfrp-server")"
         
-        # Get server IP information
+        # Get server IP information - filter only public IPv4
         local primary_ip=$(hostname -I | awk '{print $1}')
-        local all_ips=$(hostname -I | tr ' ' ',' | sed 's/,$//')
+        
+        # Filter only public IPv4 addresses (exclude local, private, and IPv6)
+        local public_ips=""
+        for ip in $(hostname -I); do
+            # Check if it's IPv4 and not private/local
+            if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                # Skip private ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x
+                if [[ ! $ip =~ ^10\. ]] && 
+                   [[ ! $ip =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && 
+                   [[ ! $ip =~ ^192\.168\. ]] && 
+                   [[ ! $ip =~ ^127\. ]]; then
+                    if [[ -z "$public_ips" ]]; then
+                        public_ips="$ip"
+                    else
+                        public_ips="$public_ips,$ip"
+                    fi
+                fi
+            fi
+        done
+        
+        # Use primary IP if no public IPs found
+        [[ -z "$public_ips" ]] && public_ips="$primary_ip"
         
         echo -e "\n${CYAN}🌐 Access Information:${NC}"
         echo -e "${GREEN}Primary Server IP:${NC} $primary_ip"
-        echo -e "${GREEN}All Server IPs:${NC} $all_ips"
+        echo -e "${GREEN}Public Server IPs:${NC} $public_ips"
         echo -e "${GREEN}Dashboard URL:${NC} http://$primary_ip:$dashboard_port"
         echo -e "${GREEN}Username:${NC} $dashboard_user"
         echo -e "${GREEN}Password:${NC} $dashboard_password"
@@ -2032,9 +2051,9 @@ create_iran_server_config() {
         echo -e "\n${CYAN}💡 Next Steps:${NC}"
         echo -e "  • Configure firewall: ${YELLOW}ufw allow $bind_port/tcp && ufw allow $dashboard_port/tcp${NC}"
         echo -e "  • Test dashboard: ${YELLOW}http://$primary_ip:$dashboard_port${NC}"
-        echo -e "  • Share server IPs with clients: ${YELLOW}$all_ips${NC}"
+        echo -e "  • Share server IPs with clients: ${YELLOW}$public_ips${NC}"
         echo -e "  • Share token with clients: ${YELLOW}$token${NC}"
-        echo -e "  • Use menu option 6 for troubleshooting if needed"
+        echo -e "  • Use menu option 5 for troubleshooting if needed"
         
         echo -e "\n${CYAN}🔧 Quick Commands:${NC}"
         echo -e "  • Check status: ${GREEN}systemctl status moonfrp-server${NC}"
