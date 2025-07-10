@@ -278,9 +278,24 @@ select_proxy_type() {
         echo -e "   • Suitable for: game servers, DNS, video streaming"
         echo -e "   • Example: local:25565 → remote:25565"
         
+        echo -e "\n${GREEN}5. TCPMUX${NC} ${YELLOW}(TCP multiplexing over HTTP CONNECT)${NC}"
+        echo -e "   • HTTP CONNECT based TCP multiplexing"
+        echo -e "   • Suitable for: HTTP proxy tunneling, corporate firewalls"
+        echo -e "   • Example: tunnel1.example.com → local:8080"
+        
+        echo -e "\n${GREEN}6. STCP${NC} ${YELLOW}(Secret TCP - P2P secure tunneling)${NC}"
+        echo -e "   • Secure point-to-point TCP tunneling"
+        echo -e "   • Suitable for: private services, secure remote access"
+        echo -e "   • Requires: secret key authentication"
+        
+        echo -e "\n${GREEN}7. SUDP${NC} ${YELLOW}(Secret UDP - P2P secure tunneling)${NC}"
+        echo -e "   • Secure point-to-point UDP tunneling"
+        echo -e "   • Suitable for: private games, secure UDP services"
+        echo -e "   • Requires: secret key authentication"
+        
         echo -e "\n${CYAN}0. Back${NC}"
         
-        echo -e "\n${YELLOW}Enter your choice [0-4] (default: 1):${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-7] (default: 1):${NC} "
         read -r choice
         
         # Default to TCP if no input
@@ -305,6 +320,21 @@ select_proxy_type() {
             4) 
                 SELECTED_PROXY_TYPE="udp"
                 SELECTED_PROXY_NAME="UDP"
+                return 0
+                ;;
+            5) 
+                SELECTED_PROXY_TYPE="tcpmux"
+                SELECTED_PROXY_NAME="TCPMUX"
+                return 0
+                ;;
+            6) 
+                SELECTED_PROXY_TYPE="stcp"
+                SELECTED_PROXY_NAME="STCP"
+                return 0
+                ;;
+            7) 
+                SELECTED_PROXY_TYPE="sudp"
+                SELECTED_PROXY_NAME="SUDP"
                 return 0
                 ;;
             0) 
@@ -674,6 +704,10 @@ get_config_template() {
         echo -e "\n${GREEN}8. Custom Ports${NC} ${YELLOW}(Manual configuration)${NC}"
         echo -e "   • Specify your own ports"
         
+        echo -e "\n${GREEN}9. Advanced Protocols${NC} ${YELLOW}(TCPMUX, STCP, SUDP)${NC}"
+        echo -e "   • Modern tunneling protocols"
+        echo -e "   • Secure P2P connections"
+        
         echo -e "\n${CYAN}0. Back${NC}"
         
         echo -e "\n${YELLOW}Select template [0-8]:${NC} "
@@ -787,6 +821,39 @@ get_config_template() {
                 TEMPLATE_NAME="Custom Configuration"
                 TEMPLATE_DESCRIPTION="Custom port configuration"
                 TEMPLATE_PROXY_TYPE="tcp"
+                return 0
+                ;;
+            9)
+                echo -e "\n${CYAN}Advanced Protocol Selection:${NC}"
+                echo "1. TCPMUX (HTTP CONNECT multiplexing)"
+                echo "2. STCP (Secure TCP P2P)"
+                echo "3. SUDP (Secure UDP P2P)"
+                
+                read -p "Choose protocol [1-3]: " proto_choice
+                case $proto_choice in
+                    1)
+                        TEMPLATE_PORTS="8080,8081,8082"
+                        TEMPLATE_NAME="TCPMUX Tunneling"
+                        TEMPLATE_DESCRIPTION="HTTP CONNECT based TCP multiplexing"
+                        TEMPLATE_PROXY_TYPE="tcpmux"
+                        ;;
+                    2)
+                        TEMPLATE_PORTS="2222,3333,4444"
+                        TEMPLATE_NAME="STCP Secure Tunneling"
+                        TEMPLATE_DESCRIPTION="Secure TCP P2P tunneling"
+                        TEMPLATE_PROXY_TYPE="stcp"
+                        ;;
+                    3)
+                        TEMPLATE_PORTS="5555,6666,7777"
+                        TEMPLATE_NAME="SUDP Secure Tunneling"
+                        TEMPLATE_DESCRIPTION="Secure UDP P2P tunneling"
+                        TEMPLATE_PROXY_TYPE="sudp"
+                        ;;
+                    *)
+                        log "WARN" "Invalid choice"
+                        continue
+                        ;;
+                esac
                 return 0
                 ;;
             0)
@@ -1043,6 +1110,15 @@ EOF
         "udp")
             generate_udp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
+        "tcpmux")
+            generate_tcpmux_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains"
+            ;;
+        "stcp")
+            generate_stcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            ;;
+        "sudp")
+            generate_sudp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            ;;
         *)
             log "WARN" "Unknown proxy type: $proxy_type, defaulting to TCP"
             generate_tcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
@@ -1227,6 +1303,128 @@ remotePort = $port
 
 EOF
     done
+}
+
+# Generate TCPMUX proxy configurations
+generate_tcpmux_proxies_simple() {
+    local config_file="$1"
+    local ports="$2"
+    local ip_suffix="$3"
+    local timestamp="$4"
+    local custom_domains="$5"
+    
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    IFS=',' read -ra DOMAIN_ARRAY <<< "$custom_domains"
+    
+    local port_index=0
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local unique_name="tcpmux-${port}-${ip_suffix}"
+        local domain=""
+        
+        # Use corresponding domain if available, otherwise generate default
+        if [[ $port_index -lt ${#DOMAIN_ARRAY[@]} ]] && [[ -n "${DOMAIN_ARRAY[$port_index]}" ]]; then
+            domain="${DOMAIN_ARRAY[$port_index]}"
+            domain=$(echo "$domain" | tr -d ' ')
+        else
+            domain="tunnel${port}"
+        fi
+        
+        cat >> "$config_file" << EOF
+[[proxies]]
+name = "$unique_name"
+type = "tcpmux"
+multiplexer = "httpconnect"
+localIP = "127.0.0.1"
+localPort = $port
+customDomains = ["$domain"]
+
+EOF
+        
+        ((port_index++))
+    done
+}
+
+# Generate STCP proxy configurations
+generate_stcp_proxies_simple() {
+    local config_file="$1"
+    local ports="$2"
+    local ip_suffix="$3"
+    local timestamp="$4"
+    
+    # Generate a unique secret key for this configuration
+    local secret_key="moonfrp-${ip_suffix}-${timestamp}"
+    
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local unique_name="stcp-${port}-${ip_suffix}"
+        cat >> "$config_file" << EOF
+[[proxies]]
+name = "$unique_name"
+type = "stcp"
+secretKey = "$secret_key"
+localIP = "127.0.0.1"
+localPort = $port
+# Allow all users to connect (use specific users for better security)
+allowUsers = ["*"]
+
+EOF
+    done
+    
+    # Add visitor configuration comment for user reference
+    cat >> "$config_file" << EOF
+# To connect to STCP proxies, use a visitor configuration like this:
+# [[visitors]]
+# name = "stcp_visitor"
+# type = "stcp"
+# serverName = "stcp-PORT-${ip_suffix}"
+# secretKey = "$secret_key"
+# bindAddr = "127.0.0.1"
+# bindPort = LOCAL_PORT
+
+EOF
+}
+
+# Generate SUDP proxy configurations
+generate_sudp_proxies_simple() {
+    local config_file="$1"
+    local ports="$2"
+    local ip_suffix="$3"
+    local timestamp="$4"
+    
+    # Generate a unique secret key for this configuration
+    local secret_key="moonfrp-udp-${ip_suffix}-${timestamp}"
+    
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local unique_name="sudp-${port}-${ip_suffix}"
+        cat >> "$config_file" << EOF
+[[proxies]]
+name = "$unique_name"
+type = "sudp"
+secretKey = "$secret_key"
+localIP = "127.0.0.1"
+localPort = $port
+# Allow all users to connect (use specific users for better security)
+allowUsers = ["*"]
+
+EOF
+    done
+    
+    # Add visitor configuration comment for user reference
+    cat >> "$config_file" << EOF
+# To connect to SUDP proxies, use a visitor configuration like this:
+# [[visitors]]
+# name = "sudp_visitor"
+# type = "sudp"
+# serverName = "sudp-PORT-${ip_suffix}"
+# secretKey = "$secret_key"
+# bindAddr = "127.0.0.1"
+# bindPort = LOCAL_PORT
+
+EOF
 }
 
 # Create systemd service file
@@ -2387,10 +2585,13 @@ create_foreign_client_config() {
         echo "2. HTTP (Web services with domain names)"
         echo "3. HTTPS (Secure web services)"
         echo "4. UDP (Games, DNS, streaming)"
+        echo "5. TCPMUX (TCP multiplexing over HTTP CONNECT)"
+        echo "6. STCP (Secret TCP - P2P secure tunneling)"
+        echo "7. SUDP (Secret UDP - P2P secure tunneling)"
         
         local proxy_choice=""
         while true; do
-            echo -e "${CYAN}Choose proxy type [1-4] (default: 1):${NC} "
+            echo -e "${CYAN}Choose proxy type [1-7] (default: 1):${NC} "
             read -r proxy_choice
             [[ -z "$proxy_choice" ]] && proxy_choice=1
             
@@ -2399,14 +2600,17 @@ create_foreign_client_config() {
                 2) proxy_type="http"; echo -e "${GREEN}✅ HTTP proxy selected${NC}"; break ;;
                 3) proxy_type="https"; echo -e "${GREEN}✅ HTTPS proxy selected${NC}"; break ;;
                 4) proxy_type="udp"; echo -e "${GREEN}✅ UDP proxy selected${NC}"; break ;;
-                *) echo -e "${RED}❌ Please enter 1, 2, 3, or 4${NC}" ;;
+                5) proxy_type="tcpmux"; echo -e "${GREEN}✅ TCPMUX proxy selected${NC}"; break ;;
+                6) proxy_type="stcp"; echo -e "${GREEN}✅ STCP proxy selected${NC}"; break ;;
+                7) proxy_type="sudp"; echo -e "${GREEN}✅ SUDP proxy selected${NC}"; break ;;
+                *) echo -e "${RED}❌ Please enter 1, 2, 3, 4, 5, 6, or 7${NC}" ;;
             esac
         done
     fi
     
-    # Custom domains for HTTP/HTTPS
+    # Custom domains for HTTP/HTTPS/TCPMUX
     local custom_domains=""
-    if [[ "$proxy_type" == "http" || "$proxy_type" == "https" ]]; then
+    if [[ "$proxy_type" == "http" || "$proxy_type" == "https" || "$proxy_type" == "tcpmux" ]]; then
         echo -e "\n${CYAN}🌐 Domain Configuration:${NC}"
         echo -e "${YELLOW}Configure custom domains? (y/N):${NC} "
         read -r use_domains
@@ -2629,6 +2833,23 @@ create_foreign_client_config() {
                     else
                         echo -e "  • Access via: ${YELLOW}$proxy_type://app${port}.moonfrp.local${NC}"
                     fi
+                    ;;
+                "tcpmux")
+                    if [[ -n "$custom_domains" ]]; then
+                        IFS=',' read -ra DOMAIN_ARRAY <<< "$custom_domains"
+                        local port_index=0
+                        for domain in "${DOMAIN_ARRAY[@]}"; do
+                            domain=$(echo "$domain" | tr -d ' ')
+                            echo -e "  • Access via: ${YELLOW}HTTP CONNECT to $domain${NC}"
+                            break
+                        done
+                    else
+                        echo -e "  • Access via: ${YELLOW}HTTP CONNECT to tunnel${port}${NC}"
+                    fi
+                    ;;
+                "stcp"|"sudp")
+                    echo -e "  • ${YELLOW}Secure P2P tunnel - requires visitor configuration${NC}"
+                    echo -e "  • Check config file for visitor setup instructions"
                     ;;
             esac
         done
@@ -2892,7 +3113,7 @@ main_menu() {
             echo -e "\n${GRAY}[Debug] Menu load time: $(date +%T) | Services cached: ${#CACHED_SERVICES[@]} | FRP status: $FRP_INSTALLATION_STATUS${NC}"
         fi
         
-        echo -e "\n${YELLOW}Enter your choice [0-8]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-9]:${NC} "
         read -r choice
         
         case $choice in

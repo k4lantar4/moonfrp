@@ -172,6 +172,16 @@ install_moonfrp() {
 create_symlink() {
     local symlink_path="/usr/bin/moonfrp"
     
+    # Remove any existing moonfrp installations in common paths
+    local existing_paths=("/usr/local/bin/moonfrp" "/usr/bin/moonfrp" "/opt/moonfrp/moonfrp")
+    
+    for path in "${existing_paths[@]}"; do
+        if [[ -f "$path" ]] && [[ "$path" != "$INSTALL_DIR/$SCRIPT_NAME" ]]; then
+            log "INFO" "Removing existing installation: $path"
+            rm -f "$path"
+        fi
+    done
+    
     # Check if the target already exists and is the same file
     if [[ -L "$symlink_path" ]]; then
         # If it's a symlink, remove it first
@@ -183,9 +193,9 @@ create_symlink() {
             log "INFO" "Command 'moonfrp' already points to correct location"
             return 0
         else
-            # Create alternative name
-            symlink_path="/usr/bin/moonfrp-cli"
-            log "WARN" "Command 'moonfrp' already exists, creating alternative: moonfrp-cli"
+            # Remove old version
+            rm -f "$symlink_path"
+            log "INFO" "Removed old version"
         fi
     fi
     
