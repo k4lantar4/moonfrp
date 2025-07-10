@@ -1475,22 +1475,38 @@ install_from_local() {
 check_moonfrp_updates() {
     log "INFO" "Checking for MoonFRP updates..."
     
-    # Get latest version from GitHub API
+    # Get latest version from GitHub API with improved parsing
     local latest_info=""
-    if latest_info=$(curl -s "$MOONFRP_REPO_URL" 2>/dev/null); then
-        local latest_version=$(echo "$latest_info" | grep '"tag_name"' | head -n1 | cut -d'"' -f4 | sed 's/^v//')
+    if latest_info=$(curl -s --connect-timeout 10 "$MOONFRP_REPO_URL" 2>/dev/null); then
+        # Multiple parsing methods for better compatibility
+        local latest_version=""
         
-        if [[ -n "$latest_version" ]]; then
+        # Method 1: Standard tag_name parsing
+        latest_version=$(echo "$latest_info" | grep '"tag_name"' | head -n1 | cut -d'"' -f4 | sed 's/^v//')
+        
+        # Method 2: Alternative parsing if first method fails
+        if [[ -z "$latest_version" ]]; then
+            latest_version=$(echo "$latest_info" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | cut -d'"' -f4 | sed 's/^v//')
+        fi
+        
+        # Method 3: JSON-style parsing fallback
+        if [[ -z "$latest_version" ]]; then
+            latest_version=$(echo "$latest_info" | grep -o 'tag_name[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | cut -d'"' -f2 | sed 's/^v//')
+        fi
+        
+        if [[ -n "$latest_version" && "$latest_version" != "" ]]; then
             log "INFO" "Current version: v$MOONFRP_VERSION"
             log "INFO" "Latest version: v$latest_version"
             
+            # Better version comparison
             if [[ "$latest_version" != "$MOONFRP_VERSION" ]]; then
                 return 0  # Update available
             else
                 return 1  # Already up to date
             fi
         else
-            log "WARN" "Could not parse version information"
+            log "WARN" "Could not parse version information from API response"
+            log "DEBUG" "API Response preview: $(echo "$latest_info" | head -c 200)..."
             return 2  # Error parsing
         fi
     else
@@ -1675,9 +1691,9 @@ list_frp_services() {
     # Cache services list for 5 seconds to improve performance
     local current_time=$(date +%s)
     if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
-        # More comprehensive service detection
+        # More comprehensive service detection with new naming
         CACHED_SERVICES=($(systemctl list-units --type=service --all 2>/dev/null | \
-            grep -E "(moonfrp|frp)" | \
+            grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
             grep -v "@" | \
             awk '{print $1}' | \
             sed 's/\.service//' | \
@@ -1707,9 +1723,9 @@ list_frp_services() {
         local status=$(get_service_status "$service")
         local type="Unknown"
         
-        if [[ "$service" =~ (frps|moonfrp-server) ]]; then
+        if [[ "$service" =~ (frps|moonfrps) ]]; then
             type="Server"
-        elif [[ "$service" =~ (frpc|moonfrp-client) ]]; then
+        elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
             type="Client"
         elif [[ "$service" =~ moonfrp ]]; then
             type="MoonFRP"
@@ -1742,9 +1758,11 @@ service_management_menu() {
         echo "6. Reload Service"
         echo "7. Remove Service"
         echo "8. Remove All Services"
+        echo "9. Real-time Status Monitor"
+        echo "10. Current Configuration Summary"
         echo "0. Back to Main Menu"
         
-        echo -e "\n${YELLOW}Enter your choice [0-8]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-10]:${NC} "
         read -r choice
         
         case $choice in
@@ -1756,6 +1774,8 @@ service_management_menu() {
             6) manage_service_action "reload" ;;
             7) remove_single_service ;;
             8) remove_all_services ;;
+            9) real_time_status_monitor ;;
+            10) show_current_config_summary ;;
             0) return ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
@@ -1767,7 +1787,7 @@ manage_service_action() {
     local action="$1"
     
     echo -e "\n${CYAN}Available services:${NC}"
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -1775,9 +1795,24 @@ manage_service_action() {
         return
     fi
     
+    printf "%-4s %-25s %-12s %-15s\n" "No." "Service" "Status" "Type"
+    printf "%-4s %-25s %-12s %-15s\n" "---" "-------" "------" "----"
+    
     local i=1
     for service in "${services[@]}"; do
-        echo "$i. $service"
+        local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
+        local type="Unknown"
+        
+        if [[ "$service" =~ (frps|moonfrps) ]]; then
+            type="Server"
+        elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
+            type="Client"
+        fi
+        
+        local status_color="$RED"
+        [[ "$status" == "active" ]] && status_color="$GREEN"
+        
+        printf "%-4s %-25s ${status_color}%-12s${NC} %-15s\n" "$i." "$service" "$status" "$type"
         ((i++))
     done
     
@@ -1803,12 +1838,45 @@ manage_service_action() {
             restart_service "$selected_service"
             ;;
         "status")
-            echo -e "\n${CYAN}Service Status:${NC}"
-            systemctl status "$selected_service"
+            echo -e "\n${CYAN}🔍 Detailed Service Status: $selected_service${NC}"
+            echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            
+            # Basic status
+            local status=$(systemctl is-active "$selected_service" 2>/dev/null || echo "inactive")
+            local enabled=$(systemctl is-enabled "$selected_service" 2>/dev/null || echo "disabled")
+            
+            echo -e "${CYAN}Status:${NC} $([ "$status" == "active" ] && echo "${GREEN}✅ $status${NC}" || echo "${RED}❌ $status${NC}")"
+            echo -e "${CYAN}Enabled:${NC} $([ "$enabled" == "enabled" ] && echo "${GREEN}✅ $enabled${NC}" || echo "${YELLOW}⚠️  $enabled${NC}")"
+            
+            # Systemctl status output
+            echo -e "\n${CYAN}Full Status:${NC}"
+            systemctl status "$selected_service" --no-pager
+            
+            # Configuration file info if available
+            if [[ "$selected_service" =~ moonfrps ]]; then
+                if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+                    echo -e "\n${CYAN}Configuration:${NC} $CONFIG_DIR/frps.toml"
+                    echo -e "${CYAN}Config Size:${NC} $(ls -lh "$CONFIG_DIR/frps.toml" | awk '{print $5}')"
+                fi
+            elif [[ "$selected_service" =~ moonfrpc ]]; then
+                local ip_suffix=$(echo "$selected_service" | grep -o '[0-9]\+$')
+                if [[ -n "$ip_suffix" && -f "$CONFIG_DIR/frpc_${ip_suffix}.toml" ]]; then
+                    echo -e "\n${CYAN}Configuration:${NC} $CONFIG_DIR/frpc_${ip_suffix}.toml"
+                    echo -e "${CYAN}Config Size:${NC} $(ls -lh "$CONFIG_DIR/frpc_${ip_suffix}.toml" | awk '{print $5}')"
+                fi
+            fi
             ;;
         "logs")
-            echo -e "\n${CYAN}Service Logs:${NC}"
-            journalctl -u "$selected_service" -n 50 --no-pager
+            echo -e "\n${CYAN}📋 Service Logs: $selected_service${NC}"
+            echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            
+            echo -e "${YELLOW}Recent logs (last 50 lines):${NC}"
+            journalctl -u "$selected_service" -n 50 --no-pager --output=short-precise
+            
+            echo -e "\n${YELLOW}Real-time logs (press Ctrl+C to stop):${NC}"
+            echo -e "${GRAY}Starting in 3 seconds...${NC}"
+            sleep 3
+            journalctl -u "$selected_service" -f --output=short-precise
             ;;
         "reload")
             systemctl reload "$selected_service" 2>/dev/null || systemctl restart "$selected_service"
@@ -1977,6 +2045,51 @@ create_iran_server_config() {
     fi
     
     # Configuration Summary
+    # Check for existing server services
+    local existing_servers=($(systemctl list-units --type=service --all 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
+    if [[ ${#existing_servers[@]} -gt 0 ]]; then
+        echo -e "\n${YELLOW}⚠️  Existing server service(s) detected:${NC}"
+        for server in "${existing_servers[@]}"; do
+            local server_status=$(systemctl is-active "$server" 2>/dev/null || echo "inactive")
+            echo -e "  • $server: ${server_status}"
+        done
+        
+        echo -e "\n${CYAN}What would you like to do?${NC}"
+        echo "1. Keep existing and create additional server"
+        echo "2. Remove existing servers and create new one"
+        echo "3. Cancel operation"
+        
+        local service_choice=""
+        while true; do
+            echo -e "${YELLOW}Enter choice [1-3]:${NC} "
+            read -r service_choice
+            
+            case $service_choice in
+                1) 
+                    echo -e "${GREEN}Creating additional server service...${NC}"
+                    break 
+                    ;;
+                2) 
+                    echo -e "${YELLOW}Removing existing server services...${NC}"
+                    for server in "${existing_servers[@]}"; do
+                        systemctl stop "$server" 2>/dev/null || true
+                        systemctl disable "$server" 2>/dev/null || true
+                        rm -f "/etc/systemd/system/${server}.service"
+                    done
+                    systemctl daemon-reload
+                    echo -e "${GREEN}Existing servers removed${NC}"
+                    break 
+                    ;;
+                3) 
+                    log "INFO" "Operation cancelled by user"
+                    read -p "Press Enter to continue..."
+                    return
+                    ;;
+                *) echo -e "${RED}❌ Please enter 1, 2, or 3${NC}" ;;
+            esac
+        done
+    fi
+
     echo -e "\n${CYAN}📋 Configuration Summary:${NC}"
     echo -e "${GRAY}┌─────────────────────────────────────────────────┐${NC}"
     echo -e "${GRAY}│${NC} ${GREEN}FRP Server Port:${NC} $bind_port"
@@ -2012,10 +2125,14 @@ create_iran_server_config() {
             return
         fi
         
-        # Create systemd service
+        # Create systemd service with improved naming
+        local server_count=$(ls /etc/systemd/system/moonfrps-*.service 2>/dev/null | wc -l)
+        ((server_count++))
+        local server_service_name="moonfrps-${server_count}"
+        
         echo -e "\n${CYAN}🔧 Creating systemd service...${NC}"
-        if create_systemd_service "moonfrp-server" "frps" "$CONFIG_DIR/frps.toml"; then
-            echo -e "${GREEN}✅ Service created: moonfrp-server${NC}"
+        if create_systemd_service "$server_service_name" "frps" "$CONFIG_DIR/frps.toml"; then
+            echo -e "${GREEN}✅ Service created: $server_service_name${NC}"
         else
             echo -e "${RED}❌ Failed to create service${NC}"
             read -p "Press Enter to continue..."
@@ -2023,24 +2140,24 @@ create_iran_server_config() {
         fi
         
         # Start service
-        echo -e "\n${CYAN}🚀 Starting service: moonfrp-server${NC}"
-        if start_service "moonfrp-server"; then
+        echo -e "\n${CYAN}🚀 Starting service: $server_service_name${NC}"
+        if start_service "$server_service_name"; then
             echo -e "${GREEN}✅ Service started successfully${NC}"
             
             # Wait a moment and check service status
             sleep 3
-            local service_status=$(get_service_status "moonfrp-server")
+            local service_status=$(get_service_status "$server_service_name")
             if [[ "$service_status" == "active" ]]; then
                 echo -e "${GREEN}✅ Service is running properly${NC}"
             else
                 echo -e "${YELLOW}⚠️  Service status: $service_status${NC}"
                 echo -e "${CYAN}Checking logs for errors...${NC}"
-                journalctl -u moonfrp-server -n 5 --no-pager
+                journalctl -u "$server_service_name" -n 5 --no-pager
             fi
         else
             echo -e "${RED}❌ Failed to start service${NC}"
             echo -e "${CYAN}Checking logs for errors...${NC}"
-            journalctl -u moonfrp-server -n 10 --no-pager
+            journalctl -u "$server_service_name" -n 10 --no-pager
             read -p "Press Enter to continue..."
             return
         fi
@@ -2054,9 +2171,9 @@ create_iran_server_config() {
         echo -e "\n${GREEN}✅ Iran server configuration created successfully!${NC}"
         
         echo -e "\n${CYAN}📋 Server Information:${NC}"
-        echo -e "${GREEN}• Service Name:${NC} moonfrp-server"
+        echo -e "${GREEN}• Service Name:${NC} $server_service_name"
         echo -e "${GREEN}• Configuration:${NC} $CONFIG_DIR/frps.toml"
-        echo -e "${GREEN}• Service Status:${NC} $(get_service_status "moonfrp-server")"
+        echo -e "${GREEN}• Service Status:${NC} $(get_service_status "$server_service_name")"
         
         # Get server IP information
         local primary_ip=$(hostname -I | awk '{print $1}')
@@ -2087,9 +2204,9 @@ create_iran_server_config() {
         echo -e "     ${YELLOW}• Token: $token${NC}"
         
         echo -e "\n${CYAN}🔧 Management Commands:${NC}"
-        echo -e "  • Check status: ${GREEN}systemctl status moonfrp-server${NC}"
-        echo -e "  • View logs: ${GREEN}journalctl -u moonfrp-server -f${NC}"
-        echo -e "  • Restart: ${GREEN}systemctl restart moonfrp-server${NC}"
+        echo -e "  • Check status: ${GREEN}systemctl status $server_service_name${NC}"
+        echo -e "  • View logs: ${GREEN}journalctl -u $server_service_name -f${NC}"
+        echo -e "  • Restart: ${GREEN}systemctl restart $server_service_name${NC}"
         
     else
         echo -e "${RED}❌ Failed to generate server configuration${NC}"
@@ -2301,12 +2418,31 @@ create_foreign_client_config() {
         return
     fi
     
-    # Check for existing configurations
-    if ls "$CONFIG_DIR"/frpc_*.toml 1> /dev/null 2>&1; then
-        echo -e "\n${YELLOW}⚠️  Existing client configurations detected${NC}"
-        echo -e "${CYAN}What would you like to do?${NC}"
+    # Check for existing configurations and services
+    local existing_clients=($(systemctl list-units --type=service --all 2>/dev/null | grep moonfrpc | awk '{print $1}' | sed 's/\.service//'))
+    local existing_configs=($(ls "$CONFIG_DIR"/frpc_*.toml 2>/dev/null))
+    
+    if [[ ${#existing_clients[@]} -gt 0 ]] || [[ ${#existing_configs[@]} -gt 0 ]]; then
+        echo -e "\n${YELLOW}⚠️  Existing client configurations detected:${NC}"
+        
+        if [[ ${#existing_clients[@]} -gt 0 ]]; then
+            echo -e "${CYAN}Services:${NC}"
+            for client in "${existing_clients[@]}"; do
+                local client_status=$(systemctl is-active "$client" 2>/dev/null || echo "inactive")
+                echo -e "  • $client: ${client_status}"
+            done
+        fi
+        
+        if [[ ${#existing_configs[@]} -gt 0 ]]; then
+            echo -e "${CYAN}Configuration files:${NC}"
+            for config in "${existing_configs[@]}"; do
+                echo -e "  • $(basename "$config")"
+            done
+        fi
+        
+        echo -e "\n${CYAN}What would you like to do?${NC}"
         echo "1. Keep existing and add new configurations"
-        echo "2. Remove all existing configurations first"
+        echo "2. Remove all existing configurations and services"
         echo "3. Cancel operation"
         
         local cleanup_choice=""
@@ -2315,15 +2451,28 @@ create_foreign_client_config() {
             read -r cleanup_choice
             
             case $cleanup_choice in
-                1) break ;;
+                1) 
+                    echo -e "${GREEN}Keeping existing configurations...${NC}"
+                    break 
+                    ;;
                 2) 
-                    if cleanup_old_configs "remove"; then
-                        echo -e "${GREEN}✅ Existing configurations removed${NC}"
-                        break
-                    else
-                        read -p "Press Enter to continue..."
-                        return
-                    fi
+                    echo -e "${YELLOW}Removing existing configurations and services...${NC}"
+                    
+                    # Stop and remove services
+                    for client in "${existing_clients[@]}"; do
+                        systemctl stop "$client" 2>/dev/null || true
+                        systemctl disable "$client" 2>/dev/null || true
+                        rm -f "/etc/systemd/system/${client}.service"
+                    done
+                    
+                    # Remove config files
+                    for config in "${existing_configs[@]}"; do
+                        rm -f "$config"
+                    done
+                    
+                    systemctl daemon-reload
+                    echo -e "${GREEN}✅ Existing configurations and services removed${NC}"
+                    break
                     ;;
                 3) 
                     log "INFO" "Operation cancelled by user"
@@ -2392,9 +2541,10 @@ create_foreign_client_config() {
                 echo -e "${YELLOW}⚠️  Configuration validation failed, but proceeding...${NC}"
             fi
             
-            # Create systemd service
-            if create_systemd_service "moonfrp-client-$ip_suffix" "frpc" "$CONFIG_DIR/frpc_${ip_suffix}.toml" "$ip_suffix"; then
-                echo -e "${GREEN}✅ Service created: moonfrp-client-$ip_suffix${NC}"
+            # Create systemd service with new naming convention
+            local client_service_name="moonfrpc-${ip_suffix}"
+            if create_systemd_service "$client_service_name" "frpc" "$CONFIG_DIR/frpc_${ip_suffix}.toml" "$ip_suffix"; then
+                echo -e "${GREEN}✅ Service created: $client_service_name${NC}"
             else
                 echo -e "${RED}❌ Failed to create service${NC}"
                 ((failed_count++))
@@ -2402,7 +2552,7 @@ create_foreign_client_config() {
             fi
             
             # Start service
-            if start_service "moonfrp-client-$ip_suffix"; then
+            if start_service "$client_service_name"; then
                 ((config_count++))
                 echo -e "${GREEN}✅ Service started successfully${NC}"
             else
@@ -2439,7 +2589,7 @@ create_foreign_client_config() {
         for ip in "${IP_ARRAY[@]}"; do
             ip=$(echo "$ip" | tr -d ' ')
             local ip_suffix=$(echo "$ip" | cut -d'.' -f4)
-            local service_name="moonfrp-client-$ip_suffix"
+            local service_name="moonfrpc-$ip_suffix"
             local service_status=$(get_service_status "$service_name")
             local status_icon="❌"
             local status_color="$RED"
@@ -2483,10 +2633,10 @@ create_foreign_client_config() {
         done
         
         echo -e "\n${CYAN}🔧 Management Commands:${NC}"
-        echo -e "  • Check all services: ${GREEN}systemctl status moonfrp-client-*${NC}"
-        echo -e "  • View logs: ${GREEN}journalctl -u moonfrp-client-* -f${NC}"
-        echo -e "  • Restart all: ${GREEN}systemctl restart moonfrp-client-*${NC}"
-        echo -e "  • Stop all: ${GREEN}systemctl stop moonfrp-client-*${NC}"
+        echo -e "  • Check all services: ${GREEN}systemctl status moonfrpc-*${NC}"
+        echo -e "  • View logs: ${GREEN}journalctl -u moonfrpc-* -f${NC}"
+        echo -e "  • Restart all: ${GREEN}systemctl restart moonfrpc-*${NC}"
+        echo -e "  • Stop all: ${GREEN}systemctl stop moonfrpc-*${NC}"
         
         echo -e "\n${YELLOW}💡 Troubleshooting:${NC}"
         echo -e "  • Use menu option 5 for detailed diagnostics"
@@ -2705,6 +2855,7 @@ main_menu() {
         echo "5. Troubleshooting & Diagnostics"
         echo "6. Update MoonFRP Script"
         echo "7. About & Version Info"
+        echo "8. Configuration Summary"
         echo "0. Exit"
         
         # Show performance info in debug mode
@@ -2712,26 +2863,24 @@ main_menu() {
             echo -e "\n${GRAY}[Debug] Menu load time: $(date +%T) | Services cached: ${#CACHED_SERVICES[@]} | FRP status: $FRP_INSTALLATION_STATUS${NC}"
         fi
         
-        echo -e "\n${YELLOW}Enter your choice [0-7]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-8]:${NC} "
         read -r choice
         
         case $choice in
             1) config_creation_menu ;;
             2) service_management_menu ;;
-            3) download_and_install_frp ;;
-            4) install_from_local ;;
+            3) download_and_install_frp; read -p "Press Enter to continue..." ;;
+            4) install_from_local; read -p "Press Enter to continue..." ;;
             5) troubleshooting_menu ;;
             6) update_moonfrp_script ;;
             7) show_about_info ;;
+            8) show_current_config_summary ;;
             0) 
                 echo -e "\n${GREEN}Thank you for using MoonFRP! 🚀${NC}"
                 cleanup_and_exit
                 ;;
-            *) log "WARN" "Invalid choice. Please try again." ;;
+            *) log "WARN" "Invalid choice. Please try again."; sleep 1 ;;
         esac
-        
-        # Pause after each action (except menu navigation)
-        [[ "$choice" =~ ^[3-4]$ ]] && read -p "Press Enter to continue..."
     done
 }
 
@@ -3268,7 +3417,281 @@ show_about_info() {
     echo -e "\n${GREEN}🌙 Thank you for using MoonFRP!${NC}"
     
     read -p "Press Enter to continue..."
-} 
+}
+
+# Real-time status monitor
+real_time_status_monitor() {
+    clear
+    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║        Real-time Status Monitor     ║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+    
+    echo -e "\n${CYAN}🔄 Real-time monitoring (Press Ctrl+C to exit)${NC}"
+    
+    local update_interval=3
+    local iteration=0
+    
+    while true; do
+        ((iteration++))
+        
+        # Clear screen and show header
+        tput cup 5 0
+        tput ed
+        
+        echo -e "${CYAN}📊 Live Status (Update #$iteration - Every ${update_interval}s)${NC}"
+        echo -e "${GRAY}$(date)${NC}"
+        echo ""
+        
+        # Get all services
+        local services=($(systemctl list-units --type=service --all 2>/dev/null | \
+            grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+            awk '{print $1}' | sed 's/\.service//' | grep -v "^$"))
+        
+        if [[ ${#services[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}No FRP services found${NC}"
+        else
+            # Services status table
+            printf "%-25s %-12s %-15s %-20s\n" "Service" "Status" "Type" "Last Activity"
+            printf "%-25s %-12s %-15s %-20s\n" "-------" "------" "----" "-------------"
+            
+            for service in "${services[@]}"; do
+                [[ -z "$service" ]] && continue
+                
+                local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
+                local type="Unknown"
+                local last_activity=""
+                
+                # Determine service type
+                if [[ "$service" =~ (frps|moonfrps) ]]; then
+                    type="Server"
+                elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
+                    type="Client"
+                fi
+                
+                # Get last activity
+                last_activity=$(journalctl -u "$service" -n 1 --no-pager --since "1 hour ago" -o short 2>/dev/null | tail -1 | awk '{print $1, $2}' || echo "N/A")
+                [[ -z "$last_activity" || "$last_activity" == " " ]] && last_activity="No recent logs"
+                
+                # Color status
+                local status_color="$RED"
+                [[ "$status" == "active" ]] && status_color="$GREEN"
+                
+                printf "%-25s ${status_color}%-12s${NC} %-15s %-20s\n" \
+                    "$service" "$status" "$type" "$last_activity"
+            done
+            
+            # Configuration files status
+            echo ""
+            echo -e "${CYAN}📁 Configuration Files:${NC}"
+            printf "%-30s %-10s %-15s\n" "File" "Size" "Modified"
+            printf "%-30s %-10s %-15s\n" "----" "----" "--------"
+            
+            for config_file in "$CONFIG_DIR"/*.toml; do
+                [[ ! -f "$config_file" ]] && continue
+                
+                local filename=$(basename "$config_file")
+                local filesize=$(ls -lh "$config_file" | awk '{print $5}')
+                local modified=$(stat -c %y "$config_file" 2>/dev/null | cut -d' ' -f1 || echo "Unknown")
+                
+                printf "%-30s %-10s %-15s\n" "$filename" "$filesize" "$modified"
+            done
+            
+            # Connection status for clients
+            echo ""
+            echo -e "${CYAN}🌐 Connection Status:${NC}"
+            
+            for config_file in "$CONFIG_DIR"/frpc_*.toml; do
+                [[ ! -f "$config_file" ]] && continue
+                
+                local server_addr=""
+                local server_port=""
+                local ip_suffix=$(basename "$config_file" | sed 's/frpc_//' | sed 's/.toml//')
+                
+                # Extract server info
+                while IFS= read -r line; do
+                    if [[ $line =~ serverAddr\ =\ \"([^\"]+)\" ]]; then
+                        server_addr="${BASH_REMATCH[1]}"
+                    elif [[ $line =~ serverPort\ =\ ([0-9]+) ]]; then
+                        server_port="${BASH_REMATCH[1]}"
+                    fi
+                done < "$config_file"
+                
+                if [[ -n "$server_addr" && -n "$server_port" ]]; then
+                    printf "%-15s -> %-20s " "Client-$ip_suffix" "$server_addr:$server_port"
+                    
+                    if timeout 2 nc -z "$server_addr" "$server_port" 2>/dev/null; then
+                        echo -e "${GREEN}✅ Connected${NC}"
+                    else
+                        echo -e "${RED}❌ Failed${NC}"
+                    fi
+                fi
+            done
+        fi
+        
+        echo ""
+        echo -e "${GRAY}Press Ctrl+C to exit monitoring${NC}"
+        
+        # Wait for update interval or Ctrl+C
+        sleep $update_interval || break
+    done
+    
+    echo -e "\n${GREEN}Monitoring stopped${NC}"
+    read -p "Press Enter to continue..."
+}
+
+# Show current configuration summary
+show_current_config_summary() {
+    clear
+    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║      Configuration Summary          ║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+    
+    echo -e "\n${CYAN}📋 Current MoonFRP Configuration:${NC}"
+    
+    # Server configurations
+    echo -e "\n${GREEN}🏠 Server Configurations (Iran):${NC}"
+    if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+        local bind_port=""
+        local token=""
+        local dashboard_port=""
+        
+        while IFS= read -r line; do
+            if [[ $line =~ bindPort\ =\ ([0-9]+) ]]; then
+                bind_port="${BASH_REMATCH[1]}"
+            elif [[ $line =~ auth\.token\ =\ \"([^\"]+)\" ]]; then
+                token="${BASH_REMATCH[1]}"
+            elif [[ $line =~ webServer\.port\ =\ ([0-9]+) ]]; then
+                dashboard_port="${BASH_REMATCH[1]}"
+            fi
+        done < "$CONFIG_DIR/frps.toml"
+        
+        echo -e "  ${CYAN}Server Port:${NC} ${GREEN}$bind_port${NC}"
+        echo -e "  ${CYAN}Auth Token:${NC} ${GREEN}${token:0:8}...${NC}"
+        [[ -n "$dashboard_port" ]] && echo -e "  ${CYAN}Dashboard:${NC} ${GREEN}http://SERVER-IP:$dashboard_port${NC}"
+        
+        # Check server status
+        local server_services=($(systemctl list-units --type=service --state=active 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
+        if [[ ${#server_services[@]} -gt 0 ]]; then
+            echo -e "  ${CYAN}Status:${NC} ${GREEN}✅ Active (${#server_services[@]} service(s))${NC}"
+        else
+            echo -e "  ${CYAN}Status:${NC} ${RED}❌ Inactive${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}No server configuration found${NC}"
+    fi
+    
+    # Client configurations
+    echo -e "\n${GREEN}🌍 Client Configurations (Foreign):${NC}"
+    
+    local client_configs=($(ls "$CONFIG_DIR"/frpc_*.toml 2>/dev/null))
+    if [[ ${#client_configs[@]} -gt 0 ]]; then
+        local all_ips=()
+        local all_ports=()
+        local common_token=""
+        local total_proxies=0
+        
+        echo -e "  ${CYAN}Total Configs:${NC} ${GREEN}${#client_configs[@]}${NC}"
+        
+        for config_file in "${client_configs[@]}"; do
+            local server_addr=""
+            local server_port=""
+            local token=""
+            local proxy_count=0
+            local ports_in_config=()
+            
+            while IFS= read -r line; do
+                if [[ $line =~ serverAddr\ =\ \"([^\"]+)\" ]]; then
+                    server_addr="${BASH_REMATCH[1]}"
+                elif [[ $line =~ serverPort\ =\ ([0-9]+) ]]; then
+                    server_port="${BASH_REMATCH[1]}"
+                elif [[ $line =~ auth\.token\ =\ \"([^\"]+)\" ]]; then
+                    token="${BASH_REMATCH[1]}"
+                elif [[ $line =~ localPort\ =\ ([0-9]+) ]]; then
+                    ports_in_config+=("${BASH_REMATCH[1]}")
+                    ((total_proxies++))
+                fi
+            done < "$config_file"
+            
+            # Collect unique IPs and ports
+            [[ -n "$server_addr" ]] && ! printf '%s\n' "${all_ips[@]}" | grep -q "^${server_addr}$" && all_ips+=("$server_addr")
+            [[ -n "$server_port" ]] && ! printf '%s\n' "${all_ports[@]}" | grep -q "^${server_port}$" && all_ports+=("$server_port")
+            [[ -z "$common_token" ]] && common_token="$token"
+        done
+        
+        # Display summary
+        local ips_str=$(IFS=','; echo "${all_ips[*]}")
+        local ports_str=$(IFS=','; echo "${all_ports[*]}")
+        
+        echo -e "  ${CYAN}Server IPs:${NC} ${GREEN}$ips_str${NC}"
+        echo -e "  ${CYAN}Server Ports:${NC} ${GREEN}$ports_str${NC}"
+        echo -e "  ${CYAN}Auth Token:${NC} ${GREEN}${common_token:0:8}...${NC}"
+        echo -e "  ${CYAN}Total Proxies:${NC} ${GREEN}$total_proxies${NC}"
+        
+        # Show per-config details
+        echo -e "\n  ${YELLOW}Per-Configuration Details:${NC}"
+        for config_file in "${client_configs[@]}"; do
+            local ip_suffix=$(basename "$config_file" | sed 's/frpc_//' | sed 's/.toml//')
+            local config_ports=()
+            local server_ip=""
+            
+            while IFS= read -r line; do
+                if [[ $line =~ localPort\ =\ ([0-9]+) ]]; then
+                    config_ports+=("${BASH_REMATCH[1]}")
+                elif [[ $line =~ serverAddr\ =\ \"([^\"]+)\" ]]; then
+                    server_ip="${BASH_REMATCH[1]}"
+                fi
+            done < "$config_file"
+            
+            local ports_list=$(IFS=','; echo "${config_ports[*]}")
+            local service_name="moonfrpc-$ip_suffix"
+            local service_status=$(systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
+            local status_icon="❌"
+            local status_color="$RED"
+            
+            [[ "$service_status" == "active" ]] && status_icon="✅" && status_color="$GREEN"
+            
+            printf "    %-15s -> %-15s [%s] %s%s%s\n" \
+                "Client-$ip_suffix" "$server_ip" "$ports_list" \
+                "$status_color" "$status_icon" "$NC"
+        done
+        
+        # Connection tests
+        echo -e "\n  ${CYAN}🔗 Quick Connection Test:${NC}"
+        for ip in "${all_ips[@]}"; do
+            for port in "${all_ports[@]}"; do
+                printf "    %-20s " "$ip:$port"
+                if timeout 2 nc -z "$ip" "$port" 2>/dev/null; then
+                    echo -e "${GREEN}✅ OK${NC}"
+                else
+                    echo -e "${RED}❌ Failed${NC}"
+                fi
+            done
+        done
+        
+    else
+        echo -e "  ${YELLOW}No client configurations found${NC}"
+    fi
+    
+    # System information
+    echo -e "\n${GREEN}🖥️  System Information:${NC}"
+    echo -e "  ${CYAN}FRP Version:${NC} ${GREEN}v$FRP_VERSION${NC}"
+    echo -e "  ${CYAN}MoonFRP Version:${NC} ${GREEN}v$MOONFRP_VERSION${NC}"
+    echo -e "  ${CYAN}Config Directory:${NC} ${GREEN}$CONFIG_DIR${NC}"
+    echo -e "  ${CYAN}Log Directory:${NC} ${GREEN}$LOG_DIR${NC}"
+    
+    # Services overview
+    local active_services=$(systemctl list-units --type=service --state=active 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
+    local total_services=$(systemctl list-units --type=service --all 2>/dev/null | grep -E "(moonfrps|moonfrpc)" | wc -l)
+    
+    echo -e "  ${CYAN}Services:${NC} ${GREEN}$active_services active${NC} / ${YELLOW}$total_services total${NC}"
+    
+    echo -e "\n${YELLOW}💡 Quick Actions:${NC}"
+    echo -e "  • Restart all: ${GREEN}systemctl restart moonfrp*${NC}"
+    echo -e "  • Check logs: ${GREEN}journalctl -u moonfrp* -f${NC}"
+    echo -e "  • Stop all: ${GREEN}systemctl stop moonfrp*${NC}"
+    
+    read -p "Press Enter to continue..."
+}
 
 # Fix web panel issues (HTTP 503 and similar)
 fix_web_panel_issues() {
