@@ -683,28 +683,30 @@ create_foreign_client_config() {
 
 # Service removal menu
 service_removal_menu() {
-    clear
-    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
-    echo -e "${PURPLE}║        Service Removal               ║${NC}"
-    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
-    
-    list_frp_services
-    
-    echo -e "\n${CYAN}Removal Options:${NC}"
-    echo "1. Remove Single Service"
-    echo "2. Remove All Services"
-    echo "0. Back to Main Menu"
-    
-    echo -e "\n${YELLOW}Enter your choice [0-2]:${NC} "
-    read -r choice
-    
-    case $choice in
-        1) remove_single_service ;;
-        2) remove_all_services ;;
-        0) return ;;
-        *) log "WARN" "Invalid choice. Please try again." ;;
-    esac
+    while true; do
+        clear
+        echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
+        echo -e "${PURPLE}║        Service Removal               ║${NC}"
+        echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+        
+        list_frp_services
+        
+        echo -e "\n${CYAN}Removal Options:${NC}"
+        echo "1. Remove Single Service"
+        echo "2. Remove All Services"
+        echo "0. Back to Main Menu"
+        
+        echo -e "\n${YELLOW}Enter your choice [0-2]:${NC} "
+        read -r choice
+        
+        case $choice in
+            1) remove_single_service ;;
+            2) remove_all_services ;;
+            0) return ;;
+            *) log "WARN" "Invalid choice. Please try again." ;;
+        esac
+    done
 }
 
 # Remove single service
