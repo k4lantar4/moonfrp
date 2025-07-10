@@ -39,15 +39,6 @@ MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
 
-# Global variables for template and proxy configuration
-SELECTED_PROXY_TYPE=""
-SELECTED_PROXY_NAME=""
-TEMPLATE_PORTS=""
-TEMPLATE_NAME=""
-TEMPLATE_DESCRIPTION=""
-TEMPLATE_PROXY_TYPE=""
-CUSTOM_DOMAINS=""
-
 # Create required directories
 create_directories() {
     local dirs=("$FRP_DIR" "$CONFIG_DIR" "$LOG_DIR" "$TEMP_DIR")
@@ -181,7 +172,7 @@ show_quick_help() {
     echo -e "  2. Verify dashboard port in config: ${GREEN}/etc/frp/frps.toml${NC}"
     echo -e "  3. Check firewall allows dashboard port: ${GREEN}ufw allow 7500/tcp${NC}"
     echo -e "  4. Use menu option 6 → 8 for web panel diagnostics"
-    echo -e "  5. Try restarting: ${GREEN}systemctl status moonfrp-server${NC}"
+    echo -e "  5. Try restarting: ${GREEN}systemctl restart moonfrp-server${NC}"
     
     echo -e "\n${YELLOW}💡 Pro Tips:${NC}"
     echo -e "  • Use menu option 6 for detailed diagnostics"
@@ -937,9 +928,9 @@ validate_server_connection() {
 generate_frps_config() {
     local token="${1:-$(generate_token)}"
     local bind_port="${2:-7000}"
-    local dashboard_port="${3:-}"
-    local dashboard_user="${4:-}"
-    local dashboard_password="${5:-}"
+    local dashboard_port="${3:-7500}"
+    local dashboard_user="${4:-admin}"
+    local dashboard_password="${5:-$(generate_token | cut -c1-12)}"
     
     # Validate inputs
     if ! validate_port "$bind_port"; then
@@ -947,61 +938,89 @@ generate_frps_config() {
         return 1
     fi
     
-    if [[ -n "$dashboard_port" ]] && ! validate_port "$dashboard_port"; then
+    if ! validate_port "$dashboard_port"; then
         log "ERROR" "Invalid dashboard port: $dashboard_port"
         return 1
     fi
     
-    # Create simple and clean configuration file based on official FRP format
-    cat > "$CONFIG_DIR/frps.toml" << EOF
+    # Create configuration file
+    if cat > "$CONFIG_DIR/frps.toml" << EOF
 # MoonFRP Server Configuration
 # Generated on $(date)
 
 # Basic server settings
+bindAddr = "0.0.0.0"
 bindPort = $bind_port
 
 # Authentication
 auth.method = "token"
 auth.token = "$token"
 
-EOF
-
-    # Add dashboard settings only if enabled
-    if [[ -n "$dashboard_port" && -n "$dashboard_user" && -n "$dashboard_password" ]]; then
-        cat >> "$CONFIG_DIR/frps.toml" << EOF
 # Dashboard settings
 webServer.addr = "0.0.0.0"
 webServer.port = $dashboard_port
 webServer.user = "$dashboard_user"
 webServer.password = "$dashboard_password"
 
-EOF
-    fi
-
-    # Add remaining settings
-    cat >> "$CONFIG_DIR/frps.toml" << EOF
 # Logging
 log.to = "$LOG_DIR/frps.log"
 log.level = "info"
 log.maxDays = 7
 
-# Basic port range for client connections
+# HTTP/HTTPS proxy settings
+vhostHTTPPort = 80
+vhostHTTPSPort = 443
+
+# Transport settings
+transport.tls.enable = true
+transport.maxPoolCount = 10
+
+# Performance settings
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+# Extended port ranges for better compatibility
 allowPorts = [
-    { start = 1000, end = 65535 }
+    { start = 1000, end = 1999 },
+    { start = 2000, end = 2999 },
+    { start = 3000, end = 3999 },
+    { start = 4000, end = 4999 },
+    { start = 5000, end = 5999 },
+    { start = 6000, end = 6999 },
+    { start = 8000, end = 8999 },
+    { start = 9000, end = 9999 },
+    { start = 10000, end = 19999 },
+    { start = 20000, end = 65535 }
 ]
+
+# Subdomain settings
+subdomainHost = "frp.local"
+
+# Security settings
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
+
+# TCP multiplexing
+transport.tcpMux = true
+transport.tcpMuxKeepaliveInterval = 60
+
+# Connection limits per client
+maxProxiesPerClient = 50
+maxPortsPerClient = 50
 EOF
-    
-    # Verify configuration file was created successfully
-    if [[ -f "$CONFIG_DIR/frps.toml" && -s "$CONFIG_DIR/frps.toml" ]]; then
-        log "INFO" "Generated simple frps.toml configuration"
-        if [[ -n "$dashboard_port" ]]; then
+    then
+        # Verify configuration file was created successfully
+        if [[ -f "$CONFIG_DIR/frps.toml" && -s "$CONFIG_DIR/frps.toml" ]]; then
+            log "INFO" "Generated frps.toml configuration with extended port ranges"
             log "INFO" "Dashboard: http://server-ip:$dashboard_port (User: $dashboard_user, Pass: $dashboard_password)"
+            log "INFO" "Token: $token"
+            log "WARN" "Remember to configure firewall to allow ports 1000-65535 for FRP services"
+            return 0
+        else
+            log "ERROR" "Configuration file was not created or is empty"
+            return 1
         fi
-        log "INFO" "Token: $token"
-        log "INFO" "Allowed ports: 1000-65535"
-        return 0
     else
-        log "ERROR" "Configuration file was not created or is empty"
+        log "ERROR" "Failed to write configuration file: $CONFIG_DIR/frps.toml"
         return 1
     fi
 }
@@ -1020,12 +1039,11 @@ generate_frpc_config() {
     local config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
     local timestamp=$(date +%s)
     
-    # Create simple and clean client configuration based on official FRP format
     cat > "$config_file" << EOF
 # MoonFRP Client Configuration for IP ending with $ip_suffix
 # Generated on $(date)
 
-# Server connection settings
+# Server settings
 serverAddr = "$server_ip"
 serverPort = $server_port
 
@@ -1033,10 +1051,26 @@ serverPort = $server_port
 auth.method = "token"
 auth.token = "$token"
 
-# Logging (optional)
+# Logging
 log.to = "$LOG_DIR/frpc_${ip_suffix}.log"
 log.level = "info"
 log.maxDays = 7
+
+# Transport settings
+transport.tls.enable = true
+transport.poolCount = 5
+transport.protocol = "tcp"
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+# Client settings - Use unique user identifier to avoid conflicts
+user = "moonfrp_${ip_suffix}_${timestamp}"
+
+# Admin web server (optional)
+webServer.addr = "127.0.0.1"
+webServer.port = $((7400 + ip_suffix))
+webServer.user = "admin"
+webServer.password = "admin"
 
 EOF
 
@@ -1046,26 +1080,27 @@ EOF
     # Add proxy configurations based on type
     case "$proxy_type" in
         "tcp")
-            generate_tcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_tcp_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp" "$enable_bandwidth"
             ;;
         "http")
-            generate_http_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "false"
+            generate_http_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "false" "$enable_bandwidth"
             ;;
         "https")
-            generate_http_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "true"
+            generate_http_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "true" "$enable_bandwidth"
             ;;
         "udp")
-            generate_udp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_udp_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         *)
             log "WARN" "Unknown proxy type: $proxy_type, defaulting to TCP"
-            generate_tcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_tcp_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp" "$enable_bandwidth"
             ;;
     esac
     
     # Verify configuration was created successfully
     if [[ -f "$config_file" && -s "$config_file" ]]; then
         log "INFO" "Generated frpc configuration: $config_file (Type: $proxy_type)"
+        log "INFO" "Unique client user: moonfrp_${ip_suffix}_${timestamp}"
         return 0
     else
         log "ERROR" "Failed to generate configuration file or file is empty: $config_file"
@@ -1154,17 +1189,18 @@ EOF
     log "INFO" "Applied bandwidth limits to $proxy_name: $GLOBAL_BANDWIDTH_IN"
 }
 
-# Generate simple TCP proxy configurations
-generate_tcp_proxies_simple() {
+# Generate TCP proxy configurations
+generate_tcp_proxies() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
     local timestamp="$4"
+    local enable_bandwidth="${5:-false}"
     
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
-        local unique_name="tcp-${port}-${ip_suffix}"
+        local unique_name="moonfrp_tcp_${port}_${ip_suffix}_${timestamp}"
         cat >> "$config_file" << EOF
 [[proxies]]
 name = "$unique_name"
@@ -1172,19 +1208,32 @@ type = "tcp"
 localIP = "127.0.0.1"
 localPort = $port
 remotePort = $port
+transport.useEncryption = false
+transport.useCompression = false
+# Add health check for reliability
+healthCheck.type = "tcp"
+healthCheck.timeoutSeconds = 3
+healthCheck.maxFailed = 3
+healthCheck.intervalSeconds = 10
 
 EOF
+        
+        # Add bandwidth management if enabled
+        if [[ "$enable_bandwidth" == "true" ]]; then
+            apply_bandwidth_limits "$config_file" "$unique_name"
+        fi
     done
 }
 
-# Generate simple HTTP/HTTPS proxy configurations
-generate_http_proxies_simple() {
+# Generate HTTP/HTTPS proxy configurations
+generate_http_proxies() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
     local timestamp="$4"
     local custom_domains="$5"
     local enable_https="$6"
+    local enable_bandwidth="${7:-false}"
     
     local proxy_type="http"
     [[ "$enable_https" == "true" ]] && proxy_type="https"
@@ -1195,11 +1244,11 @@ generate_http_proxies_simple() {
     local port_index=0
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
-        local unique_name="${proxy_type}-${port}-${ip_suffix}"
+        local unique_name="moonfrp_${proxy_type}_${port}_${ip_suffix}_${timestamp}"
         local domain=""
         
         # Use corresponding domain if available, otherwise generate default
-        if [[ $port_index -lt ${#DOMAIN_ARRAY[@]} ]] && [[ -n "${DOMAIN_ARRAY[$port_index]}" ]]; then
+        if [[ $port_index -lt ${#DOMAIN_ARRAY[@]} ]]; then
             domain="${DOMAIN_ARRAY[$port_index]}"
             domain=$(echo "$domain" | tr -d ' ')
         else
@@ -1213,15 +1262,29 @@ type = "$proxy_type"
 localIP = "127.0.0.1"
 localPort = $port
 customDomains = ["$domain"]
+# HTTP(S) specific settings
+transport.useEncryption = false
+transport.useCompression = true
+# Add health check for reliability
+healthCheck.type = "http"
+healthCheck.path = "/"
+healthCheck.timeoutSeconds = 3
+healthCheck.maxFailed = 3
+healthCheck.intervalSeconds = 10
 
 EOF
+        
+        # Add bandwidth management if enabled
+        if [[ "$enable_bandwidth" == "true" ]]; then
+            apply_bandwidth_limits "$config_file" "$unique_name"
+        fi
         
         ((port_index++))
     done
 }
 
-# Generate simple UDP proxy configurations
-generate_udp_proxies_simple() {
+# Generate UDP proxy configurations
+generate_udp_proxies() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
@@ -1230,7 +1293,7 @@ generate_udp_proxies_simple() {
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
-        local unique_name="udp-${port}-${ip_suffix}"
+        local unique_name="moonfrp_udp_${port}_${ip_suffix}_${timestamp}"
         cat >> "$config_file" << EOF
 [[proxies]]
 name = "$unique_name"
@@ -1238,6 +1301,8 @@ type = "udp"
 localIP = "127.0.0.1"
 localPort = $port
 remotePort = $port
+transport.useEncryption = false
+transport.useCompression = false
 
 EOF
     done
@@ -1667,32 +1732,19 @@ optimize_systemctl_calls() {
 }
 
 # List all FRP services with caching
-# List all FRP services with caching
 list_frp_services() {
     echo -e "\n${CYAN}=== FRP Services Status ===${NC}"
     
     # Cache services list for 5 seconds to improve performance
     local current_time=$(date +%s)
     if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
-        # More comprehensive service detection
-        CACHED_SERVICES=($(systemctl list-units --type=service --all 2>/dev/null | \
-            grep -E "(moonfrp|frp)" | \
-            grep -v "@" | \
-            awk '{print $1}' | \
-            sed 's/\.service//' | \
-            grep -v "^$" || echo ""))
+        CACHED_SERVICES=($(systemctl list-units --type=service --all 2>/dev/null | grep -E "(frps|frpc|moonfrp)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
         SERVICES_CACHE_TIME=$current_time
     fi
     
     local services=("${CACHED_SERVICES[@]}")
     
-    # Filter out empty entries
-    local filtered_services=()
-    for service in "${services[@]}"; do
-        [[ -n "$service" && "$service" != " " ]] && filtered_services+=("$service")
-    done
-    
-    if [[ ${#filtered_services[@]} -eq 0 ]]; then
+    if [[ ${#services[@]} -eq 0 ]] || [[ "${services[0]}" == "" ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
         return
     fi
@@ -1700,18 +1752,16 @@ list_frp_services() {
     printf "%-20s %-10s %-15s\n" "Service" "Status" "Type"
     printf "%-20s %-10s %-15s\n" "-------" "------" "----"
     
-    for service in "${filtered_services[@]}"; do
+    for service in "${services[@]}"; do
         [[ -z "$service" ]] && continue
         
         local status=$(get_service_status "$service")
         local type="Unknown"
         
-        if [[ "$service" =~ (frps|moonfrp-server) ]]; then
+        if [[ "$service" =~ frps ]]; then
             type="Server"
-        elif [[ "$service" =~ (frpc|moonfrp-client) ]]; then
+        elif [[ "$service" =~ frpc ]]; then
             type="Client"
-        elif [[ "$service" =~ moonfrp ]]; then
-            type="MoonFRP"
         fi
         
         local status_color="$RED"
@@ -1766,7 +1816,7 @@ manage_service_action() {
     local action="$1"
     
     echo -e "\n${CYAN}Available services:${NC}"
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all | grep -E "(frps|frpc|moonfrp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -1850,155 +1900,78 @@ config_creation_menu() {
 # Create Iran server configuration
 create_iran_server_config() {
     clear
-    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║        Iran Server Setup            ║${NC}"
-    echo -e "${PURPLE}║     (frps Configuration)             ║${NC}"
-    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}=== Iran Server Configuration ===${NC}"
     
-    local token dashboard_user dashboard_password
-    local bind_port=7000
-    local dashboard_port=7500
-    local enable_dashboard="y"
+    local token=$(generate_token)
+    local bind_port dashboard_port dashboard_user dashboard_password
     
-    echo -e "\n${CYAN}🌐 Server Configuration${NC}"
-    echo -e "${GRAY}This will create the FRP server configuration for Iran location${NC}"
+    echo -e "\n${CYAN}Server Settings:${NC}"
     
-    # Authentication Token
-    echo -e "\n${CYAN}🔐 Authentication Settings:${NC}"
-    echo -e "${YELLOW}Generate random token automatically? (Y/n):${NC} "
-    read -r auto_token
-    
-    if [[ "$auto_token" =~ ^[Nn]$ ]]; then
-        while true; do
-            echo -e "${CYAN}Enter custom authentication token (minimum 8 characters):${NC} "
-            read -r token
-            if [[ ${#token} -ge 8 ]]; then
-                break
-            else
-                echo -e "${RED}❌ Token must be at least 8 characters long${NC}"
-            fi
-        done
-    else
-        token=$(generate_token)
-        echo -e "${GREEN}✅ Generated secure token: ${token:0:8}...${NC}"
-    fi
-    
-    # Bind Port Configuration
-    echo -e "\n${CYAN}🚪 Port Configuration:${NC}"
+    # Bind port input with validation
     while true; do
-        echo -e "${CYAN}FRP Server Port (default: 7000):${NC} "
-        read -r user_bind_port
+        read -p "Bind Port (default: 7000): " bind_port
+        [[ -z "$bind_port" ]] && bind_port=7000
         
-        if [[ -z "$user_bind_port" ]]; then
-            bind_port=7000
-            break
-        elif validate_port "$user_bind_port"; then
-            bind_port="$user_bind_port"
+        if validate_port "$bind_port"; then
             break
         else
-            echo -e "${RED}❌ Invalid port number. Please enter a port between 1-65535${NC}"
+            echo -e "${RED}❌ Invalid port number. Please enter a port between 1-65535.${NC}"
         fi
     done
-    echo -e "${GREEN}✅ FRP Server Port: $bind_port${NC}"
     
-    # Dashboard Configuration
-    echo -e "\n${CYAN}📊 Web Dashboard Settings:${NC}"
-    echo -e "${YELLOW}Enable web dashboard for monitoring? (Y/n):${NC} "
-    read -r enable_dashboard
-    
-    if [[ ! "$enable_dashboard" =~ ^[Nn]$ ]]; then
-        # Dashboard Port
-        while true; do
-            echo -e "${CYAN}Dashboard Port (default: 7500):${NC} "
-            read -r user_dashboard_port
-            
-            if [[ -z "$user_dashboard_port" ]]; then
-                dashboard_port=7500
-                break
-            elif validate_port "$user_dashboard_port"; then
-                if [[ "$user_dashboard_port" == "$bind_port" ]]; then
-                    echo -e "${RED}❌ Dashboard port cannot be the same as FRP server port${NC}"
-                else
-                    dashboard_port="$user_dashboard_port"
-                    break
-                fi
+    # Dashboard port input with validation
+    while true; do
+        read -p "Dashboard Port (default: 7500): " dashboard_port
+        [[ -z "$dashboard_port" ]] && dashboard_port=7500
+        
+        if validate_port "$dashboard_port"; then
+            if [[ "$dashboard_port" == "$bind_port" ]]; then
+                echo -e "${RED}❌ Dashboard port cannot be the same as bind port.${NC}"
             else
-                echo -e "${RED}❌ Invalid port number${NC}"
+                break
             fi
-        done
-        
-        # Dashboard Credentials
-        echo -e "${CYAN}Dashboard Username (default: admin):${NC} "
-        read -r dashboard_user
-        [[ -z "$dashboard_user" ]] && dashboard_user="admin"
-        
-        echo -e "${CYAN}Dashboard Password (leave empty for auto-generated):${NC} "
-        read -r dashboard_password
-        [[ -z "$dashboard_password" ]] && dashboard_password=$(generate_token | cut -c1-12)
-        
-        echo -e "${GREEN}✅ Dashboard enabled on port $dashboard_port${NC}"
-    else
-        dashboard_port=""
-        dashboard_user=""
-        dashboard_password=""
-        echo -e "${YELLOW}⚠️  Dashboard disabled${NC}"
-    fi
-    
-    # Port Conflict Check
-    echo -e "\n${CYAN}🔍 System Check:${NC}"
-    local conflicts=0
-    
-    # Check FRP port
-    if netstat -tlnp 2>/dev/null | grep -q ":$bind_port "; then
-        echo -e "${RED}❌ Port $bind_port is already in use${NC}"
-        ((conflicts++))
-    else
-        echo -e "${GREEN}✅ Port $bind_port is available${NC}"
-    fi
-    
-    # Check dashboard port if enabled
-    if [[ -n "$dashboard_port" ]] && netstat -tlnp 2>/dev/null | grep -q ":$dashboard_port "; then
-        echo -e "${RED}❌ Dashboard port $dashboard_port is already in use${NC}"
-        ((conflicts++))
-    elif [[ -n "$dashboard_port" ]]; then
-        echo -e "${GREEN}✅ Dashboard port $dashboard_port is available${NC}"
-    fi
-    
-    # Handle conflicts
-    if [[ $conflicts -gt 0 ]]; then
-        echo -e "\n${YELLOW}⚠️  Port conflicts detected. Continue anyway? (y/N):${NC} "
-        read -r continue_anyway
-        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-            log "INFO" "Configuration cancelled due to port conflicts"
-            read -p "Press Enter to continue..."
-            return
+        else
+            echo -e "${RED}❌ Invalid port number. Please enter a port between 1-65535.${NC}"
         fi
-    fi
+    done
     
-    # Configuration Summary
-    echo -e "\n${CYAN}📋 Configuration Summary:${NC}"
-    echo -e "${GRAY}┌─────────────────────────────────────────────────┐${NC}"
-    echo -e "${GRAY}│${NC} ${GREEN}FRP Server Port:${NC} $bind_port"
-    echo -e "${GRAY}│${NC} ${GREEN}Authentication Token:${NC} ${token:0:8}..."
-    if [[ -n "$dashboard_port" ]]; then
-        echo -e "${GRAY}│${NC} ${GREEN}Dashboard:${NC} Enabled on port $dashboard_port"
-        echo -e "${GRAY}│${NC} ${GREEN}Dashboard User:${NC} $dashboard_user"
-        echo -e "${GRAY}│${NC} ${GREEN}Dashboard Pass:${NC} ${dashboard_password:0:4}..."
-    else
-        echo -e "${GRAY}│${NC} ${YELLOW}Dashboard:${NC} Disabled"
-    fi
-    echo -e "${GRAY}└─────────────────────────────────────────────────┘${NC}"
+    # Dashboard username
+    read -p "Dashboard Username (default: admin): " dashboard_user
+    [[ -z "$dashboard_user" ]] && dashboard_user="admin"
     
-    echo -e "\n${YELLOW}Proceed with this configuration? (Y/n):${NC} "
-    read -r confirm
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
-        log "INFO" "Configuration cancelled by user"
-        read -p "Press Enter to continue..."
-        return
-    fi
+    # Dashboard password
+    read -p "Dashboard Password (default: auto-generated): " dashboard_password
+    [[ -z "$dashboard_password" ]] && dashboard_password=$(generate_token | cut -c1-12)
+    
+    # Port conflict check
+    echo -e "\n${CYAN}🔍 Checking for port conflicts...${NC}"
+    for port in "$bind_port" "$dashboard_port"; do
+        if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
+            echo -e "${YELLOW}⚠️  Warning: Port $port is already in use by another process${NC}"
+            echo -e "${CYAN}Continue anyway? (y/N):${NC} "
+            read -r continue_anyway
+            if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+                log "INFO" "Configuration cancelled due to port conflict"
+                read -p "Press Enter to continue..."
+                return
+            fi
+        else
+            echo -e "${GREEN}✅ Port $port is available${NC}"
+        fi
+    done
+    
+    # Debug information
+    echo -e "\n${CYAN}🔍 Server Configuration Debug:${NC}"
+    echo -e "  • Token: ${token:0:8}..."
+    echo -e "  • Bind Port: $bind_port"
+    echo -e "  • Dashboard Port: $dashboard_port"
+    echo -e "  • Dashboard User: $dashboard_user"
+    echo -e "  • Dashboard Password: ${dashboard_password:0:4}..."
+    echo -e "  • FRP Binary Check: $(ls -la $FRP_DIR/frps 2>/dev/null || echo 'NOT FOUND')"
+    echo -e "  • Config Directory: $CONFIG_DIR"
     
     # Generate configuration
-    echo -e "\n${CYAN}🔧 Generating server configuration...${NC}"
+    echo -e "\n${CYAN}Generating server configuration...${NC}"
     if generate_frps_config "$token" "$bind_port" "$dashboard_port" "$dashboard_user" "$dashboard_password"; then
         echo -e "${GREEN}✅ Server configuration generated successfully${NC}"
         
@@ -2012,7 +1985,7 @@ create_iran_server_config() {
         fi
         
         # Create systemd service
-        echo -e "\n${CYAN}🔧 Creating systemd service...${NC}"
+        echo -e "\n${CYAN}Creating systemd service...${NC}"
         if create_systemd_service "moonfrp-server" "frps" "$CONFIG_DIR/frps.toml"; then
             echo -e "${GREEN}✅ Service created: moonfrp-server${NC}"
         else
@@ -2022,7 +1995,7 @@ create_iran_server_config() {
         fi
         
         # Start service
-        echo -e "\n${CYAN}🚀 Starting service: moonfrp-server${NC}"
+        echo -e "\n${CYAN}Starting service: moonfrp-server${NC}"
         if start_service "moonfrp-server"; then
             echo -e "${GREEN}✅ Service started successfully${NC}"
             
@@ -2047,54 +2020,58 @@ create_iran_server_config() {
         # Enhanced success summary
         clear
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-        echo -e "${PURPLE}║     🎉 Server Setup Complete!       ║${NC}"
+        echo -e "${PURPLE}║     Server Setup Complete!          ║${NC}"
         echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
         
-        echo -e "\n${GREEN}✅ Iran server configuration created successfully!${NC}"
+        echo -e "\n${GREEN}🎉 Iran server configuration created successfully!${NC}"
         
         echo -e "\n${CYAN}📋 Server Information:${NC}"
-        echo -e "${GREEN}• Service Name:${NC} moonfrp-server"
-        echo -e "${GREEN}• Configuration:${NC} $CONFIG_DIR/frps.toml"
-        echo -e "${GREEN}• Service Status:${NC} $(get_service_status "moonfrp-server")"
+        echo -e "${GREEN}Service Name:${NC} moonfrp-server"
+        echo -e "${GREEN}Configuration:${NC} $CONFIG_DIR/frps.toml"
+        echo -e "${GREEN}Service Status:${NC} $(get_service_status "moonfrp-server")"
         
-        # Get server IP information
+        # Get server IP information - filter only public IPv4
         local primary_ip=$(hostname -I | awk '{print $1}')
+        
+        # Filter only public IPv4 addresses (exclude local, private, and IPv6)
         local public_ips=""
         for ip in $(hostname -I); do
+            # Check if it's IPv4 and not private/local
             if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                # Skip private ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x
                 if [[ ! $ip =~ ^10\. ]] && 
                    [[ ! $ip =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && 
                    [[ ! $ip =~ ^192\.168\. ]] && 
                    [[ ! $ip =~ ^127\. ]]; then
-                    [[ -z "$public_ips" ]] && public_ips="$ip" || public_ips="$public_ips,$ip"
+                    if [[ -z "$public_ips" ]]; then
+                        public_ips="$ip"
+                    else
+                        public_ips="$public_ips,$ip"
+                    fi
                 fi
             fi
         done
+        
+        # Use primary IP if no public IPs found
         [[ -z "$public_ips" ]] && public_ips="$primary_ip"
         
-        echo -e "\n${CYAN}🌐 Connection Information:${NC}"
-        echo -e "${GREEN}• Server IP:${NC} $primary_ip"
-        echo -e "${GREEN}• FRP Port:${NC} $bind_port"
-        echo -e "${GREEN}• Auth Token:${NC} $token"
-        
-        if [[ -n "$dashboard_port" ]]; then
-            echo -e "\n${CYAN}📊 Dashboard Access:${NC}"
-            echo -e "${GREEN}• URL:${NC} http://$primary_ip:$dashboard_port"
-            echo -e "${GREEN}• Username:${NC} $dashboard_user"
-            echo -e "${GREEN}• Password:${NC} $dashboard_password"
-        fi
+        echo -e "\n${CYAN}🌐 Access Information:${NC}"
+        echo -e "${GREEN}Primary Server IP:${NC} $primary_ip"
+        echo -e "${GREEN}Public Server IPs:${NC} $public_ips"
+        echo -e "${GREEN}Dashboard URL:${NC} http://$primary_ip:$dashboard_port"
+        echo -e "${GREEN}Username:${NC} $dashboard_user"
+        echo -e "${GREEN}Password:${NC} $dashboard_password"
+        echo -e "${GREEN}Auth Token:${NC} $token"
+        echo -e "${GREEN}FRP Port:${NC} $bind_port"
         
         echo -e "\n${CYAN}💡 Next Steps:${NC}"
-        echo -e "  1. Configure firewall: ${GREEN}ufw allow $bind_port/tcp${NC}"
-        if [[ -n "$dashboard_port" ]]; then
-            echo -e "  2. Allow dashboard: ${GREEN}ufw allow $dashboard_port/tcp${NC}"
-        fi
-        echo -e "  3. Share with clients:"
-        echo -e "     ${YELLOW}• Server IP: $primary_ip${NC}"
-        echo -e "     ${YELLOW}• Server Port: $bind_port${NC}"
-        echo -e "     ${YELLOW}• Token: $token${NC}"
+        echo -e "  • Configure firewall: ${YELLOW}ufw allow $bind_port/tcp && ufw allow $dashboard_port/tcp${NC}"
+        echo -e "  • Test dashboard: ${YELLOW}http://$primary_ip:$dashboard_port${NC}"
+        echo -e "  • Share server IPs with clients: ${YELLOW}$public_ips${NC}"
+        echo -e "  • Share token with clients: ${YELLOW}$token${NC}"
+        echo -e "  • Use menu option 5 for troubleshooting if needed"
         
-        echo -e "\n${CYAN}🔧 Management Commands:${NC}"
+        echo -e "\n${CYAN}🔧 Quick Commands:${NC}"
         echo -e "  • Check status: ${GREEN}systemctl status moonfrp-server${NC}"
         echo -e "  • View logs: ${GREEN}journalctl -u moonfrp-server -f${NC}"
         echo -e "  • Restart: ${GREEN}systemctl restart moonfrp-server${NC}"
@@ -2111,132 +2088,31 @@ create_iran_server_config() {
 # Create foreign client configuration
 create_foreign_client_config() {
     clear
-    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║      Foreign Client Setup           ║${NC}"
-    echo -e "${PURPLE}║     (frpc Configuration)             ║${NC}"
-    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}=== Foreign Client Configuration ===${NC}"
     
-    local server_ips server_port token ports proxy_type="tcp"
+    local server_ips server_port token ports
     
-    echo -e "\n${CYAN}🌍 Client Configuration${NC}"
-    echo -e "${GRAY}This will create FRP client configuration for foreign location${NC}"
+    # Select configuration template first
+    echo -e "\n${CYAN}🎯 Configuration Method:${NC}"
+    echo "1. Use Configuration Template (Recommended)"
+    echo "2. Manual Configuration"
     
-    # Server Connection Settings
-    echo -e "\n${CYAN}🔗 Server Connection Settings:${NC}"
+    read -p "Choose method [1-2] (default: 1): " config_method
+    [[ -z "$config_method" ]] && config_method=1
     
-    # Server IP input with validation
-    while true; do
-        echo -e "${CYAN}Iran Server IP Address:${NC} "
-        read -r server_ips
-        
-        if [[ -z "$server_ips" ]]; then
-            echo -e "${RED}❌ Server IP is required${NC}"
-            continue
-        fi
-        
-        if validate_ips_list "$server_ips"; then
-            echo -e "${GREEN}✅ Server IP(s) validated: $server_ips${NC}"
-            break
-        else
-            echo -e "${RED}❌ Invalid IP address format${NC}"
-            echo -e "${YELLOW}Example: 89.47.198.149 or 89.47.198.149,85.15.63.147${NC}"
-        fi
-    done
-    
-    # Server Port input with validation
-    while true; do
-        echo -e "${CYAN}Server Port (default: 7000):${NC} "
-        read -r server_port
-        [[ -z "$server_port" ]] && server_port=7000
-        
-        if validate_port "$server_port"; then
-            echo -e "${GREEN}✅ Server Port: $server_port${NC}"
-            break
-        else
-            echo -e "${RED}❌ Invalid port number. Please enter a port between 1-65535${NC}"
-        fi
-    done
-    
-    # Authentication Token
-    while true; do
-        echo -e "${CYAN}Authentication Token:${NC} "
-        read -r token
-        
-        if [[ -z "$token" ]]; then
-            echo -e "${RED}❌ Authentication token is required${NC}"
-            continue
-        elif [[ ${#token} -lt 8 ]]; then
-            echo -e "${RED}❌ Token should be at least 8 characters for security${NC}"
-            echo -e "${YELLOW}Continue anyway? (y/N):${NC} "
-            read -r continue_token
-            if [[ "$continue_token" =~ ^[Yy]$ ]]; then
-                break
-            fi
-        else
-            echo -e "${GREEN}✅ Authentication token validated${NC}"
-            break
-        fi
-    done
-    
-    # Port Configuration Method
-    echo -e "\n${CYAN}🚪 Port Configuration:${NC}"
-    echo -e "${YELLOW}How would you like to configure ports?${NC}"
-    echo "1. Manual port entry (Recommended)"
-    echo "2. Use configuration template"
-    
-    local config_method=""
-    while true; do
-        echo -e "${CYAN}Choose method [1-2] (default: 1):${NC} "
-        read -r config_method
-        [[ -z "$config_method" ]] && config_method=1
-        
-        case $config_method in
-            1|2) break ;;
-            *) echo -e "${RED}❌ Please enter 1 or 2${NC}" ;;
-        esac
-    done
+    local ports=""
+    local proxy_type="tcp"
     
     case $config_method in
         1)
-            # Manual port configuration
-            echo -e "\n${CYAN}📝 Manual Port Configuration:${NC}"
-            echo -e "${GRAY}Enter the ports you want to forward from this server${NC}"
-            
-            while true; do
-                echo -e "${CYAN}Local ports to forward (comma-separated):${NC}"
-                echo -e "${YELLOW}Example: 9005,8005,7005 or 22,80,443${NC} "
-                read -r ports
-                
-                if [[ -z "$ports" ]]; then
-                    echo -e "${RED}❌ At least one port is required${NC}"
-                    continue
-                fi
-                
-                if validate_ports_list "$ports"; then
-                    echo -e "${GREEN}✅ Ports validated: $ports${NC}"
-                    
-                    # Show port mapping preview
-                    echo -e "\n${CYAN}📋 Port Mapping Preview:${NC}"
-                    IFS=',' read -ra PORT_ARRAY <<< "$ports"
-                    for port in "${PORT_ARRAY[@]}"; do
-                        port=$(echo "$port" | tr -d ' ')
-                        echo -e "  ${YELLOW}Local:$port${NC} → ${GREEN}Remote:$port${NC}"
-                    done
-                    break
-                else
-                    echo -e "${RED}❌ Invalid port format${NC}"
-                    echo -e "${YELLOW}Please use format: port1,port2,port3 (e.g., 22,80,443)${NC}"
-                fi
-            done
-            ;;
-        2)
-            # Template configuration
+            # Use template system
             if get_config_template; then
                 if confirm_template_configuration; then
                     ports="$TEMPLATE_PORTS"
                     proxy_type="$TEMPLATE_PROXY_TYPE"
+                    
                     echo -e "\n${GREEN}✅ Using template: $TEMPLATE_NAME${NC}"
-                    echo -e "${GREEN}✅ Ports configured: $ports${NC}"
+                    echo -e "${CYAN}Ports configured: $ports${NC}"
                 else
                     log "INFO" "Template configuration cancelled"
                     read -p "Press Enter to continue..."
@@ -2248,125 +2124,126 @@ create_foreign_client_config() {
                 return
             fi
             ;;
-    esac
-    
-    # Proxy Type Selection (if not from template)
-    if [[ $config_method -eq 1 ]]; then
-        echo -e "\n${CYAN}🔌 Proxy Type Selection:${NC}"
-        echo -e "${YELLOW}What type of traffic will you forward?${NC}"
-        echo "1. TCP (Default - for SSH, databases, games, etc.)"
-        echo "2. HTTP (Web services with domain names)"
-        echo "3. HTTPS (Secure web services)"
-        echo "4. UDP (Games, DNS, streaming)"
-        
-        local proxy_choice=""
-        while true; do
-            echo -e "${CYAN}Choose proxy type [1-4] (default: 1):${NC} "
-            read -r proxy_choice
-            [[ -z "$proxy_choice" ]] && proxy_choice=1
+        2)
+            # Manual configuration
+            echo -e "\n${CYAN}📝 Manual Port Configuration:${NC}"
+            read -p "Ports to forward (comma-separated, e.g., 1111,2222,3333): " ports
+            if [[ -z "$ports" ]]; then
+                log "ERROR" "Ports are required"
+                read -p "Press Enter to continue..."
+                return
+            fi
             
-            case $proxy_choice in
-                1) proxy_type="tcp"; echo -e "${GREEN}✅ TCP proxy selected${NC}"; break ;;
-                2) proxy_type="http"; echo -e "${GREEN}✅ HTTP proxy selected${NC}"; break ;;
-                3) proxy_type="https"; echo -e "${GREEN}✅ HTTPS proxy selected${NC}"; break ;;
-                4) proxy_type="udp"; echo -e "${GREEN}✅ UDP proxy selected${NC}"; break ;;
-                *) echo -e "${RED}❌ Please enter 1, 2, 3, or 4${NC}" ;;
-            esac
-        done
-    fi
+            if ! validate_ports_list "$ports"; then
+                log "ERROR" "Invalid port format"
+                read -p "Press Enter to continue..."
+                return
+            fi
+            ;;
+        *)
+            log "ERROR" "Invalid configuration method"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+    esac
+
+    echo -e "\n${CYAN}Server Connection Settings:${NC}"
+    read -p "Iran Server IPs (comma-separated, e.g., 1.1.1.1,2.2.2.2): " server_ips
     
-    # Custom domains for HTTP/HTTPS
-    local custom_domains=""
-    if [[ "$proxy_type" == "http" || "$proxy_type" == "https" ]]; then
-        echo -e "\n${CYAN}🌐 Domain Configuration:${NC}"
-        echo -e "${YELLOW}Configure custom domains? (y/N):${NC} "
-        read -r use_domains
-        
-        if [[ "$use_domains" =~ ^[Yy]$ ]]; then
-            get_custom_domains "$ports"
-            custom_domains="$CUSTOM_DOMAINS"
-        fi
-    fi
-    
-    # Configuration Summary
-    echo -e "\n${CYAN}📋 Configuration Summary:${NC}"
-    echo -e "${GRAY}┌─────────────────────────────────────────────────┐${NC}"
-    echo -e "${GRAY}│${NC} ${GREEN}Server IP(s):${NC} $server_ips"
-    echo -e "${GRAY}│${NC} ${GREEN}Server Port:${NC} $server_port"
-    echo -e "${GRAY}│${NC} ${GREEN}Auth Token:${NC} ${token:0:8}..."
-    echo -e "${GRAY}│${NC} ${GREEN}Proxy Type:${NC} $proxy_type"
-    echo -e "${GRAY}│${NC} ${GREEN}Ports:${NC} $ports"
-    if [[ -n "$custom_domains" ]]; then
-        echo -e "${GRAY}│${NC} ${GREEN}Domains:${NC} $custom_domains"
-    fi
-    echo -e "${GRAY}└─────────────────────────────────────────────────┘${NC}"
-    
-    echo -e "\n${YELLOW}Proceed with this configuration? (Y/n):${NC} "
-    read -r confirm
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
-        log "INFO" "Configuration cancelled by user"
+    if [[ -z "$server_ips" ]]; then
+        log "ERROR" "Server IPs are required"
         read -p "Press Enter to continue..."
         return
     fi
     
-    # Check for existing configurations
-    if ls "$CONFIG_DIR"/frpc_*.toml 1> /dev/null 2>&1; then
-        echo -e "\n${YELLOW}⚠️  Existing client configurations detected${NC}"
-        echo -e "${CYAN}What would you like to do?${NC}"
-        echo "1. Keep existing and add new configurations"
-        echo "2. Remove all existing configurations first"
-        echo "3. Cancel operation"
-        
-        local cleanup_choice=""
-        while true; do
-            echo -e "${YELLOW}Enter choice [1-3]:${NC} "
-            read -r cleanup_choice
-            
-            case $cleanup_choice in
-                1) break ;;
-                2) 
-                    if cleanup_old_configs "remove"; then
-                        echo -e "${GREEN}✅ Existing configurations removed${NC}"
-                        break
-                    else
-                        read -p "Press Enter to continue..."
-                        return
-                    fi
-                    ;;
-                3) 
-                    log "INFO" "Operation cancelled by user"
-                    read -p "Press Enter to continue..."
-                    return
-                    ;;
-                *) echo -e "${RED}❌ Please enter 1, 2, or 3${NC}" ;;
-            esac
-        done
+    if ! validate_ips_list "$server_ips"; then
+        log "ERROR" "Invalid IP address format"
+        read -p "Press Enter to continue..."
+        return
     fi
     
-    # Server Connection Validation
-    echo -e "\n${CYAN}🔍 Validating server connections...${NC}"
+    read -p "Server Port (default: 7000): " server_port
+    [[ -z "$server_port" ]] && server_port=7000
+    
+    if ! validate_port "$server_port"; then
+        log "ERROR" "Invalid port number"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    read -p "Authentication Token: " token
+    if [[ -z "$token" ]]; then
+        log "ERROR" "Authentication token is required"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    # Configure proxy type (either from template or manual selection)
+    local custom_domains=""
+    local enable_bandwidth="false"
+    
+    if [[ "$config_method" == "1" ]]; then
+        # Use proxy type from template
+        SELECTED_PROXY_TYPE="$proxy_type"
+        
+        # Set descriptive name based on type
+        case "$proxy_type" in
+            "tcp") SELECTED_PROXY_NAME="TCP" ;;
+            "http") SELECTED_PROXY_NAME="HTTP" ;;
+            "https") SELECTED_PROXY_NAME="HTTPS" ;;
+            "udp") SELECTED_PROXY_NAME="UDP" ;;
+        esac
+        
+        echo -e "\n${CYAN}📋 Proxy Configuration from Template:${NC}"
+        echo -e "${GREEN}Type:${NC} $SELECTED_PROXY_NAME"
+    else
+        # Manual proxy type selection
+        echo -e "\n${CYAN}Proxy Configuration:${NC}"
+        if ! select_proxy_type; then
+            log "INFO" "Proxy type selection cancelled"
+            read -p "Press Enter to continue..."
+            return
+        fi
+    fi
+    
+    # Get custom domains for HTTP/HTTPS proxies
+    if [[ "$SELECTED_PROXY_TYPE" == "http" || "$SELECTED_PROXY_TYPE" == "https" ]]; then
+        get_custom_domains "$ports"
+        custom_domains="$CUSTOM_DOMAINS"
+    fi
+    
+    # Ask about bandwidth management
+    echo -e "\n${CYAN}🚦 Performance Options:${NC}"
+    echo -e "${YELLOW}Would you like to configure bandwidth limits? (y/N):${NC} "
+    read -r enable_bw
+    
+    if [[ "$enable_bw" =~ ^[Yy]$ ]]; then
+        enable_bandwidth="true"
+        configure_global_bandwidth
+    fi
+    
+    # Check for existing configurations and handle conflicts
+    if ls "$CONFIG_DIR"/frpc_*.toml 1> /dev/null 2>&1; then
+        log "WARN" "Existing client configurations detected"
+        if ! cleanup_old_configs "remove"; then
+            return
+        fi
+    fi
+    
+    # Validate server connections first
+    echo -e "\n${CYAN}Validating server connections...${NC}"
     IFS=',' read -ra IP_ARRAY <<< "$server_ips"
     local connection_failed=false
     
     for ip in "${IP_ARRAY[@]}"; do
         ip=$(echo "$ip" | tr -d ' ')
-        echo -e "${CYAN}Testing connection to $ip:$server_port...${NC}"
-        
-        if validate_server_connection "$ip" "$server_port"; then
-            echo -e "${GREEN}✅ Connection successful${NC}"
-        else
-            echo -e "${RED}❌ Connection failed${NC}"
+        if ! validate_server_connection "$ip" "$server_port"; then
             connection_failed=true
         fi
     done
     
     if [[ "$connection_failed" == "true" ]]; then
-        echo -e "\n${YELLOW}⚠️  Some server connections failed${NC}"
-        echo -e "${CYAN}This might be due to:${NC}"
-        echo -e "  • Server not running or not accessible"
-        echo -e "  • Firewall blocking the connection"
-        echo -e "  • Incorrect IP or port"
-        echo -e "\n${YELLOW}Continue anyway? (y/N):${NC} "
+        echo -e "\n${YELLOW}Some server connections failed. Continue anyway? (y/N):${NC} "
         read -r continue_anyway
         if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
             log "INFO" "Configuration cancelled due to connection issues"
@@ -2375,74 +2252,105 @@ create_foreign_client_config() {
         fi
     fi
     
+    # Debug information
+    echo -e "\n${CYAN}🔍 Debug Information:${NC}"
+    echo -e "  • Server IPs: $server_ips"
+    echo -e "  • Server Port: $server_port"
+    echo -e "  • Token: ${token:0:8}..."
+    echo -e "  • Ports: $ports"
+    echo -e "  • Proxy Type: $SELECTED_PROXY_TYPE"
+    echo -e "  • Custom Domains: $custom_domains"
+    echo -e "  • Bandwidth Enabled: $enable_bandwidth"
+    echo -e "  • FRP Binary Check: $(ls -la $FRP_DIR/frpc 2>/dev/null || echo 'NOT FOUND')"
+    echo -e "  • Config Directory: $CONFIG_DIR ($(ls -la $CONFIG_DIR 2>/dev/null | wc -l) files)"
+    
     # Process each IP with progress indicator
-    echo -e "\n${CYAN}🚀 Creating configurations...${NC}"
     local config_count=0
     local failed_count=0
     local total_ips=${#IP_ARRAY[@]}
     local current_ip=0
+    
+    echo -e "\n${CYAN}🚀 Setting up configurations...${NC}"
     
     for ip in "${IP_ARRAY[@]}"; do
         ip=$(echo "$ip" | tr -d ' ')
         ((current_ip++))
         local ip_suffix=$(echo "$ip" | cut -d'.' -f4)
         
-        echo -e "\n${CYAN}[$current_ip/$total_ips] Processing IP: $ip${NC}"
+        # Show progress bar
+        local progress=$((current_ip * 100 / total_ips))
+        local bar_length=30
+        local filled_length=$((progress * bar_length / 100))
+        local bar=""
+        
+        for ((i=0; i<filled_length; i++)); do bar+="█"; done
+        for ((i=filled_length; i<bar_length; i++)); do bar+="░"; done
+        
+        echo -ne "\r${CYAN}Progress: [${bar}] ${progress}% (${current_ip}/${total_ips}) - Processing IP: $ip${NC}"
         
         # Generate client configuration
-        if generate_frpc_config "$ip" "$server_port" "$token" "$ip" "$ports" "$ip_suffix" "$proxy_type" "$custom_domains"; then
-            echo -e "${GREEN}✅ Configuration generated${NC}"
-            
+        echo -e "${CYAN}Generating configuration for IP: $ip (suffix: $ip_suffix)${NC}"
+        if generate_frpc_config "$ip" "$server_port" "$token" "$ip" "$ports" "$ip_suffix" "$SELECTED_PROXY_TYPE" "$custom_domains" "$enable_bandwidth"; then
+            echo -e "${GREEN}✅ Configuration generated successfully${NC}"
             # Validate the generated configuration
+            echo -e "${CYAN}Validating configuration...${NC}"
             if validate_frp_config "$CONFIG_DIR/frpc_${ip_suffix}.toml"; then
-                echo -e "${GREEN}✅ Configuration validation passed${NC}"
+                echo -e "${GREEN}✅ Configuration validation passed for IP: $ip${NC}"
             else
-                echo -e "${YELLOW}⚠️  Configuration validation failed, but proceeding...${NC}"
+                echo -e "${YELLOW}⚠️  Configuration validation failed for IP: $ip, but proceeding...${NC}"
             fi
             
             # Create systemd service
+            echo -e "\n${CYAN}Creating systemd service for IP: $ip${NC}"
             if create_systemd_service "moonfrp-client-$ip_suffix" "frpc" "$CONFIG_DIR/frpc_${ip_suffix}.toml" "$ip_suffix"; then
                 echo -e "${GREEN}✅ Service created: moonfrp-client-$ip_suffix${NC}"
             else
-                echo -e "${RED}❌ Failed to create service${NC}"
+                echo -e "${RED}❌ Failed to create service for IP: $ip${NC}"
                 ((failed_count++))
                 continue
             fi
             
             # Start service
+            echo -e "${CYAN}Starting service: moonfrp-client-$ip_suffix${NC}"
             if start_service "moonfrp-client-$ip_suffix"; then
                 ((config_count++))
-                echo -e "${GREEN}✅ Service started successfully${NC}"
+                echo -e "${GREEN}✅ Successfully configured client for IP: $ip${NC}"
             else
                 ((failed_count++))
-                echo -e "${RED}❌ Failed to start service${NC}"
+                echo -e "${RED}❌ Failed to start service for IP: $ip${NC}"
             fi
         else
             ((failed_count++))
-            echo -e "${RED}❌ Failed to generate configuration${NC}"
+            echo -e "\n${RED}❌ Failed to generate configuration for IP: $ip${NC}"
         fi
+        
+        # Small delay to show progress
+        sleep 1
     done
     
-    # Configuration Results Summary
+    # Clear progress line
+    echo -ne "\r$(printf '%*s' 80 '')\r"
+    
+    # Enhanced configuration summary with progress indicators
     clear
     echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║    🎉 Client Setup Complete!        ║${NC}"
+    echo -e "${PURPLE}║     Configuration Complete!         ║${NC}"
     echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
     
-    echo -e "\n${CYAN}📊 Configuration Results:${NC}"
-    echo -e "${GREEN}✅ Successful:${NC} $config_count"
-    echo -e "${RED}❌ Failed:${NC} $failed_count"
-    echo -e "${CYAN}📋 Proxy Type:${NC} $proxy_type"
-    echo -e "${CYAN}🚪 Ports:${NC} $ports"
+    echo -e "\n${GREEN}📊 Configuration Summary:${NC}"
+    echo -e "${CYAN}  ✅ Successful configurations: ${GREEN}$config_count${NC}"
+    echo -e "${CYAN}  ❌ Failed configurations: ${RED}$failed_count${NC}"
+    echo -e "${CYAN}  📋 Template used: ${YELLOW}${TEMPLATE_NAME:-Manual Configuration}${NC}"
+    echo -e "${CYAN}  🔌 Proxy type: ${YELLOW}$SELECTED_PROXY_NAME${NC}"
+    echo -e "${CYAN}  🚪 Ports configured: ${YELLOW}$ports${NC}"
     
     if [[ $config_count -gt 0 ]]; then
-        echo -e "\n${GREEN}✅ Created $config_count client configuration(s) successfully!${NC}"
+        echo -e "\n${GREEN}🎉 Created $config_count client configurations successfully!${NC}"
         
-        # Show service status
-        echo -e "\n${CYAN}📋 Service Status:${NC}"
-        echo -e "${GRAY}┌─────────────────────────────────────────────────┐${NC}"
-        printf "${GRAY}│${NC} %-20s %-15s %-10s ${GRAY}│${NC}\n" "Service" "Server IP" "Status"
-        echo -e "${GRAY}├─────────────────────────────────────────────────┤${NC}"
+        echo -e "\n${CYAN}📋 Services Status:${NC}"
+        echo -e "${GRAY}┌─────────────────────────────────────────────────────────┐${NC}"
+        printf "${GRAY}│${NC} %-20s %-15s %-10s %-10s ${GRAY}│${NC}\n" "Service" "IP Address" "Status" "Health"
+        echo -e "${GRAY}├─────────────────────────────────────────────────────────┤${NC}"
         
         for ip in "${IP_ARRAY[@]}"; do
             ip=$(echo "$ip" | tr -d ' ')
@@ -2451,16 +2359,30 @@ create_foreign_client_config() {
             local service_status=$(get_service_status "$service_name")
             local status_icon="❌"
             local status_color="$RED"
+            local health_status="Failed"
+            local health_color="$RED"
             
             if [[ "$service_status" == "active" ]]; then
                 status_icon="✅"
                 status_color="$GREEN"
+                
+                # Test server connection for health check
+                local server_addr=$(grep "serverAddr" "$CONFIG_DIR/frpc_${ip_suffix}.toml" 2>/dev/null | head -1 | cut -d'"' -f2)
+                local server_port=$(grep "serverPort" "$CONFIG_DIR/frpc_${ip_suffix}.toml" 2>/dev/null | head -1 | cut -d'=' -f2 | tr -d ' ')
+                
+                if [[ -n "$server_addr" && -n "$server_port" ]] && timeout 2 nc -z "$server_addr" "$server_port" 2>/dev/null; then
+                    health_status="OK"
+                    health_color="$GREEN"
+                else
+                    health_status="Conn Error"
+                    health_color="$YELLOW"
+                fi
             fi
             
-            printf "${GRAY}│${NC} %-20s %-15s ${status_color}%-10s${NC} ${GRAY}│${NC}\n" \
-                "$service_name" "$ip" "$service_status"
+            printf "${GRAY}│${NC} %-20s %-15s ${status_color}%-10s${NC} ${health_color}%-10s${NC} ${GRAY}│${NC}\n" \
+                "$service_name" "$ip" "$service_status" "$health_status"
         done
-        echo -e "${GRAY}└─────────────────────────────────────────────────┘${NC}"
+        echo -e "${GRAY}└─────────────────────────────────────────────────────────┘${NC}"
         
         # Show access information
         echo -e "\n${CYAN}🌐 Access Information:${NC}"
@@ -2470,9 +2392,9 @@ create_foreign_client_config() {
             port=$(echo "$port" | tr -d ' ')
             echo -e "${GREEN}Port $port:${NC}"
             
-            case "$proxy_type" in
-                "tcp"|"udp")
-                    echo -e "  • Access via: ${YELLOW}${IP_ARRAY[0]}:$port${NC}"
+            case "$SELECTED_PROXY_TYPE" in
+                "tcp")
+                    echo -e "  • Access via: ${YELLOW}SERVER_IP:$port${NC}"
                     ;;
                 "http"|"https")
                     if [[ -n "$custom_domains" ]]; then
@@ -2480,32 +2402,39 @@ create_foreign_client_config() {
                         local port_index=0
                         for domain in "${DOMAIN_ARRAY[@]}"; do
                             domain=$(echo "$domain" | tr -d ' ')
-                            echo -e "  • Access via: ${YELLOW}$proxy_type://$domain${NC}"
-                            break
+                            if [[ $port_index -eq $((${#PORT_ARRAY[@]} - ${#PORT_ARRAY[@]} + $(printf '%s\n' "${PORT_ARRAY[@]}" | grep -n "^$port$" | cut -d: -f1) - 1)) ]]; then
+                                echo -e "  • Access via: ${YELLOW}$SELECTED_PROXY_TYPE://$domain${NC}"
+                                break
+                            fi
+                            ((port_index++))
                         done
                     else
-                        echo -e "  • Access via: ${YELLOW}$proxy_type://app${port}.moonfrp.local${NC}"
+                        echo -e "  • Access via: ${YELLOW}$SELECTED_PROXY_TYPE://app${port}.moonfrp.local${NC}"
                     fi
+                    ;;
+                "udp")
+                    echo -e "  • Access via: ${YELLOW}SERVER_IP:$port (UDP)${NC}"
                     ;;
             esac
         done
         
-        echo -e "\n${CYAN}🔧 Management Commands:${NC}"
-        echo -e "  • Check all services: ${GREEN}systemctl status moonfrp-client-*${NC}"
+        echo -e "\n${CYAN}💡 Quick Commands:${NC}"
         echo -e "  • View logs: ${GREEN}journalctl -u moonfrp-client-* -f${NC}"
+        echo -e "  • Check status: ${GREEN}systemctl status moonfrp-client-*${NC}"
         echo -e "  • Restart all: ${GREEN}systemctl restart moonfrp-client-*${NC}"
         echo -e "  • Stop all: ${GREEN}systemctl stop moonfrp-client-*${NC}"
         
-        echo -e "\n${YELLOW}💡 Troubleshooting:${NC}"
-        echo -e "  • Use menu option 5 for detailed diagnostics"
-        echo -e "  • Verify server is running and accessible"
-        echo -e "  • Check firewall settings on both ends"
+        echo -e "\n${YELLOW}🔧 Troubleshooting:${NC}"
+        echo -e "  • Use menu option 6 for detailed diagnostics"
+        echo -e "  • Verify server token matches client token"
+        echo -e "  • Ensure firewall allows the specified ports"
+        echo -e "  • Check server allowPorts configuration"
         
         if [[ $failed_count -gt 0 ]]; then
             echo -e "\n${RED}⚠️  Some configurations failed:${NC}"
-            echo -e "  • Check server connectivity"
-            echo -e "  • Verify authentication token"
-            echo -e "  • Review service logs for details"
+            echo -e "  • Check logs for detailed error messages"
+            echo -e "  • Verify network connectivity to servers"
+            echo -e "  • Ensure no port conflicts exist"
         fi
     fi
     
@@ -2542,7 +2471,7 @@ service_removal_menu() {
 
 # Remove single service
 remove_single_service() {
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -2583,7 +2512,7 @@ remove_single_service() {
 
 # Remove all services
 remove_all_services() {
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -2618,9 +2547,9 @@ remove_service() {
     [[ -f "$service_file" ]] && rm -f "$service_file"
     
     # Remove configuration file
-    if [[ "$service_name" =~ (frps|moonfrps) ]]; then
+    if [[ "$service_name" =~ frps ]]; then
         [[ -f "$CONFIG_DIR/frps.toml" ]] && rm -f "$CONFIG_DIR/frps.toml"
-    elif [[ "$service_name" =~ (frpc|moonfrpc) ]]; then
+    elif [[ "$service_name" =~ frpc ]]; then
         local config_pattern="$CONFIG_DIR/frpc_*.toml"
         for config_file in $config_pattern; do
             [[ -f "$config_file" ]] && rm -f "$config_file"
@@ -3009,7 +2938,7 @@ view_service_logs_menu() {
     clear
     echo -e "${CYAN}📋 Service Logs Viewer${NC}"
     
-    local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    local services=($(systemctl list-units --type=service --all | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -3091,7 +3020,7 @@ fix_common_issues() {
             log "INFO" "Cleared all log files"
             ;;
         5)
-            local services=($(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+            local services=($(systemctl list-units --type=service --all | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//'))
             for service in "${services[@]}"; do
                 restart_service "$service"
             done
@@ -3132,7 +3061,7 @@ generate_diagnostic_report() {
         echo
         
         echo "=== Services Status ==="
-        systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" || echo "No FRP services found"
+        systemctl list-units --type=service --all | grep -E "(frps|frpc)" || echo "No FRP services found"
         echo
         
         echo "=== Network Connectivity ==="
@@ -3158,7 +3087,7 @@ generate_diagnostic_report() {
         echo
         
         echo "=== Recent Logs ==="
-        for service in $(systemctl list-units --type=service --all | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'); do
+        for service in $(systemctl list-units --type=service --all | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//'); do
             echo "--- $service ---"
             journalctl -u "$service" -n 5 --no-pager 2>/dev/null || echo "No logs found"
             echo
@@ -3215,7 +3144,7 @@ show_about_info() {
     fi
     
     # Check services
-    local services=($(systemctl list-units --type=service --all 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
+    local services=($(systemctl list-units --type=service --all 2>/dev/null | grep -E "(frps|frpc)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
     if [[ ${#services[@]} -gt 0 ]] && [[ "${services[0]}" != "" ]]; then
         echo -e "  Active Services: ${GREEN}${#services[@]} service(s)${NC}"
         for service in "${services[@]}"; do
@@ -3293,14 +3222,14 @@ fix_web_panel_issues() {
     local dashboard_user=""
     local dashboard_password=""
     
-    if systemctl status moonfrp-server >/dev/null 2>&1; then
+    if systemctl is-active moonfrp-server >/dev/null 2>&1; then
         server_running=true
         echo -e "${GREEN}✅ FRP Server service is running${NC}"
     else
         echo -e "${RED}❌ FRP Server service is NOT running${NC}"
         echo -e "${YELLOW}Attempting to start server...${NC}"
         
-        if systemctl status moonfrp-server 2>/dev/null; then
+        if systemctl start moonfrp-server 2>/dev/null; then
             echo -e "${GREEN}✅ Server started successfully${NC}"
             server_running=true
             sleep 3
@@ -3443,10 +3372,10 @@ fix_web_panel_issues() {
     case $fix_option in
         1)
             echo -e "\n${CYAN}🔄 Restarting FRP Server...${NC}"
-            systemctl status moonfrp-server
+            systemctl restart moonfrp-server
             sleep 3
             
-            if systemctl status moonfrp-server >/dev/null 2>&1; then
+            if systemctl is-active moonfrp-server >/dev/null 2>&1; then
                 echo -e "${GREEN}✅ Server restarted successfully${NC}"
                 echo -e "${CYAN}Wait 10 seconds then try accessing the dashboard${NC}"
             else
@@ -3469,7 +3398,7 @@ fix_web_panel_issues() {
                 generate_frps_config "$new_token" "7000" "$dashboard_port" "$dashboard_user" "$dashboard_password"
                 
                 # Restart service
-                systemctl status moonfrp-server
+                systemctl restart moonfrp-server
                 
                 echo -e "${GREEN}✅ Configuration regenerated and service restarted${NC}"
             fi
