@@ -5598,7 +5598,7 @@ real_time_status_monitor() {
         done
         
         if [[ "$client_found" == "false" ]]; then
-            echo "No client configurations found"
+            echo "    No client configurations found (Server-only mode)"
         fi
         
         # Show server dashboard info if available
@@ -5642,6 +5642,8 @@ real_time_status_monitor() {
             
             local filename=$(basename "$config_file")
             local proxy_count=$(grep -c "^\[\[proxies\]\]" "$config_file" 2>/dev/null || echo "0")
+            # Ensure proxy_count is a valid number
+            [[ ! "$proxy_count" =~ ^[0-9]+$ ]] && proxy_count=0
             
             if [[ "$proxy_count" -gt 0 ]]; then
                 printf "%-30s %s proxies\n" "$filename" "$proxy_count"
