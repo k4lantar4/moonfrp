@@ -1301,7 +1301,7 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 # Transport settings
-transport.maxPoolCount = 20
+transport.maxPoolCount = 10
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 60
 transport.heartbeatTimeout = 90
@@ -1341,7 +1341,14 @@ allowPorts = [
 detailedErrorsToClient = true
 enablePrometheus = true
 udpPacketSize = 1500
-natholeAnalysisDataReserveHours = 168
+natholeAnalysisDataReserveHours = 24
+
+# Resource limits to prevent memory leaks
+maxWorkConnPoolSize = 500
+maxOpenFiles = 10000
+# Limit concurrent connections to prevent resource exhaustion
+maxPortsPerClient = 20
+maxWorkConnPerProxy = 100
 
 EOF
 
@@ -2654,7 +2661,25 @@ create_systemd_service() {
         return 1
     fi
     
+    # Check if service already exists - stop and disable it first
     local service_file="$SERVICE_DIR/${service_name}.service"
+    if [[ -f "$service_file" ]]; then
+        log "WARN" "Service $service_name already exists, stopping and disabling it first"
+        systemctl stop "$service_name" 2>/dev/null || true
+        systemctl disable "$service_name" 2>/dev/null || true
+        sleep 2  # Give systemd time to fully stop the service
+    fi
+    
+    # For server service, check if any other frps processes are running
+    if [[ "$service_type" == "frps" ]]; then
+        local running_frps=$(pgrep -c frps || echo "0")
+        if [[ "$running_frps" -gt 0 ]]; then
+            log "WARN" "Found $running_frps running frps processes. Stopping them to prevent conflicts."
+            killall frps 2>/dev/null || true
+            sleep 3  # Wait for processes to terminate
+        fi
+    fi
+    
     local description="MoonFRP ${service_type^^} Service"
     
     if [[ -n "$ip_suffix" ]]; then
@@ -2675,8 +2700,17 @@ Group=root
 ExecStart=$FRP_DIR/$service_type -c $config_file
 ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=mixed
-Restart=always
-RestartSec=5
+# Only restart on clean exit status, not on failures
+Restart=on-success
+# Increase restart delay to prevent rapid cycling
+RestartSec=30
+# Maximum restarts in a time period to prevent resource exhaustion
+StartLimitIntervalSec=600
+StartLimitBurst=5
+# Memory limits to prevent excessive memory usage
+MemoryLimit=1G
+# CPU limits
+CPUQuota=80%
 StandardOutput=journal
 StandardError=journal
 
