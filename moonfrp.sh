@@ -1465,12 +1465,6 @@ transport.dialServerKeepalive = 7200
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
-# Performance optimizations
-transport.useEncryption = false
-transport.useCompression = false
-transport.bandwidthLimit = "100MB"
-transport.bandwidthLimitMode = "client"
-
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.enable = true
 transport.tls.disableCustomTLSFirstByte = true
