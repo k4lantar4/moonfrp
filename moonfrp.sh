@@ -2703,7 +2703,7 @@ KillMode=mixed
 # Only restart on clean exit status, not on failures
 Restart=on-success
 # Increase restart delay to prevent rapid cycling
-RestartSec=30
+RestartSec=10
 # Maximum restarts in a time period to prevent resource exhaustion
 StartLimitIntervalSec=600
 StartLimitBurst=5
