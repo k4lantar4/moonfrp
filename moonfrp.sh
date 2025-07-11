@@ -1,9 +1,22 @@
 #!/bin/bash
 
 # MoonFRP - Advanced FRP Management Script
-# Version: 1.0.1
+# Version: 1.0.5
 # Author: MoonFRP Team
 # Description: Modular FRP configuration and service management tool
+#
+# Performance Notes:
+# - Server settings in frps.toml:
+#   * maxPortsPerClient: Limit ports per client (default: 10)
+#   * userConnTimeout: Maximum wait time for connections (default: 10s)
+#   * transport.maxPoolCount: Limit connection pool size (default: 5)
+#   * transport.quic.maxIncomingStreams: Limit QUIC streams (default: 100)
+#
+# - Client settings in frpc.toml:
+#   * loginFailExit: Exit on login failure (default: true)
+#   * transport.poolCount: Connection pool size (default: 5)
+#   * transport.dialServerKeepalive: Keep-alive interval (default: 300s)
+#   * transport.bandwidthLimit: Bandwidth limit (default: "10MB")
 
 # Use safer bash settings, but allow for graceful error handling
 set -uo pipefail
@@ -1301,11 +1314,11 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 # Transport settings
-transport.maxPoolCount = 20
+transport.maxPoolCount = 5
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 60
-transport.heartbeatTimeout = 90
-transport.tcpKeepalive = 7200
+transport.tcpMuxKeepaliveInterval = 30
+transport.heartbeatTimeout = 60
+transport.tcpKeepalive = 300
 
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.force = false
@@ -1343,6 +1356,11 @@ enablePrometheus = true
 udpPacketSize = 1500
 natholeAnalysisDataReserveHours = 168
 
+# Connection limits to prevent resource exhaustion
+maxPortsPerClient = 10
+# userConnTimeout specifies the maximum time to wait for a work connection (seconds)
+userConnTimeout = 10
+
 EOF
 
     # Add dashboard settings only if enabled
@@ -1377,7 +1395,7 @@ quicBindPort = $quic_port
 # QUIC Protocol advanced options
 transport.quic.keepalivePeriod = 10
 transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 1000
+transport.quic.maxIncomingStreams = 100
 
 EOF
     fi
@@ -1521,7 +1539,7 @@ EOF
 # Note: Server must have QUIC enabled (quicBindPort configured)
 transport.quic.keepalivePeriod = 10
 transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 100000
+transport.quic.maxIncomingStreams = 100
 
 EOF
             ;;
