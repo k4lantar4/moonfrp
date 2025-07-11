@@ -5563,13 +5563,36 @@ real_time_status_monitor() {
                 # Count proxies in this config
                 local proxy_count=$(grep -c "^\[\[proxies\]\]" "$config_file" 2>/dev/null || echo "0")
                 
-                printf "%-15s -> %-20s (%s proxies) " "Client-$ip_suffix" "$server_addr:$server_port" "$proxy_count"
+                # Get all ports from config
+                local ports_in_config=()
+                while IFS= read -r line; do
+                    if [[ $line =~ localPort\ =\ ([0-9]+) ]]; then
+                        ports_in_config+=("${BASH_REMATCH[1]}")
+                    fi
+                done < "$config_file"
                 
-                if timeout 2 nc -z "$server_addr" "$server_port" 2>/dev/null; then
-                    echo -e "${GREEN}✅ Connected${NC}"
-                else
-                    echo -e "${RED}❌ Failed${NC}"
+                # Format ports list
+                local ports_list=""
+                if [[ ${#ports_in_config[@]} -gt 0 ]]; then
+                    IFS=','
+                    ports_list="${ports_in_config[*]}"
+                    IFS=' '  # Reset IFS
                 fi
+                
+                # Check service status
+                local service_name="moonfrpc-$ip_suffix"
+                local service_status=$(systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
+                local status_icon="❌"
+                local status_color="$RED"
+                
+                if [[ "$service_status" == "active" ]]; then
+                    status_icon="✅"
+                    status_color="$GREEN"
+                fi
+                
+                printf "    %-15s -> %-20s [%s] %s%s%s\n" \
+                    "Client-$ip_suffix" "$server_addr" "$ports_list" \
+                    "$status_color" "$status_icon" "$NC"
                 client_found=true
             fi
         done
@@ -5689,7 +5712,7 @@ show_current_config_summary() {
         local dashboard_port=""
         
         while IFS= read -r line; do
-            if [[ $line =~ bindPort\ =\ ([0-9]+) ]]; then
+            if [[ $line =~ ^bindPort\ =\ ([0-9]+) ]]; then
                 bind_port="${BASH_REMATCH[1]}"
             elif [[ $line =~ auth\.token\ =\ \"([^\"]+)\" ]]; then
                 token="${BASH_REMATCH[1]}"
