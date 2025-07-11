@@ -1406,7 +1406,7 @@ log.level = "info"
 log.maxDays = 7
 
 # Transport settings
-transport.maxPoolCount = 5
+transport.poolCount = 8
 transport.protocol = "tcp"
 transport.heartbeatTimeout = 90
 transport.dialServerTimeout = 10
@@ -2257,7 +2257,7 @@ log.level = "info"
 log.maxDays = 7
 
 # Transport settings
-transport.maxPoolCount = 5
+transport.poolCount = 8
 transport.protocol = "tcp"
 transport.heartbeatTimeout = 90
 
