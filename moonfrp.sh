@@ -1340,7 +1340,7 @@ transport.quic.maxIdleTimeout = 30
 transport.quic.maxIncomingStreams = 100000
 
 # Performance settings (Optimized for better connection handling)
-transport.heartbeatInterval = 30
+# Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
 
 # Security settings (Enhanced authentication scopes)
@@ -1449,7 +1449,7 @@ log.maxDays = 7
 transport.tls.enable = true
 transport.poolCount = 5
 transport.protocol = "tcp"
-transport.heartbeatInterval = 30
+# Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
 
 # Advanced transport options
@@ -2328,7 +2328,7 @@ log.maxDays = 7
 transport.tls.enable = true
 transport.poolCount = 5
 transport.protocol = "tcp"
-transport.heartbeatInterval = 30
+# Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
 
 # Client identification
