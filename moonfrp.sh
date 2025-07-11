@@ -194,6 +194,56 @@ safe_read_menu() {
     return 0
 }
 
+# Enhanced read function with Ctrl+C handling and return to menu
+safe_read_with_return() {
+    local prompt="$1"
+    local var_name="$2"
+    local default_value="${3:-}"
+    
+    echo -e "$prompt"
+    read -r $var_name
+    
+    # Check for Ctrl+C after read
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        echo -e "${CYAN}Returning to menu...${NC}"
+        return 1  # Signal to return to menu
+    fi
+    
+    # Apply default value if needed
+    local input_value=$(eval echo \$$var_name)
+    if [[ -z "$input_value" && -n "$default_value" ]]; then
+        eval $var_name="$default_value"
+    fi
+    
+    return 0
+}
+
+# Wrapper function for read operations in configuration functions
+read_with_ctrl_c_check() {
+    local prompt="$1"
+    local var_name="$2"
+    local default_value="${3:-}"
+    
+    echo -e "$prompt"
+    read -r $var_name
+    
+    # Check for Ctrl+C and return to menu if detected
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        echo -e "${CYAN}Returning to menu...${NC}"
+        return 1
+    fi
+    
+    # Apply default value if needed
+    local input_value=$(eval echo \$$var_name)
+    if [[ -z "$input_value" && -n "$default_value" ]]; then
+        eval $var_name="$default_value"
+    fi
+    
+    return 0
+}
+
 # Quick help for common errors
 show_quick_help() {
     clear
@@ -357,9 +407,19 @@ select_proxy_type() {
         echo -e "   • Suitable for: corporate firewalls, secure remote access"
         echo -e "   • Requires: secret key authentication"
         
+        echo -e "\n${GREEN}9. XTCP${NC} ${YELLOW}(P2P TCP - Direct peer-to-peer connection)${NC}"
+        echo -e "   • True P2P TCP connection with NAT traversal"
+        echo -e "   • Suitable for: gaming, real-time applications, direct access"
+        echo -e "   • Features: NAT hole punching, fallback options"
+        
+        echo -e "\n${GREEN}10. Plugin System${NC} ${YELLOW}(Unix sockets, HTTP/SOCKS5 proxy, Static files)${NC}"
+        echo -e "   • Unix domain socket forwarding"
+        echo -e "   • HTTP/SOCKS5 proxy server functionality"
+        echo -e "   • Static file server with authentication"
+        
         echo -e "\n${CYAN}0. Back${NC}"
         
-        echo -e "\n${YELLOW}Enter your choice [0-8] (default: 1):${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-10] (default: 1):${NC} "
         read -r choice
         
         # Check for Ctrl+C after read
@@ -410,6 +470,121 @@ select_proxy_type() {
             8) 
                 SELECTED_PROXY_TYPE="tcpmux-direct"
                 SELECTED_PROXY_NAME="TCPMUX-Direct"
+                return 0
+                ;;
+            9) 
+                SELECTED_PROXY_TYPE="xtcp"
+                SELECTED_PROXY_NAME="XTCP"
+                return 0
+                ;;
+            10) 
+                # Call plugin selection submenu
+                if select_plugin_type; then
+                    return 0
+                else
+                    continue
+                fi
+                ;;
+            0) 
+                return 1
+                ;;
+            *) 
+                log "WARN" "Invalid choice. Please try again."
+                sleep 2
+                ;;
+        esac
+    done
+}
+
+# Plugin type selection menu
+select_plugin_type() {
+    while true; do
+        # Check for Ctrl+C signal
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return 1
+        fi
+        
+        clear
+        echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
+        echo -e "${PURPLE}║        Plugin Type Selection        ║${NC}"
+        echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+        
+        echo -e "\n${CYAN}Select Plugin Type:${NC}"
+        echo -e "${GREEN}1. Unix Domain Socket${NC} ${YELLOW}(Forward to Unix socket)${NC}"
+        echo -e "   • Connect to Unix domain sockets"
+        echo -e "   • Suitable for: Docker API, system sockets"
+        echo -e "   • Example: /var/run/docker.sock"
+        
+        echo -e "\n${GREEN}2. HTTP Proxy${NC} ${YELLOW}(HTTP proxy server)${NC}"
+        echo -e "   • Create HTTP proxy server"
+        echo -e "   • Suitable for: web browsing, API access"
+        echo -e "   • Features: username/password authentication"
+        
+        echo -e "\n${GREEN}3. SOCKS5 Proxy${NC} ${YELLOW}(SOCKS5 proxy server)${NC}"
+        echo -e "   • Create SOCKS5 proxy server"
+        echo -e "   • Suitable for: general TCP/UDP proxying"
+        echo -e "   • Features: username/password authentication"
+        
+        echo -e "\n${GREEN}4. Static File Server${NC} ${YELLOW}(Serve static files)${NC}"
+        echo -e "   • Serve static files over HTTP"
+        echo -e "   • Suitable for: file sharing, web hosting"
+        echo -e "   • Features: authentication, path stripping"
+        
+        echo -e "\n${GREEN}5. HTTPS2HTTP${NC} ${YELLOW}(HTTPS to HTTP converter)${NC}"
+        echo -e "   • Convert HTTPS requests to HTTP"
+        echo -e "   • Suitable for: SSL termination, legacy services"
+        echo -e "   • Features: certificate handling, header rewriting"
+        
+        echo -e "\n${GREEN}6. HTTP2HTTPS${NC} ${YELLOW}(HTTP to HTTPS converter)${NC}"
+        echo -e "   • Convert HTTP requests to HTTPS"
+        echo -e "   • Suitable for: SSL wrapping, secure backends"
+        echo -e "   • Features: certificate handling, header rewriting"
+        
+        echo -e "\n${CYAN}0. Back${NC}"
+        
+        echo -e "\n${YELLOW}Enter your choice [0-6] (default: 1):${NC} "
+        read -r choice
+        
+        # Check for Ctrl+C after read
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return 1
+        fi
+        
+        # Default to Unix Domain Socket if no input
+        [[ -z "$choice" ]] && choice=1
+        
+        case $choice in
+            1) 
+                SELECTED_PROXY_TYPE="plugin_unix_socket"
+                SELECTED_PROXY_NAME="Unix Domain Socket"
+                return 0
+                ;;
+            2) 
+                SELECTED_PROXY_TYPE="plugin_http_proxy"
+                SELECTED_PROXY_NAME="HTTP Proxy"
+                return 0
+                ;;
+            3) 
+                SELECTED_PROXY_TYPE="plugin_socks5"
+                SELECTED_PROXY_NAME="SOCKS5 Proxy"
+                return 0
+                ;;
+            4) 
+                SELECTED_PROXY_TYPE="plugin_static_file"
+                SELECTED_PROXY_NAME="Static File Server"
+                return 0
+                ;;
+            5) 
+                SELECTED_PROXY_TYPE="plugin_https2http"
+                SELECTED_PROXY_NAME="HTTPS2HTTP"
+                return 0
+                ;;
+            6) 
+                SELECTED_PROXY_TYPE="plugin_http2https"
+                SELECTED_PROXY_NAME="HTTP2HTTPS"
                 return 0
                 ;;
             0) 
@@ -903,8 +1078,9 @@ get_config_template() {
                 echo "1. TCPMUX (HTTP CONNECT multiplexing)"
                 echo "2. STCP (Secure TCP P2P)"
                 echo "3. SUDP (Secure UDP P2P)"
+                echo "4. XTCP (P2P TCP with NAT traversal)"
                 
-                read -p "Choose protocol [1-3]: " proto_choice
+                read -p "Choose protocol [1-4]: " proto_choice
                 case $proto_choice in
                     1)
                         TEMPLATE_PORTS="8080,8081,8082"
@@ -923,6 +1099,12 @@ get_config_template() {
                         TEMPLATE_NAME="SUDP Secure Tunneling"
                         TEMPLATE_DESCRIPTION="Secure UDP P2P tunneling"
                         TEMPLATE_PROXY_TYPE="sudp"
+                        ;;
+                    4)
+                        TEMPLATE_PORTS="8888,9999,10000"
+                        TEMPLATE_NAME="XTCP P2P Tunneling"
+                        TEMPLATE_DESCRIPTION="P2P TCP with NAT traversal"
+                        TEMPLATE_PROXY_TYPE="xtcp"
                         ;;
                     *)
                         log "WARN" "Invalid choice"
@@ -968,9 +1150,10 @@ confirm_template_configuration() {
     fi
 }
 
-# Generate random token
+# Generate random token (shorter and more user-friendly)
 generate_token() {
-    openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -d '=+/' | cut -c1-32
+    # Generate a shorter 12-character token for easier management
+    openssl rand -hex 6 2>/dev/null || head -c 12 /dev/urandom | base64 | tr -d '=+/' | cut -c1-12
 }
 
 # Check for existing proxy names and ports
@@ -1068,6 +1251,10 @@ generate_frps_config() {
     local dashboard_port="${3:-}"
     local dashboard_user="${4:-}"
     local dashboard_password="${5:-}"
+    local enable_kcp="${6:-true}"
+    local enable_quic="${7:-false}"
+    local custom_subdomain="${8:-moonfrp.local}"
+    local max_clients="${9:-50}"
     
     # Validate inputs
     if ! validate_port "$bind_port"; then
@@ -1126,6 +1313,32 @@ transport.maxPoolCount = 10
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 60
 
+# Advanced transport protocols
+EOF
+
+    # Add KCP support if enabled
+    if [[ "$enable_kcp" == "true" ]]; then
+        cat >> "$CONFIG_DIR/frps.toml" << EOF
+# KCP Protocol support (UDP-based, better for poor network conditions)
+kcpBindPort = $bind_port
+EOF
+    fi
+
+    # Add QUIC support if enabled
+    if [[ "$enable_quic" == "true" ]]; then
+        cat >> "$CONFIG_DIR/frps.toml" << EOF
+# QUIC Protocol support (modern, multiplexed, encrypted)
+quicBindPort = $((bind_port + 1))
+EOF
+    fi
+
+    cat >> "$CONFIG_DIR/frps.toml" << EOF
+
+# Advanced transport options
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
+
 # Performance settings (Optimized for better connection handling)
 transport.heartbeatInterval = 30
 transport.heartbeatTimeout = 90
@@ -1134,11 +1347,11 @@ transport.heartbeatTimeout = 90
 auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
 # Subdomain settings for HTTP/HTTPS proxies
-subdomainHost = "moonfrp.local"
+subdomainHost = "$custom_subdomain"
 
-# Connection limits per client (Balanced for performance)
-maxProxiesPerClient = 50
-maxPortsPerClient = 50
+# Connection limits per client (Customizable)
+maxProxiesPerClient = $max_clients
+maxPortsPerClient = $max_clients
 
 # Advanced TCPMUX settings for better multiplexing
 transport.poolCount = 5
@@ -1160,6 +1373,16 @@ allowPorts = [
     { start = 10000, end = 19999 },
     { start = 20000, end = 65535 }
 ]
+
+# NAT hole punching configuration
+natholeAnalysisDataReserveHours = 168
+
+# Advanced performance settings
+transport.tcpKeepalive = 7200
+detailedErrorsToClient = true
+
+# Enable Prometheus monitoring
+enablePrometheus = true
 EOF
     
     # Verify configuration file was created successfully
@@ -1220,6 +1443,25 @@ transport.protocol = "tcp"
 transport.heartbeatInterval = 30
 transport.heartbeatTimeout = 90
 
+# Advanced transport options
+transport.dialServerTimeout = 10
+transport.dialServerKeepalive = 7200
+transport.connectServerLocalIP = "0.0.0.0"
+# Enable TCP multiplexing for better performance
+transport.tcpMux = true
+transport.tcpMuxKeepaliveInterval = 30
+
+# QUIC transport options (if using QUIC)
+# transport.quic.keepalivePeriod = 10
+# transport.quic.maxIdleTimeout = 30
+# transport.quic.maxIncomingStreams = 100000
+
+# Connection behavior settings (Fixed: Prevent immediate exit on connection failure)
+loginFailExit = false
+
+# NAT hole punching support (for better P2P connections)
+natHoleStunServer = "stun.easyvoip.com:3478"
+
 # Client identification (Unique per IP to avoid conflicts)
 user = "moonfrp_${ip_suffix}_${timestamp}"
 
@@ -1260,11 +1502,24 @@ EOF
         "tcpmux-direct")
             generate_tcpmux_direct_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
+        "xtcp")
+            generate_xtcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            ;;
+        "plugin_"*)
+            generate_plugin_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$proxy_type"
+            ;;
         *)
             log "WARN" "Unknown proxy type: $proxy_type, defaulting to TCP"
             generate_tcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
     esac
+    
+    # Generate visitor configuration for STCP/XTCP proxies
+    if [[ "$proxy_type" == "stcp" || "$proxy_type" == "xtcp" ]]; then
+        local secret_key="moonfrp-${proxy_type}-${ip_suffix}-${timestamp}"
+        local visitor_config=$(generate_visitor_config "$server_ip" "$server_port" "$token" "$config_file" "$secret_key" "$proxy_type" "$ports" "$ip_suffix")
+        log "INFO" "Generated visitor configuration: $visitor_config"
+    fi
     
     # Verify configuration was created successfully
     if [[ -f "$config_file" && -s "$config_file" ]]; then
@@ -1376,6 +1631,27 @@ localIP = "127.0.0.1"
 localPort = $port
 remotePort = $port
 
+# Health check configuration
+healthCheck.type = "tcp"
+healthCheck.timeoutSeconds = 3
+healthCheck.maxFailed = 3
+healthCheck.intervalSeconds = 10
+
+# Load balancing configuration
+loadBalancer.group = "moonfrp_group_${port}"
+loadBalancer.groupKey = "moonfrp_${port}_$(date +%s | tail -c 6)"
+
+# Performance optimizations
+transport.useEncryption = false
+transport.useCompression = false
+transport.bandwidthLimit = "10MB"
+transport.bandwidthLimitMode = "client"
+
+# Metadata for monitoring
+metadatas.port = "$port"
+metadatas.ip_suffix = "$ip_suffix"
+metadatas.created = "$(date)"
+
 EOF
     done
 }
@@ -1417,6 +1693,39 @@ localIP = "127.0.0.1"
 localPort = $port
 customDomains = ["$domain"]
 
+# Health check configuration for HTTP/HTTPS
+healthCheck.type = "http"
+healthCheck.path = "/health"
+healthCheck.timeoutSeconds = 5
+healthCheck.maxFailed = 3
+healthCheck.intervalSeconds = 15
+healthCheck.httpHeaders = [
+    { name = "User-Agent", value = "MoonFRP-HealthCheck" },
+    { name = "X-Health-Check", value = "true" }
+]
+
+# Load balancing configuration
+loadBalancer.group = "moonfrp_web_group_${port}"
+loadBalancer.groupKey = "moonfrp_web_${port}_$(date +%s | tail -c 6)"
+
+# HTTP-specific optimizations
+transport.useCompression = true
+transport.bandwidthLimit = "20MB"
+transport.bandwidthLimitMode = "client"
+
+# HTTP header management
+hostHeaderRewrite = "localhost"
+requestHeaders.set.X-Forwarded-Proto = "$proxy_type"
+requestHeaders.set.X-Forwarded-For = "\$remote_addr"
+requestHeaders.set.X-Real-IP = "\$remote_addr"
+
+# Metadata for monitoring
+metadatas.port = "$port"
+metadatas.domain = "$domain"
+metadatas.ip_suffix = "$ip_suffix"
+metadatas.protocol = "$proxy_type"
+metadatas.created = "$(date)"
+
 EOF
         
         ((port_index++))
@@ -1441,6 +1750,21 @@ type = "udp"
 localIP = "127.0.0.1"
 localPort = $port
 remotePort = $port
+
+# Note: UDP doesn't support health checks, but we add metadata for monitoring
+# Load balancing configuration
+loadBalancer.group = "moonfrp_udp_group_${port}"
+loadBalancer.groupKey = "moonfrp_udp_${port}_$(date +%s | tail -c 6)"
+
+# UDP-specific optimizations
+transport.bandwidthLimit = "50MB"
+transport.bandwidthLimitMode = "client"
+
+# Metadata for monitoring
+metadatas.port = "$port"
+metadatas.ip_suffix = "$ip_suffix"
+metadatas.protocol = "udp"
+metadatas.created = "$(date)"
 
 EOF
     done
@@ -1625,6 +1949,9 @@ EOF
 # secretKey = "$secret_key"
 # bindAddr = "127.0.0.1"
 # bindPort = LOCAL_PORT
+#
+# 🚀 Auto-generated visitor configuration available!
+# Check: $CONFIG_DIR/frpc_visitor_${ip_suffix}.toml
 
 EOF
 }
@@ -1668,6 +1995,397 @@ EOF
 # bindPort = LOCAL_PORT
 
 EOF
+}
+
+# Generate XTCP proxy configurations (P2P with NAT traversal)
+generate_xtcp_proxies_simple() {
+    local config_file="$1"
+    local ports="$2"
+    local ip_suffix="$3"
+    local timestamp="$4"
+    
+    # Generate a unique secret key for this configuration
+    local secret_key="moonfrp-xtcp-${ip_suffix}-${timestamp}"
+    
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local unique_name="xtcp-${port}-${ip_suffix}"
+        cat >> "$config_file" << EOF
+[[proxies]]
+name = "$unique_name"
+type = "xtcp"
+secretKey = "$secret_key"
+localIP = "127.0.0.1"
+localPort = $port
+# Allow all users to connect (use specific users for better security)
+allowUsers = ["*"]
+
+EOF
+    done
+    
+    # Add visitor configuration comment for user reference
+    cat >> "$config_file" << EOF
+# XTCP P2P Connection Instructions:
+# XTCP creates direct P2P connections with NAT hole punching
+#
+# To connect to XTCP proxies, use a visitor configuration like this:
+# [[visitors]]
+# name = "xtcp_visitor"
+# type = "xtcp"
+# serverName = "xtcp-PORT-${ip_suffix}"
+# secretKey = "$secret_key"
+# bindAddr = "127.0.0.1"
+# bindPort = LOCAL_PORT
+# # Optional: Enable persistent tunnel
+# keepTunnelOpen = true
+# maxRetriesAnHour = 8
+# minRetryInterval = 90
+# # Optional: Fallback to STCP if P2P fails
+# fallbackTo = "stcp_${unique_name}"
+# fallbackTimeoutMs = 1000
+#
+# 🚀 XTCP Features:
+# • True P2P connection with NAT traversal
+# • Automatic fallback to relay mode if P2P fails
+# • Persistent tunnel option for always-on connections
+# • Superior performance for real-time applications
+# • Built-in connection recovery mechanisms
+#
+# 📋 Usage Examples:
+# 1. Gaming: Direct P2P connection for low latency
+# 2. File Transfer: High-speed direct connections
+# 3. Real-time Apps: WebRTC, video streaming
+# 4. Development: Direct access to services without relay overhead
+#
+# 🔧 Advanced Options:
+# • keepTunnelOpen: Maintains persistent connection
+# • maxRetriesAnHour: Controls retry frequency
+# • minRetryInterval: Minimum time between retries
+# • fallbackTo: Automatic fallback proxy for reliability
+#
+# 🚀 Auto-generated visitor configuration available!
+# Check: $CONFIG_DIR/frpc_visitor_${ip_suffix}.toml
+
+EOF
+}
+
+# Generate Plugin proxy configurations
+generate_plugin_proxies_simple() {
+    local config_file="$1"
+    local ports="$2"
+    local ip_suffix="$3"
+    local timestamp="$4"
+    local plugin_type="$5"
+    
+    # Extract plugin name from type
+    local plugin_name="${plugin_type#plugin_}"
+    
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local unique_name="plugin-${plugin_name}-${port}-${ip_suffix}"
+        
+        # Base proxy configuration
+        cat >> "$config_file" << EOF
+[[proxies]]
+name = "$unique_name"
+type = "tcp"
+remotePort = $port
+# Plugin configuration overrides localIP and localPort
+[proxies.plugin]
+EOF
+        
+        # Plugin-specific configuration
+        case "$plugin_name" in
+            "unix_socket")
+                cat >> "$config_file" << EOF
+type = "unix_domain_socket"
+unixPath = "/var/run/docker.sock"
+EOF
+                ;;
+            "http_proxy")
+                cat >> "$config_file" << EOF
+type = "http_proxy"
+httpUser = "moonfrp"
+httpPassword = "$(generate_token | cut -c1-12)"
+EOF
+                ;;
+            "socks5")
+                cat >> "$config_file" << EOF
+type = "socks5"
+username = "moonfrp"
+password = "$(generate_token | cut -c1-12)"
+EOF
+                ;;
+            "static_file")
+                cat >> "$config_file" << EOF
+type = "static_file"
+localPath = "/var/www/html"
+stripPrefix = "static"
+httpUser = "moonfrp"
+httpPassword = "$(generate_token | cut -c1-12)"
+EOF
+                ;;
+            "https2http")
+                cat >> "$config_file" << EOF
+type = "https2http"
+localAddr = "127.0.0.1:80"
+crtPath = "/etc/ssl/certs/server.crt"
+keyPath = "/etc/ssl/private/server.key"
+hostHeaderRewrite = "127.0.0.1"
+requestHeaders.set.x-from-where = "frp"
+EOF
+                ;;
+            "http2https")
+                cat >> "$config_file" << EOF
+type = "http2https"
+localAddr = "127.0.0.1:443"
+hostHeaderRewrite = "127.0.0.1"
+requestHeaders.set.x-from-where = "frp"
+EOF
+                ;;
+        esac
+        
+        cat >> "$config_file" << EOF
+
+EOF
+    done
+    
+    # Add plugin-specific usage instructions
+    cat >> "$config_file" << EOF
+# Plugin Configuration Instructions for $plugin_name:
+#
+EOF
+    
+    case "$plugin_name" in
+        "unix_socket")
+            cat >> "$config_file" << EOF
+# Unix Domain Socket Plugin:
+# • Forwards TCP connections to Unix domain sockets
+# • Default socket: /var/run/docker.sock
+# • Change unixPath to your desired socket path
+# • Useful for Docker API, system services
+#
+# Example usage:
+# curl http://SERVER_IP:$port/version
+# (for Docker API version endpoint)
+EOF
+            ;;
+        "http_proxy")
+            cat >> "$config_file" << EOF
+# HTTP Proxy Plugin:
+# • Creates an HTTP proxy server
+# • Configure your applications to use SERVER_IP:$port as HTTP proxy
+# • Authentication: username=moonfrp, password=generated
+# • Supports HTTP CONNECT method for HTTPS tunneling
+#
+# Example usage:
+# curl -x http://moonfrp:password@SERVER_IP:$port http://example.com
+# export http_proxy=http://moonfrp:password@SERVER_IP:$port
+EOF
+            ;;
+        "socks5")
+            cat >> "$config_file" << EOF
+# SOCKS5 Proxy Plugin:
+# • Creates a SOCKS5 proxy server
+# • Supports both TCP and UDP traffic
+# • Configure your applications to use SERVER_IP:$port as SOCKS5 proxy
+# • Authentication: username=moonfrp, password=generated
+#
+# Example usage:
+# curl --socks5 moonfrp:password@SERVER_IP:$port http://example.com
+# ssh -o ProxyCommand="socat - SOCKS5:moonfrp:password@SERVER_IP:$port" user@target
+EOF
+            ;;
+        "static_file")
+            cat >> "$config_file" << EOF
+# Static File Server Plugin:
+# • Serves static files over HTTP
+# • Default directory: /var/www/html
+# • URL prefix 'static' is stripped from paths
+# • Authentication: username=moonfrp, password=generated
+#
+# Example usage:
+# Place files in /var/www/html/
+# Access via: http://SERVER_IP:$port/filename.html
+# With auth: curl -u moonfrp:password http://SERVER_IP:$port/filename.html
+EOF
+            ;;
+        "https2http")
+            cat >> "$config_file" << EOF
+# HTTPS2HTTP Plugin:
+# • Terminates HTTPS connections and forwards as HTTP
+# • Requires SSL certificate files
+# • Default backend: 127.0.0.1:80
+# • Update crtPath and keyPath to your certificate files
+#
+# Example usage:
+# Configure domain to point to SERVER_IP
+# Access via: https://yourdomain.com (terminates SSL, forwards to local:80)
+EOF
+            ;;
+        "http2https")
+            cat >> "$config_file" << EOF
+# HTTP2HTTPS Plugin:
+# • Receives HTTP requests and forwards as HTTPS
+# • Default backend: 127.0.0.1:443
+# • Useful for SSL wrapping legacy services
+#
+# Example usage:
+# Access via: http://SERVER_IP:$port (forwards to secure backend)
+EOF
+            ;;
+    esac
+    
+    cat >> "$config_file" << EOF
+
+EOF
+}
+
+# Generate visitor configuration for STCP/XTCP proxies
+generate_visitor_config() {
+    local server_ip="$1"
+    local server_port="$2"
+    local token="$3"
+    local config_file="$4"
+    local secret_key="$5"
+    local proxy_type="$6"  # stcp or xtcp
+    local ports="$7"
+    local ip_suffix="$8"
+    
+    local visitor_config_file="$CONFIG_DIR/frpc_visitor_${ip_suffix}.toml"
+    
+    # Create visitor configuration
+    cat > "$visitor_config_file" << EOF
+# MoonFRP Visitor Configuration for IP ending with $ip_suffix
+# Generated on $(date)
+# This configuration allows you to connect to ${proxy_type^^} proxies
+
+# Server connection settings
+serverAddr = "$server_ip"
+serverPort = $server_port
+
+# Authentication
+auth.method = "token"
+auth.token = "$token"
+
+# Connection behavior settings
+loginFailExit = false
+
+# Logging
+log.to = "$LOG_DIR/frpc_visitor_${ip_suffix}.log"
+log.level = "info"
+log.maxDays = 7
+
+# Transport settings
+transport.tls.enable = true
+transport.poolCount = 5
+transport.protocol = "tcp"
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+# Client identification
+user = "moonfrp_visitor_${ip_suffix}_$(date +%s)"
+
+EOF
+
+    # Generate visitor configurations for each port
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    local visitor_port=9000
+    
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local server_name="${proxy_type}-${port}-${ip_suffix}"
+        local visitor_name="${proxy_type}_visitor_${port}_${ip_suffix}"
+        
+        cat >> "$visitor_config_file" << EOF
+[[visitors]]
+name = "$visitor_name"
+type = "$proxy_type"
+serverName = "$server_name"
+secretKey = "$secret_key"
+bindAddr = "127.0.0.1"
+bindPort = $visitor_port
+EOF
+        
+        # Add XTCP-specific options
+        if [[ "$proxy_type" == "xtcp" ]]; then
+            cat >> "$visitor_config_file" << EOF
+# XTCP P2P options
+keepTunnelOpen = true
+maxRetriesAnHour = 8
+minRetryInterval = 90
+# Fallback to STCP if P2P fails
+fallbackTo = "stcp_${server_name}"
+fallbackTimeoutMs = 1000
+EOF
+        fi
+        
+        cat >> "$visitor_config_file" << EOF
+
+EOF
+        ((visitor_port++))
+    done
+    
+    # Add usage instructions
+    cat >> "$visitor_config_file" << EOF
+# ${proxy_type^^} Visitor Configuration Instructions:
+#
+# This configuration file allows you to connect to ${proxy_type^^} proxies running on another machine.
+# 
+# 🚀 How to use:
+# 1. Install FRP client on the machine where you want to access the services
+# 2. Copy this configuration file to the client machine
+# 3. Run: frpc -c $visitor_config_file
+# 4. Access services via the local bind ports listed above
+#
+# 📋 Service Access:
+EOF
+    
+    # Add service access information
+    visitor_port=9000
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        cat >> "$visitor_config_file" << EOF
+# • Access service on port $port via: localhost:$visitor_port
+EOF
+        ((visitor_port++))
+    done
+    
+    cat >> "$visitor_config_file" << EOF
+#
+# 🔧 Examples:
+EOF
+    
+    case "$proxy_type" in
+        "stcp")
+            cat >> "$visitor_config_file" << EOF
+# • SSH: ssh -p 9000 user@localhost
+# • HTTP: curl http://localhost:9000
+# • Database: connect to localhost:9000 instead of remote host
+EOF
+            ;;
+        "xtcp")
+            cat >> "$visitor_config_file" << EOF
+# • SSH: ssh -p 9000 user@localhost (P2P direct connection)
+# • HTTP: curl http://localhost:9000 (P2P direct connection)
+# • Gaming: connect to localhost:9000 (low latency P2P)
+# • Note: XTCP provides direct P2P connection when possible
+EOF
+            ;;
+    esac
+    
+    cat >> "$visitor_config_file" << EOF
+#
+# 🔍 Troubleshooting:
+# • Check logs: tail -f $LOG_DIR/frpc_visitor_${ip_suffix}.log
+# • Verify server is running and accessible
+# • Ensure secret key matches between server and visitor
+# • For XTCP: Check NAT traversal capability
+EOF
+    
+    echo "$visitor_config_file"
 }
 
 # Create systemd service file
@@ -2177,8 +2895,8 @@ list_frp_services() {
         return
     fi
     
-    printf "%-20s %-10s %-15s\n" "Service" "Status" "Type"
-    printf "%-20s %-10s %-15s\n" "-------" "------" "----"
+    printf "%-20s %-12s %-15s\n" "Service" "Status" "Type"
+    printf "%-20s %-12s %-15s\n" "-------" "------" "----"
     
     for service in "${filtered_services[@]}"; do
         [[ -z "$service" ]] && continue
@@ -2194,10 +2912,23 @@ list_frp_services() {
             type="MoonFRP"
         fi
         
-        local status_color="$RED"
-        [[ "$status" == "active" ]] && status_color="$GREEN"
+        # Clean up status text and limit length
+        local clean_status="$status"
+        if [[ ${#clean_status} -gt 10 ]]; then
+            clean_status="${clean_status:0:10}"
+        fi
         
-        printf "%-20s ${status_color}%-10s${NC} %-15s\n" "$service" "$status" "$type"
+        local status_color="$RED"
+        case "$status" in
+            "active") status_color="$GREEN" ;;
+            "inactive") status_color="$RED" ;;
+            "activating") status_color="$YELLOW" ;;
+            "deactivating") status_color="$YELLOW" ;;
+            "failed") status_color="$RED" ;;
+            *) status_color="$GRAY" ;;
+        esac
+        
+        printf "%-20s ${status_color}%-12s${NC} %-15s\n" "$service" "$clean_status" "$type"
     done
 }
 
@@ -2229,9 +2960,10 @@ service_management_menu() {
         echo "8. Remove All Services"
         echo "9. Real-time Status Monitor"
         echo "10. Current Configuration Summary"
+        echo "11. 🔧 Modify Server Configuration"
         echo "0. Back to Main Menu"
         
-        echo -e "\n${YELLOW}Enter your choice [0-10]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-11]:${NC} "
         read -r choice
         
         # Check for Ctrl+C after read
@@ -2251,6 +2983,7 @@ service_management_menu() {
             8) remove_all_services ;;
             9) real_time_status_monitor ;;
             10) show_current_config_summary ;;
+            11) modify_server_configuration ;;
             0) return ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
@@ -2284,10 +3017,23 @@ manage_service_action() {
             type="Client"
         fi
         
-        local status_color="$RED"
-        [[ "$status" == "active" ]] && status_color="$GREEN"
+        # Clean up status text and limit length
+        local clean_status="$status"
+        if [[ ${#clean_status} -gt 10 ]]; then
+            clean_status="${clean_status:0:10}"
+        fi
         
-        printf "%-4s %-25s ${status_color}%-12s${NC} %-15s\n" "$i." "$service" "$status" "$type"
+        local status_color="$RED"
+        case "$status" in
+            "active") status_color="$GREEN" ;;
+            "inactive") status_color="$RED" ;;
+            "activating") status_color="$YELLOW" ;;
+            "deactivating") status_color="$YELLOW" ;;
+            "failed") status_color="$RED" ;;
+            *) status_color="$GRAY" ;;
+        esac
+        
+        printf "%-4s %-25s ${status_color}%-12s${NC} %-15s\n" "$i." "$service" "$clean_status" "$type"
         ((i++))
     done
     
@@ -2388,6 +3134,271 @@ manage_service_action() {
     read -p "Press Enter to continue..."
 }
 
+# Modify server configuration
+modify_server_configuration() {
+    clear
+    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║     🔧 Modify Server Configuration  ║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+    
+    # Find existing server configurations
+    local server_configs=()
+    if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+        server_configs+=("frps.toml")
+    fi
+    
+    if [[ ${#server_configs[@]} -eq 0 ]]; then
+        echo -e "\n${YELLOW}⚠️  No existing server configurations found${NC}"
+        echo -e "${CYAN}Please create a server configuration first from the main menu.${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo -e "\n${CYAN}📋 Current Server Configuration:${NC}"
+    echo -e "${GREEN}✅ Configuration file: $CONFIG_DIR/frps.toml${NC}"
+    
+    # Show current configuration summary
+    if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+        echo -e "\n${CYAN}Current Settings:${NC}"
+        
+        # Extract current settings
+        local bind_port=$(grep "bindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
+        local token=$(grep "auth.token" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | tr -d '"')
+        local dashboard_port=$(grep "webServer.port" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
+        local subdomain=$(grep "subdomainHost" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | tr -d '"')
+        local max_proxies=$(grep "maxProxiesPerClient" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
+        local kcp_enabled=$(grep "kcpBindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | wc -l)
+        local quic_enabled=$(grep "quicBindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | wc -l)
+        
+        echo -e "  • ${GREEN}Server Port:${NC} $bind_port"
+        echo -e "  • ${GREEN}Token:${NC} ${token:0:8}..."
+        [[ -n "$dashboard_port" ]] && echo -e "  • ${GREEN}Dashboard Port:${NC} $dashboard_port"
+        echo -e "  • ${GREEN}Subdomain:${NC} $subdomain"
+        echo -e "  • ${GREEN}Max Proxies:${NC} $max_proxies"
+        [[ "$kcp_enabled" -gt 0 ]] && echo -e "  • ${GREEN}KCP:${NC} Enabled"
+        [[ "$quic_enabled" -gt 0 ]] && echo -e "  • ${GREEN}QUIC:${NC} Enabled"
+    fi
+    
+    echo -e "\n${CYAN}📝 Configuration Options:${NC}"
+    echo "1. 🔑 Change Authentication Token"
+    echo "2. 🚪 Change Server Port"
+    echo "3. 📊 Modify Dashboard Settings"
+    echo "4. 🚀 Advanced Protocol Settings"
+    echo "5. 🏷️  Change Subdomain"
+    echo "6. 📊 Client Connection Limits"
+    echo "7. 🔄 Recreate Configuration (Full Reset)"
+    echo "0. Back to Service Management"
+    
+    echo -e "\n${YELLOW}Enter your choice [0-7]:${NC} "
+    read -r choice
+    
+    case $choice in
+        1)
+            # Change token
+            echo -e "\n${CYAN}🔑 Change Authentication Token:${NC}"
+            echo -e "${YELLOW}Generate new random token? (Y/n):${NC} "
+            read -r auto_token
+            
+            local new_token
+            if [[ "$auto_token" =~ ^[Nn]$ ]]; then
+                while true; do
+                    echo -e "${CYAN}Enter new token (minimum 8 characters):${NC} "
+                    read -r new_token
+                    if [[ ${#new_token} -ge 8 ]]; then
+                        break
+                    else
+                        echo -e "${RED}❌ Token must be at least 8 characters${NC}"
+                    fi
+                done
+            else
+                new_token=$(generate_token)
+                echo -e "${GREEN}✅ Generated new token: ${new_token:0:8}...${NC}"
+            fi
+            
+            # Update configuration
+            sed -i "s/auth.token = \".*\"/auth.token = \"$new_token\"/" "$CONFIG_DIR/frps.toml"
+            echo -e "${GREEN}✅ Token updated successfully${NC}"
+            
+            # Restart service if running
+            restart_server_services
+            ;;
+        2)
+            # Change port
+            echo -e "\n${CYAN}🚪 Change Server Port:${NC}"
+            while true; do
+                echo -e "${CYAN}Enter new server port:${NC} "
+                read -r new_port
+                
+                if validate_port "$new_port"; then
+                    break
+                else
+                    echo -e "${RED}❌ Invalid port number${NC}"
+                fi
+            done
+            
+            # Update configuration
+            sed -i "s/bindPort = .*/bindPort = $new_port/" "$CONFIG_DIR/frps.toml"
+            sed -i "s/kcpBindPort = .*/kcpBindPort = $new_port/" "$CONFIG_DIR/frps.toml"
+            echo -e "${GREEN}✅ Server port updated to $new_port${NC}"
+            
+            # Restart service
+            restart_server_services
+            ;;
+        3)
+            # Dashboard settings
+            echo -e "\n${CYAN}📊 Dashboard Settings:${NC}"
+            echo -e "${YELLOW}Enable dashboard? (Y/n):${NC} "
+            read -r enable_dash
+            
+            if [[ "$enable_dash" =~ ^[Nn]$ ]]; then
+                # Disable dashboard
+                sed -i '/webServer\./d' "$CONFIG_DIR/frps.toml"
+                echo -e "${GREEN}✅ Dashboard disabled${NC}"
+            else
+                # Enable/modify dashboard
+                echo -e "${CYAN}Dashboard port (default: 7500):${NC} "
+                read -r dash_port
+                [[ -z "$dash_port" ]] && dash_port="7500"
+                
+                echo -e "${CYAN}Dashboard username (default: admin):${NC} "
+                read -r dash_user
+                [[ -z "$dash_user" ]] && dash_user="admin"
+                
+                echo -e "${CYAN}Dashboard password (leave empty for auto-generated):${NC} "
+                read -r dash_pass
+                [[ -z "$dash_pass" ]] && dash_pass=$(generate_token | cut -c1-12)
+                
+                # Update configuration
+                sed -i '/webServer\./d' "$CONFIG_DIR/frps.toml"
+                cat >> "$CONFIG_DIR/frps.toml" << EOF
+
+# Dashboard settings
+webServer.addr = "0.0.0.0"
+webServer.port = $dash_port
+webServer.user = "$dash_user"
+webServer.password = "$dash_pass"
+EOF
+                echo -e "${GREEN}✅ Dashboard configured on port $dash_port${NC}"
+                echo -e "${GREEN}   Username: $dash_user${NC}"
+                echo -e "${GREEN}   Password: $dash_pass${NC}"
+            fi
+            
+            restart_server_services
+            ;;
+        4)
+            # Advanced protocols
+            echo -e "\n${CYAN}🚀 Advanced Protocol Settings:${NC}"
+            echo -e "${YELLOW}Enable KCP protocol? (Y/n):${NC} "
+            read -r kcp_choice
+            
+            echo -e "${YELLOW}Enable QUIC protocol? (y/N):${NC} "
+            read -r quic_choice
+            
+            # Update KCP
+            if [[ "$kcp_choice" =~ ^[Nn]$ ]]; then
+                sed -i '/kcpBindPort/d' "$CONFIG_DIR/frps.toml"
+                echo -e "${GREEN}✅ KCP disabled${NC}"
+            else
+                local server_port=$(grep "bindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
+                if ! grep -q "kcpBindPort" "$CONFIG_DIR/frps.toml"; then
+                    echo "kcpBindPort = $server_port" >> "$CONFIG_DIR/frps.toml"
+                fi
+                echo -e "${GREEN}✅ KCP enabled${NC}"
+            fi
+            
+            # Update QUIC
+            if [[ "$quic_choice" =~ ^[Yy]$ ]]; then
+                local server_port=$(grep "bindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
+                if ! grep -q "quicBindPort" "$CONFIG_DIR/frps.toml"; then
+                    echo "quicBindPort = $((server_port + 1))" >> "$CONFIG_DIR/frps.toml"
+                fi
+                echo -e "${GREEN}✅ QUIC enabled${NC}"
+            else
+                sed -i '/quicBindPort/d' "$CONFIG_DIR/frps.toml"
+                echo -e "${GREEN}✅ QUIC disabled${NC}"
+            fi
+            
+            restart_server_services
+            ;;
+        5)
+            # Change subdomain
+            echo -e "\n${CYAN}🏷️  Change Subdomain:${NC}"
+            echo -e "${CYAN}Enter new subdomain (default: moonfrp.local):${NC} "
+            read -r new_subdomain
+            [[ -z "$new_subdomain" ]] && new_subdomain="moonfrp.local"
+            
+            sed -i "s/subdomainHost = \".*\"/subdomainHost = \"$new_subdomain\"/" "$CONFIG_DIR/frps.toml"
+            echo -e "${GREEN}✅ Subdomain updated to: $new_subdomain${NC}"
+            
+            restart_server_services
+            ;;
+        6)
+            # Client limits
+            echo -e "\n${CYAN}📊 Client Connection Limits:${NC}"
+            echo -e "${CYAN}Maximum proxies per client (default: 50):${NC} "
+            read -r max_proxies
+            [[ -z "$max_proxies" ]] && max_proxies="50"
+            
+            if [[ "$max_proxies" =~ ^[0-9]+$ ]]; then
+                sed -i "s/maxProxiesPerClient = .*/maxProxiesPerClient = $max_proxies/" "$CONFIG_DIR/frps.toml"
+                sed -i "s/maxPortsPerClient = .*/maxPortsPerClient = $max_proxies/" "$CONFIG_DIR/frps.toml"
+                echo -e "${GREEN}✅ Client limits updated to: $max_proxies${NC}"
+                
+                restart_server_services
+            else
+                echo -e "${RED}❌ Invalid number${NC}"
+            fi
+            ;;
+        7)
+            # Full reset
+            echo -e "\n${CYAN}🔄 Recreate Configuration:${NC}"
+            echo -e "${YELLOW}This will delete current configuration and create a new one.${NC}"
+            echo -e "${RED}⚠️  Are you sure? (y/N):${NC} "
+            read -r confirm_reset
+            
+            if [[ "$confirm_reset" =~ ^[Yy]$ ]]; then
+                # Stop services
+                local services=($(systemctl list-units --type=service --all --no-legend --plain | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
+                for service in "${services[@]}"; do
+                    systemctl stop "$service" 2>/dev/null || true
+                done
+                
+                # Remove config and recreate
+                rm -f "$CONFIG_DIR/frps.toml"
+                echo -e "${GREEN}✅ Configuration removed${NC}"
+                
+                # Call the main creation function
+                create_iran_server_config
+                return
+            else
+                echo -e "${YELLOW}Operation cancelled${NC}"
+            fi
+            ;;
+        0)
+            return
+            ;;
+        *)
+            echo -e "${RED}❌ Invalid choice${NC}"
+            ;;
+    esac
+    
+    read -p "Press Enter to continue..."
+}
+
+# Helper function to restart server services
+restart_server_services() {
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
+    
+    if [[ ${#services[@]} -gt 0 ]]; then
+        echo -e "\n${CYAN}🔄 Restarting server services...${NC}"
+        for service in "${services[@]}"; do
+            systemctl restart "$service" 2>/dev/null && echo -e "${GREEN}✅ Restarted: $service${NC}" || echo -e "${RED}❌ Failed to restart: $service${NC}"
+        done
+    else
+        echo -e "\n${YELLOW}⚠️  No active server services found${NC}"
+    fi
+}
+
 # Configuration creation menu
 config_creation_menu() {
     while true; do
@@ -2444,16 +3455,30 @@ create_iran_server_config() {
     
     echo -e "\n${CYAN}🌐 Server Configuration${NC}"
     echo -e "${GRAY}This will create the FRP server configuration for Iran location${NC}"
+    echo -e "${GRAY}✨ Supports ALL protocols: TCP, UDP, HTTP/HTTPS, TCPMUX, STCP/XTCP, Plugins${NC}"
     
     # Authentication Token
     echo -e "\n${CYAN}🔐 Authentication Settings:${NC}"
     echo -e "${YELLOW}Generate random token automatically? (Y/n):${NC} "
     read -r auto_token
     
+    # Check for Ctrl+C
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        return
+    fi
+    
     if [[ "$auto_token" =~ ^[Nn]$ ]]; then
         while true; do
             echo -e "${CYAN}Enter custom authentication token (minimum 8 characters):${NC} "
             read -r token
+            
+            # Check for Ctrl+C
+            if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+                CTRL_C_PRESSED=false
+                return
+            fi
+            
             if [[ ${#token} -ge 8 ]]; then
                 break
             else
@@ -2471,6 +3496,12 @@ create_iran_server_config() {
         echo -e "${CYAN}FRP Server Port (default: 7000):${NC} "
         read -r user_bind_port
         
+        # Check for Ctrl+C
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         if [[ -z "$user_bind_port" ]]; then
             bind_port=7000
             break
@@ -2487,6 +3518,12 @@ create_iran_server_config() {
     echo -e "\n${CYAN}📊 Web Dashboard Settings:${NC}"
     echo -e "${YELLOW}Enable web dashboard for monitoring? (Y/n):${NC} "
     read -r enable_dashboard
+    
+    # Check for Ctrl+C
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        return
+    fi
     
     if [[ ! "$enable_dashboard" =~ ^[Nn]$ ]]; then
         # Dashboard Port
@@ -2512,10 +3549,24 @@ create_iran_server_config() {
         # Dashboard Credentials
         echo -e "${CYAN}Dashboard Username (default: admin):${NC} "
         read -r dashboard_user
+        
+        # Check for Ctrl+C
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         [[ -z "$dashboard_user" ]] && dashboard_user="admin"
         
         echo -e "${CYAN}Dashboard Password (leave empty for auto-generated):${NC} "
         read -r dashboard_password
+        
+        # Check for Ctrl+C
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         [[ -z "$dashboard_password" ]] && dashboard_password=$(generate_token | cut -c1-12)
         
         echo -e "${GREEN}✅ Dashboard enabled on port $dashboard_port${NC}"
@@ -2524,6 +3575,56 @@ create_iran_server_config() {
         dashboard_user=""
         dashboard_password=""
         echo -e "${YELLOW}⚠️  Dashboard disabled${NC}"
+    fi
+    
+    # Advanced Protocol Settings
+    echo -e "\n${CYAN}🚀 Advanced Protocol Configuration:${NC}"
+    echo -e "${YELLOW}Enable advanced protocol settings? (Y/n):${NC} "
+    read -r enable_advanced
+    
+    # Check for Ctrl+C
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        return
+    fi
+    
+    local enable_kcp="true"
+    local enable_quic="false"
+    local custom_subdomain="moonfrp.local"
+    local max_clients="50"
+    
+    if [[ ! "$enable_advanced" =~ ^[Nn]$ ]]; then
+        echo -e "\n${CYAN}📡 Protocol Options:${NC}"
+        
+        # KCP Protocol
+        echo -e "${YELLOW}Enable KCP protocol (better for poor networks)? (Y/n):${NC} "
+        read -r kcp_choice
+        [[ "$kcp_choice" =~ ^[Nn]$ ]] && enable_kcp="false"
+        
+        # QUIC Protocol
+        echo -e "${YELLOW}Enable QUIC protocol (experimental, modern)? (y/N):${NC} "
+        read -r quic_choice
+        [[ "$quic_choice" =~ ^[Yy]$ ]] && enable_quic="true"
+        
+        # Subdomain
+        echo -e "${CYAN}Subdomain for HTTP/HTTPS (default: moonfrp.local):${NC} "
+        read -r user_subdomain
+        [[ -n "$user_subdomain" ]] && custom_subdomain="$user_subdomain"
+        
+        # Max clients
+        echo -e "${CYAN}Maximum proxies per client (default: 50):${NC} "
+        read -r user_max_clients
+        if [[ -n "$user_max_clients" && "$user_max_clients" =~ ^[0-9]+$ ]]; then
+            max_clients="$user_max_clients"
+        fi
+        
+        echo -e "\n${GREEN}✅ Advanced protocols configured${NC}"
+        [[ "$enable_kcp" == "true" ]] && echo -e "  • ${GREEN}KCP enabled${NC}"
+        [[ "$enable_quic" == "true" ]] && echo -e "  • ${GREEN}QUIC enabled${NC}"
+        echo -e "  • ${GREEN}Subdomain: $custom_subdomain${NC}"
+        echo -e "  • ${GREEN}Max proxies per client: $max_clients${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Using default configuration${NC}"
     fi
     
     # Port Conflict Check
@@ -2550,6 +3651,13 @@ create_iran_server_config() {
     if [[ $conflicts -gt 0 ]]; then
         echo -e "\n${YELLOW}⚠️  Port conflicts detected. Continue anyway? (y/N):${NC} "
         read -r continue_anyway
+        
+        # Check for Ctrl+C
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
         if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
             log "INFO" "Configuration cancelled due to port conflicts"
             read -p "Press Enter to continue..."
@@ -2569,6 +3677,12 @@ create_iran_server_config() {
         
         echo -e "\n${CYAN}Remove existing servers and create new one? (Y/n):${NC} "
         read -r remove_servers
+        
+        # Check for Ctrl+C
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
         
         if [[ ! "$remove_servers" =~ ^[Nn]$ ]]; then
             echo -e "${YELLOW}Removing existing server services...${NC}"
@@ -2595,10 +3709,22 @@ create_iran_server_config() {
     else
         echo -e "${GRAY}│${NC} ${YELLOW}Dashboard:${NC} Disabled"
     fi
+    echo -e "${GRAY}│${NC} ${GREEN}Protocols:${NC} TCP/UDP/HTTP/HTTPS/TCPMUX/STCP/XTCP"
+    [[ "$enable_kcp" == "true" ]] && echo -e "${GRAY}│${NC} ${GREEN}KCP:${NC} Enabled"
+    [[ "$enable_quic" == "true" ]] && echo -e "${GRAY}│${NC} ${GREEN}QUIC:${NC} Enabled"
+    echo -e "${GRAY}│${NC} ${GREEN}Subdomain:${NC} $custom_subdomain"
+    echo -e "${GRAY}│${NC} ${GREEN}Max Proxies/Client:${NC} $max_clients"
     echo -e "${GRAY}└─────────────────────────────────────────────────┘${NC}"
     
     echo -e "\n${YELLOW}Proceed with this configuration? (Y/n):${NC} "
     read -r confirm
+    
+    # Check for Ctrl+C
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        return
+    fi
+    
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
         log "INFO" "Configuration cancelled by user"
         read -p "Press Enter to continue..."
@@ -2607,7 +3733,7 @@ create_iran_server_config() {
     
     # Generate configuration
     echo -e "\n${CYAN}🔧 Generating server configuration...${NC}"
-    if generate_frps_config "$token" "$bind_port" "$dashboard_port" "$dashboard_user" "$dashboard_password"; then
+    if generate_frps_config "$token" "$bind_port" "$dashboard_port" "$dashboard_user" "$dashboard_password" "$enable_kcp" "$enable_quic" "$custom_subdomain" "$max_clients"; then
         echo -e "${GREEN}✅ Server configuration generated successfully${NC}"
         
         # Verify config file was created
@@ -2731,6 +3857,12 @@ create_foreign_client_config() {
     while true; do
         echo -e "${CYAN}Iran Server IP Address:${NC} "
         read -r server_ips
+        
+        # Check for Ctrl+C
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
         
         if [[ -z "$server_ips" ]]; then
             echo -e "${RED}❌ Server IP is required${NC}"
@@ -2865,10 +3997,12 @@ create_foreign_client_config() {
         echo "6. STCP (Secret TCP - P2P secure tunneling)"
         echo "7. SUDP (Secret UDP - P2P secure tunneling)"
         echo "8. TCPMUX-Direct (TCP-like access with TCPMUX benefits)"
+        echo "9. XTCP (P2P TCP - Direct peer-to-peer connection)"
+        echo "10. Plugin System (Unix sockets, HTTP/SOCKS5 proxy, Static files)"
         
         local proxy_choice=""
         while true; do
-            echo -e "${CYAN}Choose proxy type [1-8] (default: 1):${NC} "
+            echo -e "${CYAN}Choose proxy type [1-10] (default: 1):${NC} "
             read -r proxy_choice
             [[ -z "$proxy_choice" ]] && proxy_choice=1
             
@@ -2881,7 +4015,27 @@ create_foreign_client_config() {
                 6) proxy_type="stcp"; echo -e "${GREEN}✅ STCP proxy selected${NC}"; break ;;
                 7) proxy_type="sudp"; echo -e "${GREEN}✅ SUDP proxy selected${NC}"; break ;;
                 8) proxy_type="tcpmux-direct"; echo -e "${GREEN}✅ TCPMUX-Direct proxy selected${NC}"; break ;;
-                *) echo -e "${RED}❌ Please enter 1, 2, 3, 4, 5, 6, 7, or 8${NC}" ;;
+                9) proxy_type="xtcp"; echo -e "${GREEN}✅ XTCP proxy selected${NC}"; break ;;
+                10) 
+                    echo -e "\n${CYAN}Plugin Type Selection:${NC}"
+                    echo "1. Unix Domain Socket"
+                    echo "2. HTTP Proxy"
+                    echo "3. SOCKS5 Proxy"
+                    echo "4. Static File Server"
+                    echo "5. HTTPS2HTTP"
+                    echo "6. HTTP2HTTPS"
+                    read -p "Choose plugin [1-6]: " plugin_choice
+                    case $plugin_choice in
+                        1) proxy_type="plugin_unix_socket"; echo -e "${GREEN}✅ Unix Domain Socket plugin selected${NC}"; break ;;
+                        2) proxy_type="plugin_http_proxy"; echo -e "${GREEN}✅ HTTP Proxy plugin selected${NC}"; break ;;
+                        3) proxy_type="plugin_socks5"; echo -e "${GREEN}✅ SOCKS5 Proxy plugin selected${NC}"; break ;;
+                        4) proxy_type="plugin_static_file"; echo -e "${GREEN}✅ Static File Server plugin selected${NC}"; break ;;
+                        5) proxy_type="plugin_https2http"; echo -e "${GREEN}✅ HTTPS2HTTP plugin selected${NC}"; break ;;
+                        6) proxy_type="plugin_http2https"; echo -e "${GREEN}✅ HTTP2HTTPS plugin selected${NC}"; break ;;
+                        *) echo -e "${RED}❌ Invalid plugin choice${NC}"; continue ;;
+                    esac
+                    break ;;
+                *) echo -e "${RED}❌ Please enter 1, 2, 3, 4, 5, 6, 7, 8, 9, or 10${NC}" ;;
             esac
         done
     fi
@@ -3017,11 +4171,20 @@ create_foreign_client_config() {
         if generate_frpc_config "$ip" "$server_port" "$token" "$ip" "$ports" "$ip_suffix" "$proxy_type" "$custom_domains"; then
             echo -e "${GREEN}✅ Configuration generated${NC}"
             
-            # Validate the generated configuration
-            if validate_frp_config "$CONFIG_DIR/frpc_${ip_suffix}.toml"; then
-                echo -e "${GREEN}✅ Configuration validation passed${NC}"
-            else
-                echo -e "${YELLOW}⚠️  Configuration validation failed, but proceeding...${NC}"
+            # Verbose configuration output
+            echo -e "${CYAN}📋 Configuration Details:${NC}"
+            echo -e "  ${GREEN}Config File:${NC} $CONFIG_DIR/frpc_${ip_suffix}.toml"
+            echo -e "  ${GREEN}Server:${NC} $ip:$server_port"
+            echo -e "  ${GREEN}Protocol:${NC} $proxy_type"
+            echo -e "  ${GREEN}Ports:${NC} $ports"
+            if [[ -n "$custom_domains" ]]; then
+                echo -e "  ${GREEN}Domains:${NC} $custom_domains"
+            fi
+            echo -e "  ${GREEN}Service:${NC} moonfrpc-${ip_suffix}"
+            echo -e "  ${GREEN}Log:${NC} $LOG_DIR/frpc_${ip_suffix}.log"
+            if [[ "$proxy_type" == "stcp" || "$proxy_type" == "xtcp" ]]; then
+                echo -e "  ${GREEN}Visitor Config:${NC} $CONFIG_DIR/frpc_visitor_${ip_suffix}.toml"
+                echo -e "  ${GREEN}Visitor Log:${NC} $LOG_DIR/frpc_visitor_${ip_suffix}.log"
             fi
             
             # Create systemd service with new naming convention
@@ -3128,6 +4291,24 @@ create_foreign_client_config() {
                 "stcp"|"sudp")
                     echo -e "  • ${YELLOW}Secure P2P tunnel - requires visitor configuration${NC}"
                     echo -e "  • Check config file for visitor setup instructions"
+                    ;;
+                "xtcp")
+                    echo -e "  • ${YELLOW}P2P TCP with NAT traversal - requires visitor configuration${NC}"
+                    echo -e "  • Direct P2P connection with automatic fallback"
+                    echo -e "  • Check config file for visitor setup instructions"
+                    ;;
+                "plugin_"*)
+                    local plugin_name="${proxy_type#plugin_}"
+                    echo -e "  • ${YELLOW}Plugin: ${plugin_name}${NC}"
+                    case "$plugin_name" in
+                        "unix_socket") echo -e "  • Unix domain socket forwarding" ;;
+                        "http_proxy") echo -e "  • HTTP proxy server with authentication" ;;
+                        "socks5") echo -e "  • SOCKS5 proxy server with authentication" ;;
+                        "static_file") echo -e "  • Static file server with authentication" ;;
+                        "https2http") echo -e "  • HTTPS to HTTP converter" ;;
+                        "http2https") echo -e "  • HTTP to HTTPS converter" ;;
+                    esac
+                    echo -e "  • Check config file for plugin usage instructions"
                     ;;
             esac
         done
@@ -4044,12 +5225,25 @@ real_time_status_monitor() {
                 last_activity=$(journalctl -u "$service" -n 1 --no-pager --since "1 hour ago" -o short 2>/dev/null | tail -1 | awk '{print $1, $2}' || echo "N/A")
                 [[ -z "$last_activity" || "$last_activity" == " " ]] && last_activity="No recent logs"
                 
+                # Clean up status text and limit length
+                local clean_status="$status"
+                if [[ ${#clean_status} -gt 10 ]]; then
+                    clean_status="${clean_status:0:10}"
+                fi
+                
                 # Color status
                 local status_color="$RED"
-                [[ "$status" == "active" ]] && status_color="$GREEN"
+                case "$status" in
+                    "active") status_color="$GREEN" ;;
+                    "inactive") status_color="$RED" ;;
+                    "activating") status_color="$YELLOW" ;;
+                    "deactivating") status_color="$YELLOW" ;;
+                    "failed") status_color="$RED" ;;
+                    *) status_color="$GRAY" ;;
+                esac
                 
                 printf "%-25s ${status_color}%-12s${NC} %-15s %-20s\n" \
-                    "$service" "$status" "$type" "$last_activity"
+                    "$service" "$clean_status" "$type" "$last_activity"
             done
             
             # Configuration files status
