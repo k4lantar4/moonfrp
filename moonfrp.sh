@@ -1350,7 +1350,6 @@ auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 subdomainHost = "$custom_subdomain"
 
 # Connection limits per client (Customizable)
-maxProxiesPerClient = $max_clients
 maxPortsPerClient = $max_clients
 
 # Advanced TCPMUX settings for better multiplexing
@@ -1383,6 +1382,16 @@ detailedErrorsToClient = true
 
 # Enable Prometheus monitoring
 enablePrometheus = true
+
+# UDP packet size (must match client setting)
+udpPacketSize = 1500
+
+# HTTP plugins for external integrations
+# [[httpPlugins]]
+# name = "user-manager"
+# addr = "127.0.0.1:9000"
+# path = "/handler"
+# ops = ["Login"]
 EOF
     
     # Verify configuration file was created successfully
@@ -1470,6 +1479,17 @@ webServer.addr = "127.0.0.1"
 webServer.port = $((7400 + ip_suffix))
 webServer.user = "admin"
 webServer.password = "admin"
+
+# UDP packet size (must match server setting)
+udpPacketSize = 1500
+
+# Client metadata for identification
+metadatas.client_type = "moonfrp"
+metadatas.ip_suffix = "$ip_suffix"
+metadatas.created = "$(date)"
+
+# Feature gates for experimental features
+# featureGates = { VirtualNet = true }
 
 EOF
 
@@ -2145,6 +2165,13 @@ hostHeaderRewrite = "127.0.0.1"
 requestHeaders.set.x-from-where = "frp"
 EOF
                 ;;
+            "virtual_net")
+                cat >> "$config_file" << EOF
+type = "virtual_net"
+# Virtual network IP address for this client
+destinationIP = "100.86.0.$(($port % 254 + 1))"
+EOF
+                ;;
         esac
         
         cat >> "$config_file" << EOF
@@ -2234,6 +2261,25 @@ EOF
 #
 # Example usage:
 # Access via: http://SERVER_IP:$port (forwards to secure backend)
+EOF
+            ;;
+        "virtual_net")
+            cat >> "$config_file" << EOF
+# Virtual Network Plugin:
+# • Creates a virtual network between clients
+# • Allows direct IP communication between clients
+# • Requires enabling VirtualNet feature gate
+# • Each client gets a unique IP in the virtual network
+#
+# Setup Instructions:
+# 1. Enable feature gate in client config: featureGates = { VirtualNet = true }
+# 2. Configure virtual network address: virtualNet.address = "100.86.1.1/24"
+# 3. Use assigned IP for communication: 100.86.0.X
+#
+# Example usage:
+# ping 100.86.0.1  # Ping another client in virtual network
+# ssh user@100.86.0.2  # SSH to another client
+# curl http://100.86.0.3:8080  # HTTP request to another client
 EOF
             ;;
     esac
@@ -3166,7 +3212,7 @@ modify_server_configuration() {
         local token=$(grep "auth.token" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | tr -d '"')
         local dashboard_port=$(grep "webServer.port" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
         local subdomain=$(grep "subdomainHost" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | tr -d '"')
-        local max_proxies=$(grep "maxProxiesPerClient" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
+        local max_ports=$(grep "maxPortsPerClient" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
         local kcp_enabled=$(grep "kcpBindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | wc -l)
         local quic_enabled=$(grep "quicBindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | wc -l)
         
@@ -3174,7 +3220,7 @@ modify_server_configuration() {
         echo -e "  • ${GREEN}Token:${NC} ${token:0:8}..."
         [[ -n "$dashboard_port" ]] && echo -e "  • ${GREEN}Dashboard Port:${NC} $dashboard_port"
         echo -e "  • ${GREEN}Subdomain:${NC} $subdomain"
-        echo -e "  • ${GREEN}Max Proxies:${NC} $max_proxies"
+        echo -e "  • ${GREEN}Max Ports:${NC} $max_ports"
         [[ "$kcp_enabled" -gt 0 ]] && echo -e "  • ${GREEN}KCP:${NC} Enabled"
         [[ "$quic_enabled" -gt 0 ]] && echo -e "  • ${GREEN}QUIC:${NC} Enabled"
     fi
@@ -3335,14 +3381,13 @@ EOF
         6)
             # Client limits
             echo -e "\n${CYAN}📊 Client Connection Limits:${NC}"
-            echo -e "${CYAN}Maximum proxies per client (default: 50):${NC} "
-            read -r max_proxies
-            [[ -z "$max_proxies" ]] && max_proxies="50"
+            echo -e "${CYAN}Maximum ports per client (default: 50):${NC} "
+            read -r max_ports
+            [[ -z "$max_ports" ]] && max_ports="50"
             
-            if [[ "$max_proxies" =~ ^[0-9]+$ ]]; then
-                sed -i "s/maxProxiesPerClient = .*/maxProxiesPerClient = $max_proxies/" "$CONFIG_DIR/frps.toml"
-                sed -i "s/maxPortsPerClient = .*/maxPortsPerClient = $max_proxies/" "$CONFIG_DIR/frps.toml"
-                echo -e "${GREEN}✅ Client limits updated to: $max_proxies${NC}"
+            if [[ "$max_ports" =~ ^[0-9]+$ ]]; then
+                sed -i "s/maxPortsPerClient = .*/maxPortsPerClient = $max_ports/" "$CONFIG_DIR/frps.toml"
+                echo -e "${GREEN}✅ Client limits updated to: $max_ports${NC}"
                 
                 restart_server_services
             else
@@ -3612,7 +3657,7 @@ create_iran_server_config() {
         [[ -n "$user_subdomain" ]] && custom_subdomain="$user_subdomain"
         
         # Max clients
-        echo -e "${CYAN}Maximum proxies per client (default: 50):${NC} "
+        echo -e "${CYAN}Maximum ports per client (default: 50):${NC} "
         read -r user_max_clients
         if [[ -n "$user_max_clients" && "$user_max_clients" =~ ^[0-9]+$ ]]; then
             max_clients="$user_max_clients"
@@ -3622,7 +3667,7 @@ create_iran_server_config() {
         [[ "$enable_kcp" == "true" ]] && echo -e "  • ${GREEN}KCP enabled${NC}"
         [[ "$enable_quic" == "true" ]] && echo -e "  • ${GREEN}QUIC enabled${NC}"
         echo -e "  • ${GREEN}Subdomain: $custom_subdomain${NC}"
-        echo -e "  • ${GREEN}Max proxies per client: $max_clients${NC}"
+        echo -e "  • ${GREEN}Max ports per client: $max_clients${NC}"
     else
         echo -e "${YELLOW}⚠️  Using default configuration${NC}"
     fi
@@ -3713,7 +3758,7 @@ create_iran_server_config() {
     [[ "$enable_kcp" == "true" ]] && echo -e "${GRAY}│${NC} ${GREEN}KCP:${NC} Enabled"
     [[ "$enable_quic" == "true" ]] && echo -e "${GRAY}│${NC} ${GREEN}QUIC:${NC} Enabled"
     echo -e "${GRAY}│${NC} ${GREEN}Subdomain:${NC} $custom_subdomain"
-    echo -e "${GRAY}│${NC} ${GREEN}Max Proxies/Client:${NC} $max_clients"
+    echo -e "${GRAY}│${NC} ${GREEN}Max Ports/Client:${NC} $max_clients"
     echo -e "${GRAY}└─────────────────────────────────────────────────┘${NC}"
     
     echo -e "\n${YELLOW}Proceed with this configuration? (Y/n):${NC} "
@@ -4024,7 +4069,8 @@ create_foreign_client_config() {
                     echo "4. Static File Server"
                     echo "5. HTTPS2HTTP"
                     echo "6. HTTP2HTTPS"
-                    read -p "Choose plugin [1-6]: " plugin_choice
+                    echo "7. Virtual Network (VNet)"
+                    read -p "Choose plugin [1-7]: " plugin_choice
                     case $plugin_choice in
                         1) proxy_type="plugin_unix_socket"; echo -e "${GREEN}✅ Unix Domain Socket plugin selected${NC}"; break ;;
                         2) proxy_type="plugin_http_proxy"; echo -e "${GREEN}✅ HTTP Proxy plugin selected${NC}"; break ;;
@@ -4032,6 +4078,7 @@ create_foreign_client_config() {
                         4) proxy_type="plugin_static_file"; echo -e "${GREEN}✅ Static File Server plugin selected${NC}"; break ;;
                         5) proxy_type="plugin_https2http"; echo -e "${GREEN}✅ HTTPS2HTTP plugin selected${NC}"; break ;;
                         6) proxy_type="plugin_http2https"; echo -e "${GREEN}✅ HTTP2HTTPS plugin selected${NC}"; break ;;
+                        7) proxy_type="plugin_virtual_net"; echo -e "${GREEN}✅ Virtual Network plugin selected${NC}"; break ;;
                         *) echo -e "${RED}❌ Invalid plugin choice${NC}"; continue ;;
                     esac
                     break ;;
@@ -4307,6 +4354,7 @@ create_foreign_client_config() {
                         "static_file") echo -e "  • Static file server with authentication" ;;
                         "https2http") echo -e "  • HTTPS to HTTP converter" ;;
                         "http2https") echo -e "  • HTTP to HTTPS converter" ;;
+                        "virtual_net") echo -e "  • Virtual network for direct client communication" ;;
                     esac
                     echo -e "  • Check config file for plugin usage instructions"
                     ;;
