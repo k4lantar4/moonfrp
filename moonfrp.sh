@@ -1338,7 +1338,7 @@ allowPorts = [
 
 # Performance and monitoring
 detailedErrorsToClient = true
-enablePrometheus = true
+#enablePrometheus = true
 udpPacketSize = 1500
 natholeAnalysisDataReserveHours = 168
 
@@ -3838,9 +3838,9 @@ create_iran_server_config() {
     fi
     
     local enable_kcp="true"
-    local enable_quic="false"
+    local enable_quic="true"
     local custom_subdomain="moonfrp.local"
-    local max_clients="50"
+    local max_clients="100"
     
     if [[ ! "$enable_advanced" =~ ^[Nn]$ ]]; then
         echo -e "\n${CYAN}📡 Protocol Options:${NC}"
@@ -3851,7 +3851,7 @@ create_iran_server_config() {
         [[ "$kcp_choice" =~ ^[Nn]$ ]] && enable_kcp="false"
         
         # QUIC Protocol
-        echo -e "${YELLOW}Enable QUIC protocol (experimental, modern)? (y/N):${NC} "
+        echo -e "${YELLOW}Enable QUIC protocol (experimental, modern)? (Y/n):${NC} "
         read -r quic_choice
         [[ "$quic_choice" =~ ^[Yy]$ ]] && enable_quic="true"
         
@@ -3861,7 +3861,7 @@ create_iran_server_config() {
         [[ -n "$user_subdomain" ]] && custom_subdomain="$user_subdomain"
         
         # Max clients
-        echo -e "${CYAN}Maximum ports per client (default: 50):${NC} "
+        echo -e "${CYAN}Maximum ports per client (default: 100):${NC} "
         read -r user_max_clients
         if [[ -n "$user_max_clients" && "$user_max_clients" =~ ^[0-9]+$ ]]; then
             max_clients="$user_max_clients"
