@@ -38,7 +38,7 @@ TEMP_DIR="/tmp/moonfrp"
 MOONFRP_VERSION="1.0.3dfg"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
-MOONFRP_INSTALL_PATH="/usr/bin/moonfrp"
+MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
 
 # Global variables for template and proxy configuration
 SELECTED_PROXY_TYPE=""
