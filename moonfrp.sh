@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.6"
+MOONFRP_VERSION="1.0.7"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -3843,7 +3843,7 @@ create_iran_server_config() {
     local enable_kcp="true"
     local enable_quic="true"
     local custom_subdomain="moonfrp.local"
-    local max_clients="100"
+    local max_clients="10"
     
     if [[ ! "$enable_advanced" =~ ^[Nn]$ ]]; then
         echo -e "\n${CYAN}📡 Protocol Options:${NC}"
@@ -3864,7 +3864,7 @@ create_iran_server_config() {
         [[ -n "$user_subdomain" ]] && custom_subdomain="$user_subdomain"
         
         # Max clients
-        echo -e "${CYAN}Maximum ports per client (default: 100):${NC} "
+        echo -e "${CYAN}Maximum ports per client (default: 10):${NC} "
         read -r user_max_clients
         if [[ -n "$user_max_clients" && "$user_max_clients" =~ ^[0-9]+$ ]]; then
             max_clients="$user_max_clients"
