@@ -1338,7 +1338,7 @@ allowPorts = [
 
 # Performance and monitoring
 detailedErrorsToClient = true
-#enablePrometheus = true
+enablePrometheus = true
 udpPacketSize = 1500
 natholeAnalysisDataReserveHours = 168
 
@@ -1376,7 +1376,7 @@ quicBindPort = $quic_port
 # QUIC Protocol advanced options
 transport.quic.keepalivePeriod = 10
 transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 100000
+transport.quic.maxIncomingStreams = 1000
 
 EOF
     fi
@@ -1465,6 +1465,12 @@ transport.dialServerKeepalive = 7200
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
+# Performance optimizations
+transport.useEncryption = false
+transport.useCompression = false
+transport.bandwidthLimit = "100MB"
+transport.bandwidthLimitMode = "client"
+
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.enable = true
 transport.tls.disableCustomTLSFirstByte = true
@@ -1475,7 +1481,7 @@ transport.tls.disableCustomTLSFirstByte = true
 # transport.tls.serverName = "example.com"
 
 # Connection behavior settings
-loginFailExit = false
+loginFailExit = true
 
 # Client identification
 user = "moonfrp_${ip_suffix}_${timestamp}"
@@ -1766,12 +1772,6 @@ healthCheck.intervalSeconds = 10
 loadBalancer.group = "moonfrp_group_${port}"
 loadBalancer.groupKey = "moonfrp_${port}_$(date +%s | tail -c 6)"
 
-# Performance optimizations
-transport.useEncryption = false
-transport.useCompression = false
-transport.bandwidthLimit = "100MB"
-transport.bandwidthLimitMode = "client"
-
 # Metadata for monitoring
 metadatas.port = "$port"
 metadatas.ip_suffix = "$ip_suffix"
@@ -1837,10 +1837,7 @@ healthCheck.httpHeaders = [
 loadBalancer.group = "moonfrp_web_group_${port}"
 loadBalancer.groupKey = "moonfrp_web_${port}_$(date +%s | tail -c 6)"
 
-# HTTP-specific optimizations
-transport.useCompression = true
-transport.bandwidthLimit = "20MB"
-transport.bandwidthLimitMode = "client"
+# HTTP-specific headers
 
 # HTTP header management
 hostHeaderRewrite = "localhost"
@@ -1898,9 +1895,7 @@ remotePort = $port
 loadBalancer.group = "moonfrp_udp_group_${port}"
 loadBalancer.groupKey = "moonfrp_udp_${port}_$(date +%s | tail -c 6)"
 
-# UDP-specific optimizations
-transport.bandwidthLimit = "50MB"
-transport.bandwidthLimitMode = "client"
+# UDP-specific settings
 
 # Metadata for monitoring
 metadatas.port = "$port"
