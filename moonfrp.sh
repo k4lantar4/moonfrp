@@ -1301,7 +1301,7 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 # Transport settings
-transport.maxPoolCount = 10
+transport.maxPoolCount = 20
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 60
 transport.heartbeatTimeout = 90
@@ -1457,7 +1457,7 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 8
+transport.poolCount = 20
 transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 90
 transport.dialServerTimeout = 10
@@ -2454,7 +2454,7 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 8
+transport.poolCount = 20
 transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 90
 transport.dialServerTimeout = 10
