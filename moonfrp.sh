@@ -2443,8 +2443,7 @@ serverPort = $server_port
 auth.method = "token"
 auth.token = "$token"
 # Additional scopes for enhanced security
-auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
-یب
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]  
 # Connection behavior settings
 loginFailExit = false
 
@@ -2468,7 +2467,7 @@ transport.tls.enable = true
 transport.tls.disableCustomTLSFirstByte = true
 
 # Client identification
-user = "moonfrp_visitor_${ip_suffix}_$(date +%s)"
+user = "moonfrp_${ip_suffix}_$(date +%s)"
 
 # UDP packet size (must match server setting)
 udpPacketSize = 1500
@@ -2510,12 +2509,23 @@ EOF
 
     # Generate visitor configurations for each port
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
-    local visitor_port=9000
+    local visitor_port=8000
     
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
         local server_name="${proxy_type}-${port}-${ip_suffix}"
         local visitor_name="${proxy_type}_visitor_${port}_${ip_suffix}"
+        
+        # Use port-specific bind ports to avoid conflicts
+        local bind_port
+        case "$port" in
+            "2096") bind_port=8096 ;;  # X-UI
+            "9005") bind_port=8005 ;;  # Xray
+            "22")   bind_port=8022 ;;  # SSH
+            "3389") bind_port=8389 ;;  # RDP
+            "5900") bind_port=8900 ;;  # VNC
+            *) bind_port=$((8000 + (port % 1000))) ;;  # Dynamic assignment
+        esac
         
         cat >> "$visitor_config_file" << EOF
 [[visitors]]
@@ -2524,7 +2534,7 @@ type = "$proxy_type"
 serverName = "$server_name"
 secretKey = "$secret_key"
 bindAddr = "127.0.0.1"
-bindPort = $visitor_port
+bindPort = $bind_port
 EOF
         
         # Add XTCP-specific options
@@ -2554,7 +2564,6 @@ EOF
         cat >> "$visitor_config_file" << EOF
 
 EOF
-        ((visitor_port++))
     done
     
     # Add usage instructions
@@ -2573,13 +2582,23 @@ EOF
 EOF
     
     # Add service access information
-    visitor_port=9000
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
+        
+        # Use same port mapping logic as above
+        local bind_port
+        case "$port" in
+            "2096") bind_port=8096 ;;  # X-UI
+            "9005") bind_port=8005 ;;  # Xray
+            "22")   bind_port=8022 ;;  # SSH
+            "3389") bind_port=8389 ;;  # RDP
+            "5900") bind_port=8900 ;;  # VNC
+            *) bind_port=$((8000 + (port % 1000))) ;;  # Dynamic assignment
+        esac
+        
         cat >> "$visitor_config_file" << EOF
-# • Access service on port $port via: localhost:$visitor_port
+# • Access service on port $port via: localhost:$bind_port
 EOF
-        ((visitor_port++))
     done
     
     cat >> "$visitor_config_file" << EOF
@@ -2590,16 +2609,18 @@ EOF
     case "$proxy_type" in
         "stcp")
             cat >> "$visitor_config_file" << EOF
-# • SSH: ssh -p 9000 user@localhost
-# • HTTP: curl http://localhost:9000
-# • Database: connect to localhost:9000 instead of remote host
+# • SSH: ssh -p 8022 user@localhost (if port 22 is configured)
+# • HTTP: curl http://localhost:8096 (if port 2096 is configured)
+# • X-UI Panel: http://localhost:8096 (access X-UI on port 2096)
+# • Database: connect to localhost:BIND_PORT instead of remote host
 EOF
             ;;
         "xtcp")
             cat >> "$visitor_config_file" << EOF
-# • SSH: ssh -p 9000 user@localhost (P2P direct connection)
-# • HTTP: curl http://localhost:9000 (P2P direct connection)
-# • Gaming: connect to localhost:9000 (low latency P2P)
+# • SSH: ssh -p 8022 user@localhost (P2P direct connection)
+# • HTTP: curl http://localhost:8096 (P2P direct connection)
+# • X-UI Panel: http://localhost:8096 (direct P2P access to X-UI)
+# • Gaming: connect to localhost:BIND_PORT (low latency P2P)
 # • Note: XTCP provides direct P2P connection when possible
 EOF
             ;;
