@@ -35,7 +35,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.4"
+MOONFRP_VERSION="1.0.5"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -1330,6 +1330,7 @@ allowPorts = [
     { start = 4000, end = 4999 },
     { start = 5000, end = 5999 },
     { start = 6000, end = 6999 },
+    { start = 7000, end = 7999 },  # Added 7000-7999 range for port 7013
     { start = 8000, end = 8999 },
     { start = 9000, end = 9999 },
     { start = 10000, end = 19999 },
@@ -1764,7 +1765,7 @@ healthCheck.intervalSeconds = 10
 
 # Load balancing configuration
 loadBalancer.group = "moonfrp_group_${port}"
-loadBalancer.groupKey = "moonfrp_${port}_$(date +%s | tail -c 6)"
+loadBalancer.groupKey = "moonfrp_${port}_static"
 
 # Metadata for monitoring
 metadatas.port = "$port"
@@ -1829,7 +1830,7 @@ healthCheck.httpHeaders = [
 
 # Load balancing configuration
 loadBalancer.group = "moonfrp_web_group_${port}"
-loadBalancer.groupKey = "moonfrp_web_${port}_$(date +%s | tail -c 6)"
+loadBalancer.groupKey = "moonfrp_web_${port}_static"
 
 # HTTP-specific headers
 
@@ -1887,7 +1888,7 @@ remotePort = $port
 # Note: UDP doesn't support health checks, but we add metadata for monitoring
 # Load balancing configuration
 loadBalancer.group = "moonfrp_udp_group_${port}"
-loadBalancer.groupKey = "moonfrp_udp_${port}_$(date +%s | tail -c 6)"
+loadBalancer.groupKey = "moonfrp_udp_${port}_static"
 
 # UDP-specific settings
 
