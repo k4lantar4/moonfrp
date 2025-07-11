@@ -5590,9 +5590,9 @@ real_time_status_monitor() {
                     status_color="$GREEN"
                 fi
                 
-                printf "    %-15s -> %-20s [%s] %s%s%s\n" \
-                    "Client-$ip_suffix" "$server_addr" "$ports_list" \
-                    "$status_color" "$status_icon" "$NC"
+                printf "    %-15s -> %-20s [%s] " \
+                    "Client-$ip_suffix" "$server_addr" "$ports_list"
+                echo -e "${status_color}${status_icon}${NC}"
                 client_found=true
             fi
         done
@@ -5616,7 +5616,7 @@ real_time_status_monitor() {
                     dashboard_port="${BASH_REMATCH[1]}"
                 elif [[ $line =~ webServer\.user\ =\ \"([^\"]+)\" ]]; then
                     dashboard_user="${BASH_REMATCH[1]}"
-                elif [[ $line =~ bindPort\ =\ ([0-9]+) ]]; then
+                elif [[ $line =~ ^bindPort\ =\ ([0-9]+) ]]; then
                     bind_port="${BASH_REMATCH[1]}"
                 fi
             done < "$CONFIG_DIR/frps.toml"
@@ -5681,7 +5681,9 @@ real_time_status_monitor() {
         
         # Network connections
         local tcp_connections=$(ss -t state established 2>/dev/null | wc -l)
-        [[ $tcp_connections -gt 0 ]] && ((tcp_connections--))  # Remove header line
+        if [[ "$tcp_connections" -gt 0 ]]; then
+            ((tcp_connections--))  # Remove header line
+        fi
         echo "TCP Connections: $tcp_connections"
         
         echo ""
@@ -5816,9 +5818,9 @@ show_current_config_summary() {
             
             [[ "$service_status" == "active" ]] && status_icon="✅" && status_color="$GREEN"
             
-            printf "    %-15s -> %-15s [%s] %s%s%s\n" \
-                "Client-$ip_suffix" "$server_ip" "$ports_list" \
-                "$status_color" "$status_icon" "$NC"
+            printf "    %-15s -> %-15s [%s] " \
+                "Client-$ip_suffix" "$server_ip" "$ports_list"
+            echo -e "${status_color}${status_icon}${NC}"
         done
         
         # Connection tests
