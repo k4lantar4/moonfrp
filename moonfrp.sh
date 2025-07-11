@@ -1356,11 +1356,6 @@ enablePrometheus = true
 udpPacketSize = 1500
 natholeAnalysisDataReserveHours = 168
 
-# Connection limits to prevent resource exhaustion
-maxPortsPerClient = 10
-# userConnTimeout specifies the maximum time to wait for a work connection (seconds)
-userConnTimeout = 10
-
 EOF
 
     # Add dashboard settings only if enabled
@@ -3595,7 +3590,7 @@ EOF
             echo -e "\n${CYAN}📊 Client Connection Limits:${NC}"
             echo -e "${CYAN}Maximum ports per client (default: 50):${NC} "
             read -r max_ports
-            [[ -z "$max_ports" ]] && max_ports="50"
+            [[ -z "$max_ports" ]] && max_ports="10"
             
             if [[ "$max_ports" =~ ^[0-9]+$ ]]; then
                 sed -i "s/maxPortsPerClient = .*/maxPortsPerClient = $max_ports/" "$CONFIG_DIR/frps.toml"
