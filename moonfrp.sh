@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.5"
+MOONFRP_VERSION="1.0.6"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -3588,7 +3588,7 @@ EOF
         6)
             # Client limits
             echo -e "\n${CYAN}📊 Client Connection Limits:${NC}"
-            echo -e "${CYAN}Maximum ports per client (default: 50):${NC} "
+            echo -e "${CYAN}Maximum ports per client (default: 10):${NC} "
             read -r max_ports
             [[ -z "$max_ports" ]] && max_ports="10"
             
