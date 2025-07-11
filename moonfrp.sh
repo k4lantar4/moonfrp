@@ -1353,7 +1353,8 @@ subdomainHost = "$custom_subdomain"
 maxPortsPerClient = $max_clients
 
 # Advanced TCPMUX settings for better multiplexing
-transport.poolCount = 5
+# Note: poolCount is deprecated in FRP v0.63.0+, using maxPoolCount instead
+transport.maxPoolCount = 5
 transport.protocol = "tcp"
 
 # Enable Prometheus monitoring (optional)
@@ -1447,7 +1448,8 @@ log.maxDays = 7
 
 # Transport settings (Optimized for TCPMUX and performance)
 transport.tls.enable = true
-transport.poolCount = 5
+# Note: poolCount is deprecated in FRP v0.63.0+, using maxPoolCount instead
+transport.maxPoolCount = 5
 transport.protocol = "tcp"
 # Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
@@ -2326,7 +2328,8 @@ log.maxDays = 7
 
 # Transport settings
 transport.tls.enable = true
-transport.poolCount = 5
+# Note: poolCount is deprecated in FRP v0.63.0+, using maxPoolCount instead
+transport.maxPoolCount = 5
 transport.protocol = "tcp"
 # Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
