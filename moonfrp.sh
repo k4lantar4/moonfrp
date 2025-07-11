@@ -1267,10 +1267,11 @@ generate_frps_config() {
         return 1
     fi
     
-    # Create simple and clean configuration file based on official FRP format
+    # Create simple and clean configuration file based on official FRP v0.63.0 format
     cat > "$CONFIG_DIR/frps.toml" << EOF
 # MoonFRP Server Configuration
 # Generated on $(date)
+# Compatible with FRP v0.63.0
 
 # Basic server settings
 bindPort = $bind_port
@@ -1279,22 +1280,6 @@ bindPort = $bind_port
 auth.method = "token"
 auth.token = "$token"
 
-EOF
-
-    # Add dashboard settings only if enabled
-    if [[ -n "$dashboard_port" && -n "$dashboard_user" && -n "$dashboard_password" ]]; then
-        cat >> "$CONFIG_DIR/frps.toml" << EOF
-# Dashboard settings
-webServer.addr = "0.0.0.0"
-webServer.port = $dashboard_port
-webServer.user = "$dashboard_user"
-webServer.password = "$dashboard_password"
-
-EOF
-    fi
-
-    # Add remaining settings
-    cat >> "$CONFIG_DIR/frps.toml" << EOF
 # Logging
 log.to = "$LOG_DIR/frps.log"
 log.level = "info"
@@ -1304,61 +1289,18 @@ log.maxDays = 7
 vhostHTTPPort = 80
 vhostHTTPSPort = 443
 
-# TCPMUX settings - Required for TCPMUX protocol support
-tcpmuxHTTPConnectPort = 5002
-
-# Transport settings (Updated based on official FRP documentation)
-transport.tls.enable = true
+# Transport settings
 transport.maxPoolCount = 10
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 60
-
-# Advanced transport protocols
-EOF
-
-    # Add KCP support if enabled
-    if [[ "$enable_kcp" == "true" ]]; then
-        cat >> "$CONFIG_DIR/frps.toml" << EOF
-# KCP Protocol support (UDP-based, better for poor network conditions)
-kcpBindPort = $bind_port
-EOF
-    fi
-
-    # Add QUIC support if enabled
-    if [[ "$enable_quic" == "true" ]]; then
-        cat >> "$CONFIG_DIR/frps.toml" << EOF
-# QUIC Protocol support (modern, multiplexed, encrypted)
-quicBindPort = $((bind_port + 1))
-EOF
-    fi
-
-    cat >> "$CONFIG_DIR/frps.toml" << EOF
-
-# Advanced transport options
-transport.quic.keepalivePeriod = 10
-transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 100000
-
-# Performance settings (Optimized for better connection handling)
-# Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
-
-# Security settings (Enhanced authentication scopes)
-auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
+transport.tcpKeepalive = 7200
 
 # Subdomain settings for HTTP/HTTPS proxies
-subdomainHost = "$custom_subdomain"
+subDomainHost = "$custom_subdomain"
 
-# Connection limits per client (Customizable)
+# Connection limits per client
 maxPortsPerClient = $max_clients
-
-# Advanced TCPMUX settings for better multiplexing
-# Note: poolCount is deprecated in FRP v0.63.0+, using maxPoolCount instead
-transport.maxPoolCount = 5
-transport.protocol = "tcp"
-
-# Enable Prometheus monitoring (optional)
-# webServer.enablePrometheus = true
 
 # Extended port ranges for better compatibility
 allowPorts = [
@@ -1374,26 +1316,43 @@ allowPorts = [
     { start = 20000, end = 65535 }
 ]
 
-# NAT hole punching configuration
+# Performance and monitoring
+detailedErrorsToClient = true
+enablePrometheus = true
+udpPacketSize = 1500
 natholeAnalysisDataReserveHours = 168
 
-# Advanced performance settings
-transport.tcpKeepalive = 7200
-detailedErrorsToClient = true
-
-# Enable Prometheus monitoring
-enablePrometheus = true
-
-# UDP packet size (must match client setting)
-udpPacketSize = 1500
-
-# HTTP plugins for external integrations
-# [[httpPlugins]]
-# name = "user-manager"
-# addr = "127.0.0.1:9000"
-# path = "/handler"
-# ops = ["Login"]
 EOF
+
+    # Add dashboard settings only if enabled
+    if [[ -n "$dashboard_port" && -n "$dashboard_user" && -n "$dashboard_password" ]]; then
+        cat >> "$CONFIG_DIR/frps.toml" << EOF
+# Dashboard settings
+webServer.addr = "0.0.0.0"
+webServer.port = $dashboard_port
+webServer.user = "$dashboard_user"
+webServer.password = "$dashboard_password"
+
+EOF
+    fi
+
+    # Add KCP support if enabled
+    if [[ "$enable_kcp" == "true" ]]; then
+        cat >> "$CONFIG_DIR/frps.toml" << EOF
+# KCP Protocol support
+kcpBindPort = $bind_port
+
+EOF
+    fi
+
+    # Add QUIC support if enabled
+    if [[ "$enable_quic" == "true" ]]; then
+        cat >> "$CONFIG_DIR/frps.toml" << EOF
+# QUIC Protocol support
+quicBindPort = $((bind_port + 1))
+
+EOF
+    fi
     
     # Verify configuration file was created successfully
     if [[ -f "$CONFIG_DIR/frps.toml" && -s "$CONFIG_DIR/frps.toml" ]]; then
@@ -1427,11 +1386,11 @@ generate_frpc_config() {
     local config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
     local timestamp=$(date +%s)
     
-    # Create simple and clean client configuration based on official FRP format
+    # Create simple and clean client configuration based on official FRP v0.63.0 format
     cat > "$config_file" << EOF
 # MoonFRP Client Configuration for IP ending with $ip_suffix
 # Generated on $(date)
-# Enhanced configuration based on official FRP documentation
+# Compatible with FRP v0.63.0
 
 # Server connection settings
 serverAddr = "$server_ip"
@@ -1441,57 +1400,28 @@ serverPort = $server_port
 auth.method = "token"
 auth.token = "$token"
 
-# Logging (optional)
+# Logging
 log.to = "$LOG_DIR/frpc_${ip_suffix}.log"
 log.level = "info"
 log.maxDays = 7
 
-# Transport settings (Optimized for TCPMUX and performance)
-transport.tls.enable = true
-# Note: poolCount is deprecated in FRP v0.63.0+, using maxPoolCount instead
+# Transport settings
 transport.maxPoolCount = 5
 transport.protocol = "tcp"
-# Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
-
-# Advanced transport options
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 7200
-transport.connectServerLocalIP = "0.0.0.0"
-# Enable TCP multiplexing for better performance
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
-# QUIC transport options (if using QUIC)
-# transport.quic.keepalivePeriod = 10
-# transport.quic.maxIdleTimeout = 30
-# transport.quic.maxIncomingStreams = 100000
-
-# Connection behavior settings (Fixed: Prevent immediate exit on connection failure)
+# Connection behavior settings
 loginFailExit = false
 
-# NAT hole punching support (for better P2P connections)
-natHoleStunServer = "stun.easyvoip.com:3478"
-
-# Client identification (Unique per IP to avoid conflicts)
+# Client identification
 user = "moonfrp_${ip_suffix}_${timestamp}"
-
-# Admin web server (optional - for monitoring)
-webServer.addr = "127.0.0.1"
-webServer.port = $((7400 + ip_suffix))
-webServer.user = "admin"
-webServer.password = "admin"
 
 # UDP packet size (must match server setting)
 udpPacketSize = 1500
-
-# Client metadata for identification
-metadatas.client_type = "moonfrp"
-metadatas.ip_suffix = "$ip_suffix"
-metadatas.created = "$(date)"
-
-# Feature gates for experimental features
-# featureGates = { VirtualNet = true }
 
 EOF
 
@@ -2327,11 +2257,8 @@ log.level = "info"
 log.maxDays = 7
 
 # Transport settings
-transport.tls.enable = true
-# Note: poolCount is deprecated in FRP v0.63.0+, using maxPoolCount instead
 transport.maxPoolCount = 5
 transport.protocol = "tcp"
-# Note: heartbeatInterval is deprecated in FRP v0.63.0+
 transport.heartbeatTimeout = 90
 
 # Client identification
@@ -3214,7 +3141,7 @@ modify_server_configuration() {
         local bind_port=$(grep "bindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
         local token=$(grep "auth.token" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | tr -d '"')
         local dashboard_port=$(grep "webServer.port" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
-        local subdomain=$(grep "subdomainHost" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | tr -d '"')
+        local subdomain=$(grep "subDomainHost" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | tr -d '"')
         local max_ports=$(grep "maxPortsPerClient" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}')
         local kcp_enabled=$(grep "kcpBindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | wc -l)
         local quic_enabled=$(grep "quicBindPort" "$CONFIG_DIR/frps.toml" | head -1 | awk '{print $3}' | wc -l)
@@ -3376,7 +3303,7 @@ EOF
             read -r new_subdomain
             [[ -z "$new_subdomain" ]] && new_subdomain="moonfrp.local"
             
-            sed -i "s/subdomainHost = \".*\"/subdomainHost = \"$new_subdomain\"/" "$CONFIG_DIR/frps.toml"
+            sed -i "s/subDomainHost = \".*\"/subDomainHost = \"$new_subdomain\"/" "$CONFIG_DIR/frps.toml"
             echo -e "${GREEN}✅ Subdomain updated to: $new_subdomain${NC}"
             
             restart_server_services
