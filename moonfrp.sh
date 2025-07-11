@@ -1267,27 +1267,38 @@ generate_frps_config() {
         return 1
     fi
     
-    # Create simple and clean configuration file based on official FRP v0.63.0 format
+    # Create complete and advanced configuration file based on official FRP v0.63.0 format
     cat > "$CONFIG_DIR/frps.toml" << EOF
 # MoonFRP Server Configuration
 # Generated on $(date)
 # Compatible with FRP v0.63.0
 
 # Basic server settings
+bindAddr = "0.0.0.0"
 bindPort = $bind_port
 
 # Authentication
 auth.method = "token"
 auth.token = "$token"
+# Additional scopes for enhanced security
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
 # Logging
 log.to = "$LOG_DIR/frps.log"
 log.level = "info"
 log.maxDays = 7
+log.disablePrintColor = false
 
 # HTTP/HTTPS proxy settings
 vhostHTTPPort = 80
 vhostHTTPSPort = 443
+# Response timeout for vhost servers
+vhostHTTPTimeout = 60
+
+# 🚨 CRITICAL FIX: TCPMUX server port for HTTP CONNECT multiplexing
+tcpmuxHTTPConnectPort = 5002
+# TCPMUX passthrough mode (false = process traffic, true = direct passthrough)
+tcpmuxPassthrough = false
 
 # Transport settings
 transport.maxPoolCount = 10
@@ -1296,11 +1307,20 @@ transport.tcpMuxKeepaliveInterval = 60
 transport.heartbeatTimeout = 90
 transport.tcpKeepalive = 7200
 
+# TLS settings (enabled by default in v0.63.0)
+transport.tls.force = false
+# Uncomment and configure for custom certificates
+# transport.tls.certFile = "server.crt"
+# transport.tls.keyFile = "server.key"
+# transport.tls.trustedCaFile = "ca.crt"
+
 # Subdomain settings for HTTP/HTTPS proxies
 subDomainHost = "$custom_subdomain"
 
 # Connection limits per client
 maxPortsPerClient = $max_clients
+# Maximum time to wait for work connections
+userConnTimeout = 10
 
 # Extended port ranges for better compatibility
 allowPorts = [
@@ -1339,32 +1359,59 @@ EOF
     # Add KCP support if enabled
     if [[ "$enable_kcp" == "true" ]]; then
         cat >> "$CONFIG_DIR/frps.toml" << EOF
-# KCP Protocol support
+# 🚀 KCP Protocol support (UDP-based, better for poor networks)
 kcpBindPort = $bind_port
+# KCP can use same port as main bind port
 
 EOF
     fi
 
     # Add QUIC support if enabled
     if [[ "$enable_quic" == "true" ]]; then
+        local quic_port=$((bind_port + 1))
         cat >> "$CONFIG_DIR/frps.toml" << EOF
-# QUIC Protocol support
-quicBindPort = $((bind_port + 1))
+# 🚀 QUIC Protocol support (modern, encrypted UDP)
+quicBindPort = $quic_port
+
+# QUIC Protocol advanced options
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
 
 EOF
     fi
+
+    # Add SSH Tunnel Gateway support (optional advanced feature)
+    cat >> "$CONFIG_DIR/frps.toml" << EOF
+# SSH Tunnel Gateway (disabled by default)
+# Uncomment to enable SSH gateway on port 2200
+# sshTunnelGateway.bindPort = 2200
+# sshTunnelGateway.privateKeyFile = "/home/frp-user/.ssh/id_rsa"
+# sshTunnelGateway.autoGenPrivateKeyPath = ""
+# sshTunnelGateway.authorizedKeysFile = "/home/frp-user/.ssh/authorized_keys"
+
+EOF
     
     # Verify configuration file was created successfully
     if [[ -f "$CONFIG_DIR/frps.toml" && -s "$CONFIG_DIR/frps.toml" ]]; then
-        log "INFO" "Generated advanced frps.toml configuration with protocol support"
+        log "INFO" "Generated advanced frps.toml configuration with full protocol support"
         if [[ -n "$dashboard_port" ]]; then
             log "INFO" "Dashboard: http://server-ip:$dashboard_port (User: $dashboard_user, Pass: $dashboard_password)"
         fi
         log "INFO" "Token: $token"
+        log "INFO" "Main Port: $bind_port (TCP/FRP Protocol)"
         log "INFO" "HTTP Port: 80, HTTPS Port: 443"
-        log "INFO" "TCPMUX Port: 5002"
+        log "INFO" "TCPMUX Port: 5002 (HTTP CONNECT multiplexing)"
+        [[ "$enable_kcp" == "true" ]] && log "INFO" "KCP Port: $bind_port (UDP-based protocol)"
+        [[ "$enable_quic" == "true" ]] && log "INFO" "QUIC Port: $((bind_port + 1)) (Modern encrypted UDP)"
         log "INFO" "Allowed ports: 1000-65535 (extended ranges)"
-        log "WARN" "Remember to configure firewall to allow ports 80, 443, 5002, and 1000-65535"
+        log "WARN" "🔥 CRITICAL: Configure firewall to allow these ports:"
+        log "WARN" "   • Main: $bind_port (TCP)"
+        log "WARN" "   • HTTP/HTTPS: 80, 443 (TCP)"
+        log "WARN" "   • TCPMUX: 5002 (TCP)"
+        [[ "$enable_kcp" == "true" ]] && log "WARN" "   • KCP: $bind_port (UDP)"
+        [[ "$enable_quic" == "true" ]] && log "WARN" "   • QUIC: $((bind_port + 1)) (UDP)"
+        log "WARN" "   • Client ports: 1000-65535 (TCP/UDP)"
         return 0
     else
         log "ERROR" "Configuration file was not created or is empty"
@@ -1382,11 +1429,12 @@ generate_frpc_config() {
     local ip_suffix="$6"
     local proxy_type="${7:-tcp}"  # Default to TCP if not specified
     local custom_domains="${8:-}" # For HTTP/HTTPS proxies
+    local transport_protocol="${9:-tcp}" # Transport protocol: tcp/kcp/quic/websocket/wss
     
     local config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
     local timestamp=$(date +%s)
     
-    # Create simple and clean client configuration based on official FRP v0.63.0 format
+    # Create complete and advanced client configuration based on official FRP v0.63.0 format
     cat > "$config_file" << EOF
 # MoonFRP Client Configuration for IP ending with $ip_suffix
 # Generated on $(date)
@@ -1399,20 +1447,32 @@ serverPort = $server_port
 # Authentication
 auth.method = "token"
 auth.token = "$token"
+# Additional scopes for enhanced security
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
 # Logging
 log.to = "$LOG_DIR/frpc_${ip_suffix}.log"
 log.level = "info"
 log.maxDays = 7
+log.disablePrintColor = false
 
 # Transport settings
 transport.poolCount = 8
-transport.protocol = "tcp"
+transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 90
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 7200
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
+
+# TLS settings (enabled by default in v0.63.0)
+transport.tls.enable = true
+transport.tls.disableCustomTLSFirstByte = true
+# Uncomment and configure for custom certificates
+# transport.tls.certFile = "client.crt"
+# transport.tls.keyFile = "client.key"
+# transport.tls.trustedCaFile = "ca.crt"
+# transport.tls.serverName = "example.com"
 
 # Connection behavior settings
 loginFailExit = false
@@ -1424,6 +1484,61 @@ user = "moonfrp_${ip_suffix}_${timestamp}"
 udpPacketSize = 1500
 
 EOF
+
+    # Add feature gates for advanced features
+    local needs_feature_gates=false
+    case "$proxy_type" in
+        "plugin_virtual_net")
+            needs_feature_gates=true
+            ;;
+    esac
+    
+    if [[ "$needs_feature_gates" == "true" ]]; then
+        cat >> "$config_file" << EOF
+# Feature gates for experimental features
+featureGates = { VirtualNet = true }
+
+# Virtual network address configuration
+virtualNet.address = "100.86.1.1/24"
+
+EOF
+    fi
+
+    # Add protocol-specific settings
+    case "$transport_protocol" in
+        "kcp")
+            cat >> "$config_file" << EOF
+# KCP Protocol specific settings
+# Note: Server must have KCP enabled (kcpBindPort configured)
+# KCP provides better performance over poor network conditions
+
+EOF
+            ;;
+        "quic")
+            cat >> "$config_file" << EOF
+# QUIC Protocol specific settings
+# Note: Server must have QUIC enabled (quicBindPort configured)
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
+
+EOF
+            ;;
+        "websocket")
+            cat >> "$config_file" << EOF
+# WebSocket Protocol specific settings
+# Useful for bypassing firewalls that block other protocols
+
+EOF
+            ;;
+        "wss")
+            cat >> "$config_file" << EOF
+# WebSocket Secure (WSS) Protocol specific settings
+# Encrypted WebSocket over TLS
+
+EOF
+            ;;
+    esac
 
     # Bandwidth management flag (will be passed from caller)
     local enable_bandwidth="${9:-false}"
@@ -1469,7 +1584,7 @@ EOF
     # Generate visitor configuration for STCP/XTCP proxies
     if [[ "$proxy_type" == "stcp" || "$proxy_type" == "xtcp" ]]; then
         local secret_key="moonfrp-${proxy_type}-${ip_suffix}-${timestamp}"
-        local visitor_config=$(generate_visitor_config "$server_ip" "$server_port" "$token" "$config_file" "$secret_key" "$proxy_type" "$ports" "$ip_suffix")
+        local visitor_config=$(generate_visitor_config "$server_ip" "$server_port" "$token" "$config_file" "$secret_key" "$proxy_type" "$ports" "$ip_suffix" "$transport_protocol")
         log "INFO" "Generated visitor configuration: $visitor_config"
     fi
     
@@ -1487,6 +1602,64 @@ EOF
 GLOBAL_BANDWIDTH_PROFILE=""
 GLOBAL_BANDWIDTH_IN=""
 GLOBAL_BANDWIDTH_OUT=""
+
+# Global transport protocol configuration
+GLOBAL_TRANSPORT_PROTOCOL="tcp"
+
+# Configure transport protocol globally
+configure_transport_protocol() {
+    echo -e "\n${CYAN}🚀 Transport Protocol Selection:${NC}"
+    echo -e "${YELLOW}Choose the transport protocol for client connections${NC}"
+    echo "1. TCP (Default) - Standard reliable connection"
+    echo "2. KCP - UDP-based, better for poor networks"
+    echo "3. QUIC - Modern encrypted UDP, low latency"
+    echo "4. WebSocket - HTTP-based, firewall-friendly"
+    echo "5. WSS - Secure WebSocket over TLS"
+    
+    read -p "Select transport protocol [1-5] (default: 1): " protocol_choice
+    [[ -z "$protocol_choice" ]] && protocol_choice=1
+    
+    case $protocol_choice in
+        1)
+            GLOBAL_TRANSPORT_PROTOCOL="tcp"
+            log "INFO" "Selected TCP protocol (reliable, standard)"
+            ;;
+        2)
+            GLOBAL_TRANSPORT_PROTOCOL="kcp"
+            log "INFO" "Selected KCP protocol (UDP-based, better for poor networks)"
+            log "WARN" "⚠️  Server must have KCP enabled (kcpBindPort configured)"
+            ;;
+        3)
+            GLOBAL_TRANSPORT_PROTOCOL="quic"
+            log "INFO" "Selected QUIC protocol (modern encrypted UDP)"
+            log "WARN" "⚠️  Server must have QUIC enabled (quicBindPort configured)"
+            ;;
+        4)
+            GLOBAL_TRANSPORT_PROTOCOL="websocket"
+            log "INFO" "Selected WebSocket protocol (HTTP-based, firewall-friendly)"
+            ;;
+        5)
+            GLOBAL_TRANSPORT_PROTOCOL="wss"
+            log "INFO" "Selected WSS protocol (secure WebSocket over TLS)"
+            ;;
+        *)
+            log "WARN" "Invalid choice, using TCP (default)"
+            GLOBAL_TRANSPORT_PROTOCOL="tcp"
+            ;;
+    esac
+    
+    echo -e "\n${GREEN}✅ Transport protocol configured: $GLOBAL_TRANSPORT_PROTOCOL${NC}"
+    
+    # Show protocol-specific warnings
+    case $GLOBAL_TRANSPORT_PROTOCOL in
+        "kcp"|"quic")
+            echo -e "${YELLOW}📝 Note: Make sure the server has $GLOBAL_TRANSPORT_PROTOCOL protocol enabled${NC}"
+            ;;
+        "websocket"|"wss")
+            echo -e "${YELLOW}📝 Note: WebSocket protocols are useful for bypassing restrictive firewalls${NC}"
+            ;;
+    esac
+}
 
 # Configure bandwidth limits globally
 configure_global_bandwidth() {
@@ -1644,6 +1817,10 @@ type = "$proxy_type"
 localIP = "127.0.0.1"
 localPort = $port
 customDomains = ["$domain"]
+# Optional: Use subdomain instead of customDomains
+# subdomain = "app$port"
+# Optional: Location-based routing
+# locations = ["/", "/api", "/admin"]
 
 # Health check configuration for HTTP/HTTPS
 healthCheck.type = "http"
@@ -1670,6 +1847,19 @@ hostHeaderRewrite = "localhost"
 requestHeaders.set.X-Forwarded-Proto = "$proxy_type"
 requestHeaders.set.X-Forwarded-For = "\$remote_addr"
 requestHeaders.set.X-Real-IP = "\$remote_addr"
+# Optional: Additional request headers
+# requestHeaders.set.X-Custom-Header = "value"
+
+# Optional: Response header management
+# responseHeaders.set.X-Powered-By = "MoonFRP"
+# responseHeaders.set.X-Frame-Options = "DENY"
+
+# Optional: HTTP authentication
+# httpUser = "admin"
+# httpPassword = "secure_password"
+
+# Optional: Route by HTTP user
+# routeByHTTPUser = "specific_user"
 
 # Metadata for monitoring
 metadatas.port = "$port"
@@ -1887,6 +2077,8 @@ localIP = "127.0.0.1"
 localPort = $port
 # Allow all users to connect (use specific users for better security)
 allowUsers = ["*"]
+# Optional: Limit to specific users for better security
+# allowUsers = ["user1", "user2"]
 
 EOF
     done
@@ -1972,6 +2164,8 @@ localIP = "127.0.0.1"
 localPort = $port
 # Allow all users to connect (use specific users for better security)
 allowUsers = ["*"]
+# Optional: Limit to specific users for better security
+# allowUsers = ["user1", "user2"]
 
 EOF
     done
@@ -2231,6 +2425,7 @@ generate_visitor_config() {
     local proxy_type="$6"  # stcp or xtcp
     local ports="$7"
     local ip_suffix="$8"
+    local transport_protocol="${9:-tcp}"  # Transport protocol
     
     local visitor_config_file="$CONFIG_DIR/frpc_visitor_${ip_suffix}.toml"
     
@@ -2247,7 +2442,9 @@ serverPort = $server_port
 # Authentication
 auth.method = "token"
 auth.token = "$token"
-
+# Additional scopes for enhanced security
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
+یب
 # Connection behavior settings
 loginFailExit = false
 
@@ -2255,16 +2452,61 @@ loginFailExit = false
 log.to = "$LOG_DIR/frpc_visitor_${ip_suffix}.log"
 log.level = "info"
 log.maxDays = 7
+log.disablePrintColor = false
 
 # Transport settings
 transport.poolCount = 8
-transport.protocol = "tcp"
+transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 90
+transport.dialServerTimeout = 10
+transport.dialServerKeepalive = 7200
+transport.tcpMux = true
+transport.tcpMuxKeepaliveInterval = 30
+
+# TLS settings (enabled by default in v0.63.0)
+transport.tls.enable = true
+transport.tls.disableCustomTLSFirstByte = true
 
 # Client identification
 user = "moonfrp_visitor_${ip_suffix}_$(date +%s)"
 
+# UDP packet size (must match server setting)
+udpPacketSize = 1500
+
 EOF
+
+    # Add protocol-specific settings for visitor
+    case "$transport_protocol" in
+        "kcp")
+            cat >> "$visitor_config_file" << EOF
+# KCP Protocol specific settings for visitor
+# Note: Server must have KCP enabled (kcpBindPort configured)
+
+EOF
+            ;;
+        "quic")
+            cat >> "$visitor_config_file" << EOF
+# QUIC Protocol specific settings for visitor
+# Note: Server must have QUIC enabled (quicBindPort configured)
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
+
+EOF
+            ;;
+        "websocket")
+            cat >> "$visitor_config_file" << EOF
+# WebSocket Protocol specific settings for visitor
+
+EOF
+            ;;
+        "wss")
+            cat >> "$visitor_config_file" << EOF
+# WebSocket Secure (WSS) Protocol specific settings for visitor
+
+EOF
+            ;;
+    esac
 
     # Generate visitor configurations for each port
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
@@ -2288,13 +2530,24 @@ EOF
         # Add XTCP-specific options
         if [[ "$proxy_type" == "xtcp" ]]; then
             cat >> "$visitor_config_file" << EOF
-# XTCP P2P options
+# XTCP P2P options - Advanced NAT traversal and P2P settings
 keepTunnelOpen = true
 maxRetriesAnHour = 8
 minRetryInterval = 90
 # Fallback to STCP if P2P fails
 fallbackTo = "stcp_${server_name}"
 fallbackTimeoutMs = 1000
+# Optional: Enable specific user connections only
+# serverUser = "specific_user"
+EOF
+        fi
+
+        # Add STCP-specific options
+        if [[ "$proxy_type" == "stcp" ]]; then
+            cat >> "$visitor_config_file" << EOF
+# STCP options - Secure tunneling settings
+# Optional: Enable specific user connections only
+# serverUser = "specific_user"
 EOF
         fi
         
@@ -4017,6 +4270,16 @@ create_foreign_client_config() {
         done
     fi
     
+    # 🚀 Transport Protocol Selection
+    echo -e "\n${CYAN}🚀 Transport Protocol Configuration:${NC}"
+    echo -e "${YELLOW}Select transport protocol for client connections${NC}"
+    configure_transport_protocol
+
+    # 🚀 Bandwidth Configuration
+    echo -e "\n${CYAN}📊 Bandwidth Configuration:${NC}"
+    echo -e "${YELLOW}Configure bandwidth limits (optional)${NC}"
+    configure_global_bandwidth
+
     # Custom domains for HTTP/HTTPS/TCPMUX
     local custom_domains=""
     if [[ "$proxy_type" == "http" || "$proxy_type" == "https" || "$proxy_type" == "tcpmux" ]]; then
@@ -4037,9 +4300,13 @@ create_foreign_client_config() {
     echo -e "${GRAY}│${NC} ${GREEN}Server Port:${NC} $server_port"
     echo -e "${GRAY}│${NC} ${GREEN}Auth Token:${NC} ${token:0:8}..."
     echo -e "${GRAY}│${NC} ${GREEN}Proxy Type:${NC} $proxy_type"
+    echo -e "${GRAY}│${NC} ${GREEN}Transport Protocol:${NC} $GLOBAL_TRANSPORT_PROTOCOL"
     echo -e "${GRAY}│${NC} ${GREEN}Ports:${NC} $ports"
     if [[ -n "$custom_domains" ]]; then
         echo -e "${GRAY}│${NC} ${GREEN}Domains:${NC} $custom_domains"
+    fi
+    if [[ "$GLOBAL_BANDWIDTH_PROFILE" != "none" ]]; then
+        echo -e "${GRAY}│${NC} ${GREEN}Bandwidth Profile:${NC} $GLOBAL_BANDWIDTH_PROFILE"
     fi
     echo -e "${GRAY}└─────────────────────────────────────────────────┘${NC}"
     
@@ -4145,7 +4412,7 @@ create_foreign_client_config() {
         echo -e "\n${CYAN}[$current_ip/$total_ips] Processing IP: $ip${NC}"
         
         # Generate client configuration
-        if generate_frpc_config "$ip" "$server_port" "$token" "$ip" "$ports" "$ip_suffix" "$proxy_type" "$custom_domains"; then
+        if generate_frpc_config "$ip" "$server_port" "$token" "$ip" "$ports" "$ip_suffix" "$proxy_type" "$custom_domains" "$GLOBAL_TRANSPORT_PROTOCOL"; then
             echo -e "${GREEN}✅ Configuration generated${NC}"
             
             # Verbose configuration output
@@ -5178,13 +5445,13 @@ real_time_status_monitor() {
             grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
             awk '{print $1}' | sed 's/\.service//' | grep -v "^$"))
         
+        # Services status table (always show)
+        printf "%-25s %-12s %-15s %-20s\n" "Service" "Status" "Type" "Last Activity"
+        printf "%-25s %-12s %-15s %-20s\n" "-------" "------" "----" "-------------"
+        
         if [[ ${#services[@]} -eq 0 ]]; then
-            echo -e "${YELLOW}No FRP services found${NC}"
+            printf "%-25s %-12s %-15s %-20s\n" "No services found" "${YELLOW}N/A${NC}" "N/A" "N/A"
         else
-            # Services status table
-            printf "%-25s %-12s %-15s %-20s\n" "Service" "Status" "Type" "Last Activity"
-            printf "%-25s %-12s %-15s %-20s\n" "-------" "------" "----" "-------------"
-            
             for service in "${services[@]}"; do
                 [[ -z "$service" ]] && continue
                 
@@ -5223,54 +5490,155 @@ real_time_status_monitor() {
                 printf "%-25s ${status_color}%-12s${NC} %-15s %-20s\n" \
                     "$service" "$clean_status" "$type" "$last_activity"
             done
+        fi
+        
+        # Configuration files status (always show)
+        echo ""
+        echo -e "${CYAN}📁 Configuration Files:${NC}"
+        printf "%-30s %-10s %-15s\n" "File" "Size" "Modified"
+        printf "%-30s %-10s %-15s\n" "----" "----" "--------"
+        
+        local config_found=false
+        for config_file in "$CONFIG_DIR"/*.toml; do
+            [[ ! -f "$config_file" ]] && continue
             
-            # Configuration files status
-            echo ""
-            echo -e "${CYAN}📁 Configuration Files:${NC}"
-            printf "%-30s %-10s %-15s\n" "File" "Size" "Modified"
-            printf "%-30s %-10s %-15s\n" "----" "----" "--------"
+            local filename=$(basename "$config_file")
+            local filesize=$(ls -lh "$config_file" | awk '{print $5}')
+            local modified=$(stat -c %y "$config_file" 2>/dev/null | cut -d' ' -f1 || echo "Unknown")
             
-            for config_file in "$CONFIG_DIR"/*.toml; do
-                [[ ! -f "$config_file" ]] && continue
-                
-                local filename=$(basename "$config_file")
-                local filesize=$(ls -lh "$config_file" | awk '{print $5}')
-                local modified=$(stat -c %y "$config_file" 2>/dev/null | cut -d' ' -f1 || echo "Unknown")
-                
-                printf "%-30s %-10s %-15s\n" "$filename" "$filesize" "$modified"
-            done
+            printf "%-30s %-10s %-15s\n" "$filename" "$filesize" "$modified"
+            config_found=true
+        done
+        
+        if [[ "$config_found" == "false" ]]; then
+            printf "%-30s %-10s %-15s\n" "No config files found" "N/A" "N/A"
+        fi
+        
+        # Connection status for clients (always show)
+        echo ""
+        echo -e "${CYAN}🌐 Connection Status:${NC}"
+        
+        local client_found=false
+        for config_file in "$CONFIG_DIR"/frpc_*.toml; do
+            [[ ! -f "$config_file" ]] && continue
             
-            # Connection status for clients
-            echo ""
-            echo -e "${CYAN}🌐 Connection Status:${NC}"
+            # Skip visitor configuration files
+            [[ "$config_file" =~ visitor ]] && continue
             
-            for config_file in "$CONFIG_DIR"/frpc_*.toml; do
-                [[ ! -f "$config_file" ]] && continue
+            local server_addr=""
+            local server_port=""
+            local ip_suffix=$(basename "$config_file" | sed 's/frpc_//' | sed 's/.toml//')
+            
+            # Extract server info
+            while IFS= read -r line; do
+                if [[ $line =~ serverAddr\ =\ \"([^\"]+)\" ]]; then
+                    server_addr="${BASH_REMATCH[1]}"
+                elif [[ $line =~ serverPort\ =\ ([0-9]+) ]]; then
+                    server_port="${BASH_REMATCH[1]}"
+                fi
+            done < "$config_file"
+            
+            if [[ -n "$server_addr" && -n "$server_port" ]]; then
+                # Count proxies in this config
+                local proxy_count=$(grep -c "^\[\[proxies\]\]" "$config_file" 2>/dev/null || echo "0")
                 
-                local server_addr=""
-                local server_port=""
-                local ip_suffix=$(basename "$config_file" | sed 's/frpc_//' | sed 's/.toml//')
+                printf "%-15s -> %-20s (%s proxies) " "Client-$ip_suffix" "$server_addr:$server_port" "$proxy_count"
                 
-                # Extract server info
+                if timeout 2 nc -z "$server_addr" "$server_port" 2>/dev/null; then
+                    echo -e "${GREEN}✅ Connected${NC}"
+                else
+                    echo -e "${RED}❌ Failed${NC}"
+                fi
+                client_found=true
+            fi
+        done
+        
+        if [[ "$client_found" == "false" ]]; then
+            echo "No client configurations found"
+        fi
+        
+        # Show server dashboard info if available
+        echo ""
+        echo -e "${CYAN}📊 Server Dashboard:${NC}"
+        
+        local dashboard_found=false
+        if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+            local dashboard_port=""
+            local dashboard_user=""
+            local bind_port=""
+            
+            while IFS= read -r line; do
+                if [[ $line =~ webServer\.port\ =\ ([0-9]+) ]]; then
+                    dashboard_port="${BASH_REMATCH[1]}"
+                elif [[ $line =~ webServer\.user\ =\ \"([^\"]+)\" ]]; then
+                    dashboard_user="${BASH_REMATCH[1]}"
+                elif [[ $line =~ bindPort\ =\ ([0-9]+) ]]; then
+                    bind_port="${BASH_REMATCH[1]}"
+                fi
+            done < "$CONFIG_DIR/frps.toml"
+            
+            if [[ -n "$dashboard_port" ]]; then
+                echo "Dashboard: http://localhost:$dashboard_port (User: $dashboard_user)"
+                echo "Server Port: $bind_port"
+                dashboard_found=true
+            fi
+        fi
+        
+        if [[ "$dashboard_found" == "false" ]]; then
+            echo "No server dashboard configured"
+        fi
+        
+        # Show proxy information for active services
+        echo ""
+        echo -e "${CYAN}🚀 Active Proxies:${NC}"
+        
+        local proxy_found=false
+        for config_file in "$CONFIG_DIR"/*.toml; do
+            [[ ! -f "$config_file" ]] && continue
+            
+            local filename=$(basename "$config_file")
+            local proxy_count=$(grep -c "^\[\[proxies\]\]" "$config_file" 2>/dev/null || echo "0")
+            
+            if [[ "$proxy_count" -gt 0 ]]; then
+                printf "%-30s %s proxies\n" "$filename" "$proxy_count"
+                proxy_found=true
+                
+                # Show proxy details
+                local proxy_names=()
                 while IFS= read -r line; do
-                    if [[ $line =~ serverAddr\ =\ \"([^\"]+)\" ]]; then
-                        server_addr="${BASH_REMATCH[1]}"
-                    elif [[ $line =~ serverPort\ =\ ([0-9]+) ]]; then
-                        server_port="${BASH_REMATCH[1]}"
+                    if [[ $line =~ name\ =\ \"([^\"]+)\" ]]; then
+                        proxy_names+=("${BASH_REMATCH[1]}")
                     fi
                 done < "$config_file"
                 
-                if [[ -n "$server_addr" && -n "$server_port" ]]; then
-                    printf "%-15s -> %-20s " "Client-$ip_suffix" "$server_addr:$server_port"
-                    
-                    if timeout 2 nc -z "$server_addr" "$server_port" 2>/dev/null; then
-                        echo -e "${GREEN}✅ Connected${NC}"
-                    else
-                        echo -e "${RED}❌ Failed${NC}"
-                    fi
+                if [[ ${#proxy_names[@]} -gt 0 ]]; then
+                    local names_str=$(printf ", %s" "${proxy_names[@]}")
+                    names_str=${names_str:2}  # Remove leading ", "
+                    echo "  └─ Proxies: $names_str"
                 fi
-            done
+            fi
+        done
+        
+        if [[ "$proxy_found" == "false" ]]; then
+            echo "No active proxies found"
         fi
+        
+        # Show system resources
+        echo ""
+        echo -e "${CYAN}💻 System Resources:${NC}"
+        
+        # Memory usage
+        local mem_info=$(free -h | grep "Mem:" | awk '{print $3 "/" $2}')
+        echo "Memory: $mem_info"
+        
+        # CPU load
+        local cpu_load=$(uptime | awk -F'load average:' '{print $2}' | sed 's/^ *//')
+        echo "Load: $cpu_load"
+        
+        # Network connections
+        local tcp_connections=$(ss -t state established 2>/dev/null | wc -l)
+        [[ $tcp_connections -gt 0 ]] && ((tcp_connections--))  # Remove header line
+        echo "TCP Connections: $tcp_connections"
         
         echo ""
         echo -e "${GRAY}Press Ctrl+C to exit monitoring${NC}"
