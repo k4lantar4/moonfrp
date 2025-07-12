@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.7"
+MOONFRP_VERSION="1.0.8"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -1317,7 +1317,7 @@ tcpmuxPassthrough = false
 transport.maxPoolCount = 3
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 60
-transport.heartbeatTimeout = 360
+transport.heartbeatTimeout = 180
 transport.tcpKeepalive = 3600
 
 # TLS settings (enabled by default in v0.63.0)
@@ -1473,7 +1473,7 @@ log.disablePrintColor = false
 # Transport settings
 transport.poolCount = 3
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 360
+transport.heartbeatTimeout = 180
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 3600
 transport.tcpMux = true
@@ -2459,7 +2459,7 @@ log.disablePrintColor = false
 # Transport settings
 transport.poolCount = 3
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 360
+transport.heartbeatTimeout = 180
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 3600
 transport.tcpMux = true
