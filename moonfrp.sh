@@ -1314,11 +1314,11 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 # Transport settings
-transport.maxPoolCount = 3
+transport.maxPoolCount = 2
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 60
+transport.tcpMuxKeepaliveInterval = 30
 transport.heartbeatTimeout = 180
-transport.tcpKeepalive = 3600
+transport.tcpKeepalive = 1800
 
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.force = true
@@ -1471,17 +1471,17 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 3
+transport.poolCount = 2
 transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 180
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 3600
+transport.dialServerKeepalive = 1800
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 60
+transport.tcpMuxKeepaliveInterval = 30
 
 # TLS settings (enabled by default in v0.63.0)
-transport.tls.enable = true
-transport.tls.disableCustomTLSFirstByte = true
+#transport.tls.enable = true
+#transport.tls.disableCustomTLSFirstByte = true
 # Uncomment and configure for custom certificates
 # transport.tls.certFile = "client.crt"
 # transport.tls.keyFile = "client.key"
@@ -1532,9 +1532,9 @@ EOF
             cat >> "$config_file" << EOF
 # QUIC Protocol specific settings
 # Note: Server must have QUIC enabled (quicBindPort configured)
-#transport.quic.keepalivePeriod = 10
-#transport.quic.maxIdleTimeout = 30
-#transport.quic.maxIncomingStreams = 100
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100
 
 EOF
             ;;
@@ -2457,13 +2457,13 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 3
+transport.poolCount = 2
 transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 180
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 3600
+transport.dialServerKeepalive = 1800
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 60
+transport.tcpMuxKeepaliveInterval = 30
 
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.force = true
