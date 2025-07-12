@@ -1314,11 +1314,11 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 # Transport settings
-transport.maxPoolCount = 2
+transport.maxPoolCount = 3
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 60
-transport.heartbeatTimeout = 180
-transport.tcpKeepalive = 1800
+transport.heartbeatTimeout = 360
+transport.tcpKeepalive = 3600
 
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.force = true
@@ -1471,13 +1471,13 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 2
+transport.poolCount = 3
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 180
+transport.heartbeatTimeout = 360
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 1800
+transport.dialServerKeepalive = 3600
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 30
+transport.tcpMuxKeepaliveInterval = 60
 
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.enable = true
@@ -2457,11 +2457,11 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 2
+transport.poolCount = 3
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 180
+transport.heartbeatTimeout = 360
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 1800
+transport.dialServerKeepalive = 3600
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 60
 
