@@ -1314,14 +1314,14 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 # Transport settings
-transport.maxPoolCount = 5
+transport.maxPoolCount = 2
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 30
-transport.heartbeatTimeout = 60
-transport.tcpKeepalive = 300
+transport.tcpMuxKeepaliveInterval = 60
+transport.heartbeatTimeout = 180
+transport.tcpKeepalive = 1800
 
 # TLS settings (enabled by default in v0.63.0)
-transport.tls.force = false
+transport.tls.force = true
 # Uncomment and configure for custom certificates
 # transport.tls.certFile = "server.crt"
 # transport.tls.keyFile = "server.key"
@@ -1347,11 +1347,11 @@ allowPorts = [
     { start = 8000, end = 8999 },
     { start = 9000, end = 9999 },
     { start = 10000, end = 19999 },
-    { start = 20000, end = 65535 }
+    { start = 20000, end = 30000 }
 ]
 
 # Performance and monitoring
-detailedErrorsToClient = true
+detailedErrorsToClient = false
 enablePrometheus = true
 udpPacketSize = 1500
 natholeAnalysisDataReserveHours = 168
@@ -1471,11 +1471,11 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 20
+transport.poolCount = 2
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 90
+transport.heartbeatTimeout = 180
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 7200
+transport.dialServerKeepalive = 1800
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
@@ -1532,9 +1532,9 @@ EOF
             cat >> "$config_file" << EOF
 # QUIC Protocol specific settings
 # Note: Server must have QUIC enabled (quicBindPort configured)
-transport.quic.keepalivePeriod = 10
-transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 100
+#transport.quic.keepalivePeriod = 10
+#transport.quic.maxIdleTimeout = 30
+#transport.quic.maxIncomingStreams = 100
 
 EOF
             ;;
@@ -1772,9 +1772,9 @@ remotePort = $port
 
 # Health check configuration
 healthCheck.type = "tcp"
-healthCheck.timeoutSeconds = 3
+healthCheck.timeoutSeconds = 5
 healthCheck.maxFailed = 3
-healthCheck.intervalSeconds = 10
+healthCheck.intervalSeconds = 30
 
 # Load balancing configuration
 loadBalancer.group = "moonfrp_group_${port}"
@@ -1835,7 +1835,7 @@ healthCheck.type = "http"
 healthCheck.path = "/health"
 healthCheck.timeoutSeconds = 5
 healthCheck.maxFailed = 3
-healthCheck.intervalSeconds = 15
+healthCheck.intervalSeconds = 30
 healthCheck.httpHeaders = [
     { name = "User-Agent", value = "MoonFRP-HealthCheck" },
     { name = "X-Health-Check", value = "true" }
@@ -2457,17 +2457,19 @@ log.maxDays = 7
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 20
+transport.poolCount = 2
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 90
+transport.heartbeatTimeout = 180
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 7200
+transport.dialServerKeepalive = 1800
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 30
+transport.tcpMuxKeepaliveInterval = 60
 
 # TLS settings (enabled by default in v0.63.0)
-transport.tls.enable = true
-transport.tls.disableCustomTLSFirstByte = true
+transport.tls.force = true
+# Uncomment and configure for custom certificates
+# transport.tls.certFile = "server.crt"
+# transport.tls.keyFile = "server.key"
 
 # Client identification
 user = "moonfrp_${ip_suffix}_$(date +%s)"
@@ -2490,9 +2492,9 @@ EOF
             cat >> "$visitor_config_file" << EOF
 # QUIC Protocol specific settings for visitor
 # Note: Server must have QUIC enabled (quicBindPort configured)
-transport.quic.keepalivePeriod = 10
-transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 100000
+#transport.quic.keepalivePeriod = 10
+#transport.quic.maxIdleTimeout = 30
+#transport.quic.maxIncomingStreams = 100000
 
 EOF
             ;;
@@ -3840,8 +3842,8 @@ create_iran_server_config() {
         return
     fi
     
-    local enable_kcp="true"
-    local enable_quic="true"
+    local enable_kcp="false"
+    local enable_quic="false"
     local custom_subdomain="moonfrp.local"
     local max_clients="10"
     
@@ -3849,14 +3851,14 @@ create_iran_server_config() {
         echo -e "\n${CYAN}📡 Protocol Options:${NC}"
         
         # KCP Protocol
-        echo -e "${YELLOW}Enable KCP protocol (better for poor networks)? (Y/n):${NC} "
+        echo -e "${YELLOW}Enable KCP protocol (better for poor networks)? (y/N):${NC} "
         read -r kcp_choice
         [[ "$kcp_choice" =~ ^[Nn]$ ]] && enable_kcp="false"
         
         # QUIC Protocol
-        echo -e "${YELLOW}Enable QUIC protocol (experimental, modern)? (Y/n):${NC} "
+        echo -e "${YELLOW}Enable QUIC protocol (experimental, modern)? (y/N):${NC} "
         read -r quic_choice
-        [[ "$quic_choice" =~ ^[Yy]$ ]] && enable_quic="true"
+        [[ "$quic_choice" =~ ^[Nn]$ ]] && enable_quic="false"
         
         # Subdomain
         echo -e "${CYAN}Subdomain for HTTP/HTTPS (default: moonfrp.local):${NC} "
