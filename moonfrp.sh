@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.8"
+MOONFRP_VERSION="1.0.9"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -1298,8 +1298,8 @@ auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
 # Logging
 log.to = "$LOG_DIR/frps.log"
-log.level = "info"
-log.maxDays = 7
+log.level = "warn"
+log.maxDays = 2
 log.disablePrintColor = false
 
 # HTTP/HTTPS proxy settings
@@ -1314,14 +1314,14 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 # Transport settings
-transport.maxPoolCount = 2
+transport.maxPoolCount = 5
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
-transport.heartbeatTimeout = 180
-transport.tcpKeepalive = 1800
+transport.heartbeatTimeout = 60
+transport.tcpKeepalive = 60
 
 # TLS settings (enabled by default in v0.63.0)
-transport.tls.force = true
+transport.tls.force = false
 # Uncomment and configure for custom certificates
 # transport.tls.certFile = "server.crt"
 # transport.tls.keyFile = "server.key"
@@ -1331,23 +1331,13 @@ transport.tls.force = true
 subDomainHost = "$custom_subdomain"
 
 # Connection limits per client
-maxPortsPerClient = $max_clients
+maxPortsPerClient = 0
 # Maximum time to wait for work connections
 userConnTimeout = 10
 
 # Extended port ranges for better compatibility
 allowPorts = [
-    { start = 1000, end = 1999 },
-    { start = 2000, end = 2999 },
-    { start = 3000, end = 3999 },
-    { start = 4000, end = 4999 },
-    { start = 5000, end = 5999 },
-    { start = 6000, end = 6999 },
-    { start = 7000, end = 7999 },  # Added 7000-7999 range for port 7013
-    { start = 8000, end = 8999 },
-    { start = 9000, end = 9999 },
-    { start = 10000, end = 19999 },
-    { start = 20000, end = 30000 }
+    { start = 1000, end = 65535 } # Simplified to allow all common ports
 ]
 
 # Performance and monitoring
@@ -1466,21 +1456,21 @@ auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
 # Logging
 log.to = "$LOG_DIR/frpc_${ip_suffix}.log"
-log.level = "info"
-log.maxDays = 7
+log.level = "warn"
+log.maxDays = 2
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 2
+transport.poolCount = 5
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 180
+transport.heartbeatTimeout = 60
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 1800
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
 # TLS settings (enabled by default in v0.63.0)
-#transport.tls.enable = true
+transport.tls.enable = false
 #transport.tls.disableCustomTLSFirstByte = true
 # Uncomment and configure for custom certificates
 # transport.tls.certFile = "client.crt"
@@ -2452,21 +2442,21 @@ loginFailExit = false
 
 # Logging
 log.to = "$LOG_DIR/frpc_visitor_${ip_suffix}.log"
-log.level = "info"
-log.maxDays = 7
+log.level = "warn"
+log.maxDays = 2
 log.disablePrintColor = false
 
 # Transport settings
 transport.poolCount = 2
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 180
+transport.heartbeatTimeout = 60
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 1800
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
 # TLS settings (enabled by default in v0.63.0)
-transport.tls.force = true
+#transport.tls.force = true
 # Uncomment and configure for custom certificates
 # transport.tls.certFile = "server.crt"
 # transport.tls.keyFile = "server.key"
@@ -3128,12 +3118,24 @@ list_frp_services() {
     local current_time=$(date +%s)
     if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
         # More comprehensive service detection with new naming
-        CACHED_SERVICES=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+        # Use list-unit-files to find all service files and list-units to get loaded services
+        local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
             grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
             grep -v "@" | \
             awk '{print $1}' | \
             sed 's/\.service//' | \
             grep -v "^$" || echo ""))
+        
+        local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+            grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+            grep -v "@" | \
+            awk '{print $1}' | \
+            sed 's/\.service//' | \
+            grep -v "^$" || echo ""))
+        
+        # Combine both lists and remove duplicates
+        local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+        CACHED_SERVICES=($(printf '%s\n' "${all_services[@]}" | sort -u))
         SERVICES_CACHE_TIME=$current_time
     fi
     
@@ -3216,9 +3218,10 @@ service_management_menu() {
         echo "9. Real-time Status Monitor"
         echo "10. Current Configuration Summary"
         echo "11. 🔧 Modify Server Configuration"
+        echo -e "12. ${GREEN}⏰ Schedule Auto-Restart (Cron Job)${NC}"
         echo "0. Back to Main Menu"
         
-        echo -e "\n${YELLOW}Enter your choice [0-11]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-12]:${NC} "
         read -r choice
         
         # Check for Ctrl+C after read
@@ -3239,6 +3242,7 @@ service_management_menu() {
             9) real_time_status_monitor ;;
             10) show_current_config_summary ;;
             11) modify_server_configuration ;;
+            12) schedule_restart_cron ;;
             0) return ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
@@ -3250,7 +3254,25 @@ manage_service_action() {
     local action="$1"
     
     echo -e "\n${CYAN}Available services:${NC}"
-    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    
+    # Get all service files and loaded units
+    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    # Combine both lists and remove duplicates
+    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -3292,8 +3314,14 @@ manage_service_action() {
         ((i++))
     done
     
-    echo -e "\n${YELLOW}Select service number (or 'all' for all services):${NC} "
+    echo -e "\n${YELLOW}Select service number (or 'all' for all services) [default: all]:${NC} "
     read -r service_num
+    
+    # Set default to "all" if empty
+    if [[ -z "$service_num" ]]; then
+        service_num="all"
+        echo -e "${GREEN}✅ Selected: All services (default)${NC}"
+    fi
     
     if [[ "$service_num" == "all" ]]; then
         # Handle all services
@@ -3845,7 +3873,7 @@ create_iran_server_config() {
     local enable_kcp="false"
     local enable_quic="false"
     local custom_subdomain="moonfrp.local"
-    local max_clients="10"
+    local max_clients="0"
     
     if [[ ! "$enable_advanced" =~ ^[Nn]$ ]]; then
         echo -e "\n${CYAN}📡 Protocol Options:${NC}"
@@ -4636,7 +4664,24 @@ service_removal_menu() {
 
 # Remove single service
 remove_single_service() {
-    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    # Get all service files and loaded units
+    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    # Combine both lists and remove duplicates
+    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -4677,7 +4722,24 @@ remove_single_service() {
 
 # Remove all services
 remove_all_services() {
-    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    # Get all service files and loaded units
+    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    # Combine both lists and remove duplicates
+    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -4787,6 +4849,268 @@ check_updates_cached() {
         # Don't wait for background process
         disown
     fi
+}
+
+# Schedule restart cron job
+schedule_restart_cron() {
+    clear
+    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║         ⏰ Schedule Auto-Restart     ║${NC}"
+    echo -e "${PURPLE}║          Cron Job Management        ║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+    
+    # Find available FRP services
+    # Get all service files and loaded units
+    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    # Combine both lists and remove duplicates
+    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
+    
+    if [[ ${#services[@]} -eq 0 ]]; then
+        echo -e "\n${RED}❌ No FRP services found${NC}"
+        echo -e "${YELLOW}Please create and start some FRP services first.${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    # Display available services
+    echo -e "\n${CYAN}📋 Available FRP services:${NC}"
+    printf "%-4s %-25s %-12s %-15s\n" "No." "Service" "Status" "Type"
+    printf "%-4s %-25s %-12s %-15s\n" "---" "-------" "------" "----"
+    
+    local i=1
+    for service in "${services[@]}"; do
+        local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
+        local type="Unknown"
+        
+        if [[ "$service" =~ (frps|moonfrps) ]]; then
+            type="Server"
+        elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
+            type="Client"
+        fi
+        
+        local status_color="$RED"
+        case "$status" in
+            "active") status_color="$GREEN" ;;
+            "inactive") status_color="$RED" ;;
+            "failed") status_color="$RED" ;;
+            *) status_color="$GRAY" ;;
+        esac
+        
+        printf "%-4s %-25s ${status_color}%-12s${NC} %-15s\n" "$i." "$service" "$status" "$type"
+        ((i++))
+    done
+    
+    # Service selection with default "all"
+    echo -e "\n${CYAN}🎯 Service Selection:${NC}"
+    echo -e "${YELLOW}Select service number (or 'all' for all services) [default: all]:${NC} "
+    read -r service_choice
+    
+    # Set default to "all" if empty
+    if [[ -z "$service_choice" ]]; then
+        service_choice="all"
+        echo -e "${GREEN}✅ Selected: All services (default)${NC}"
+    fi
+    
+    # Validate service selection
+    local selected_services=()
+    if [[ "$service_choice" == "all" ]]; then
+        selected_services=("${services[@]}")
+        echo -e "${GREEN}✅ Will schedule auto-restart for all ${#selected_services[@]} services${NC}"
+    else
+        if [[ "$service_choice" =~ ^[0-9]+$ ]] && [[ $service_choice -gt 0 ]] && [[ $service_choice -le ${#services[@]} ]]; then
+            selected_services=("${services[$((service_choice-1))]}")
+            echo -e "${GREEN}✅ Selected service: ${selected_services[0]}${NC}"
+        else
+            echo -e "${RED}❌ Invalid service selection${NC}"
+            read -p "Press Enter to continue..."
+            return
+        fi
+    fi
+    
+    # Time interval selection
+    echo -e "\n${CYAN}⏱️  Schedule Interval Options:${NC}"
+    echo "1. Every 30 minutes"
+    echo "2. Every 1 hour"
+    echo "3. Every 2 hours"
+    echo "4. Every 4 hours"
+    echo "5. Every 12 hours"
+    echo "6. Every 24 hours"
+    echo "0. Cancel"
+    
+    echo -e "\n${YELLOW}Select interval [1-6]:${NC} "
+    read -r interval_choice
+    
+    local cron_expression=""
+    local interval_desc=""
+    
+    case $interval_choice in
+        1)
+            cron_expression="*/30 * * * *"
+            interval_desc="Every 30 minutes"
+            ;;
+        2)
+            cron_expression="0 * * * *"
+            interval_desc="Every hour"
+            ;;
+        3)
+            cron_expression="0 */2 * * *"
+            interval_desc="Every 2 hours"
+            ;;
+        4)
+            cron_expression="0 */4 * * *"
+            interval_desc="Every 4 hours"
+            ;;
+        5)
+            cron_expression="0 */12 * * *"
+            interval_desc="Every 12 hours"
+            ;;
+        6)
+            cron_expression="0 0 * * *"
+            interval_desc="Every 24 hours"
+            ;;
+        0)
+            echo -e "${YELLOW}⚠️  Operation cancelled${NC}"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+        *)
+            echo -e "${RED}❌ Invalid interval selection${NC}"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+    esac
+    
+    # Create log directory for restart logs
+    local restart_log_dir="/var/log/frp/restart"
+    mkdir -p "$restart_log_dir"
+    
+    # Create cron job script
+    local cron_script="/usr/local/bin/moonfrp_restart_cron.sh"
+    cat > "$cron_script" << 'EOF'
+#!/bin/bash
+
+# MoonFRP Auto-Restart Cron Script
+# This script is generated automatically by MoonFRP
+
+LOG_DIR="/var/log/frp/restart"
+LOG_FILE="$LOG_DIR/restart_$(date +%Y%m%d).log"
+MAX_LOG_AGE=3
+
+# Create log directory if it doesn't exist
+mkdir -p "$LOG_DIR"
+
+# Function to log messages
+log_message() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $1" >> "$LOG_FILE"
+}
+
+# Function to clean old logs (keep only last 3 days)
+cleanup_old_logs() {
+    find "$LOG_DIR" -name "restart_*.log" -mtime +$MAX_LOG_AGE -delete 2>/dev/null
+}
+
+# Clean old logs first
+cleanup_old_logs
+
+log_message "=== MoonFRP Auto-Restart Started ==="
+
+# Restart services
+SERVICES_TO_RESTART="$@"
+
+for service in $SERVICES_TO_RESTART; do
+    log_message "Restarting service: $service"
+    
+    # Check if service exists
+    if systemctl list-units --type=service --all --no-legend --plain | grep -q "^$service.service"; then
+        # Stop service
+        systemctl stop "$service" 2>/dev/null
+        sleep 2
+        
+        # Start service
+        systemctl start "$service" 2>/dev/null
+        sleep 2
+        
+        # Check status
+        if systemctl is-active "$service" >/dev/null 2>&1; then
+            log_message "✅ Successfully restarted: $service"
+        else
+            log_message "❌ Failed to restart: $service"
+        fi
+    else
+        log_message "⚠️  Service not found: $service"
+    fi
+done
+
+log_message "=== MoonFRP Auto-Restart Completed ==="
+log_message ""
+EOF
+    
+    # Make script executable
+    chmod +x "$cron_script"
+    
+    # Create cron job entry
+    local cron_comment="# MoonFRP Auto-Restart - $interval_desc"
+    local cron_command="$cron_expression $cron_script ${selected_services[*]} >/dev/null 2>&1"
+    
+    # Show confirmation
+    echo -e "\n${CYAN}📋 Cron Job Summary:${NC}"
+    echo -e "${GREEN}• Services:${NC} ${selected_services[*]}"
+    echo -e "${GREEN}• Interval:${NC} $interval_desc"
+    echo -e "${GREEN}• Cron Expression:${NC} $cron_expression"
+    echo -e "${GREEN}• Log Directory:${NC} $restart_log_dir"
+    echo -e "${GREEN}• Log Retention:${NC} 3 days"
+    
+    echo -e "\n${YELLOW}⚠️  This will create a cron job that automatically restarts the selected services.${NC}"
+    echo -e "${YELLOW}Do you want to proceed? (y/N):${NC} "
+    read -r confirm
+    
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}⚠️  Operation cancelled${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    # Add cron job
+    echo -e "\n${CYAN}📝 Creating cron job...${NC}"
+    
+    # Remove existing MoonFRP cron jobs first
+    crontab -l 2>/dev/null | grep -v "MoonFRP Auto-Restart" | crontab -
+    
+    # Add new cron job
+    (crontab -l 2>/dev/null; echo "$cron_comment"; echo "$cron_command") | crontab -
+    
+    if [[ $? -eq 0 ]]; then
+        echo -e "${GREEN}✅ Cron job created successfully!${NC}"
+        echo -e "\n${CYAN}📋 Active cron jobs:${NC}"
+        crontab -l | grep -A1 "MoonFRP Auto-Restart"
+        
+        echo -e "\n${CYAN}📝 Management Commands:${NC}"
+        echo -e "${GREEN}• View logs:${NC} tail -f $restart_log_dir/restart_\$(date +%Y%m%d).log"
+        echo -e "${GREEN}• List cron jobs:${NC} crontab -l"
+        echo -e "${GREEN}• Remove cron job:${NC} crontab -e (manually remove MoonFRP entries)"
+        
+        log "INFO" "Created auto-restart cron job for services: ${selected_services[*]} with interval: $interval_desc"
+    else
+        echo -e "${RED}❌ Failed to create cron job${NC}"
+        log "ERROR" "Failed to create auto-restart cron job"
+    fi
+    
+    read -p "Press Enter to continue..."
 }
 
 # Main menu
@@ -5181,7 +5505,24 @@ view_service_logs_menu() {
     clear
     echo -e "${CYAN}📋 Service Logs Viewer${NC}"
     
-    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    # Get all service files and loaded units
+    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    # Combine both lists and remove duplicates
+    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -5260,7 +5601,25 @@ fix_common_issues() {
             log "INFO" "Cleared all log files"
             ;;
         5)
-            local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+            # Get all service files and loaded units
+            local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+                grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+                grep -v "@" | \
+                awk '{print $1}' | \
+                sed 's/\.service//' | \
+                grep -v "^$" || echo ""))
+            
+            local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+                grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+                grep -v "@" | \
+                awk '{print $1}' | \
+                sed 's/\.service//' | \
+                grep -v "^$" || echo ""))
+            
+            # Combine both lists and remove duplicates
+            local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+            local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
+            
             for service in "${services[@]}"; do
                 restart_service "$service"
             done
@@ -5380,18 +5739,37 @@ show_about_info() {
     fi
     
     # Check services
-    local services=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
+    # Get all service files and loaded units
+    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+        grep -v "@" | \
+        awk '{print $1}' | \
+        sed 's/\.service//' | \
+        grep -v "^$" || echo ""))
+    
+    # Combine both lists and remove duplicates
+    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
+    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
+    
     if [[ ${#services[@]} -gt 0 ]] && [[ "${services[0]}" != "" ]]; then
-        echo -e "  Active Services: ${GREEN}${#services[@]} service(s)${NC}"
+        echo -e "  Services: ${GREEN}${#services[@]} service(s)${NC}"
         for service in "${services[@]}"; do
             local status=$(get_service_status "$service")
             local status_icon="❌"
             local status_color="$RED"
             [[ "$status" == "active" ]] && status_icon="✅" && status_color="$GREEN"
+            [[ "$status" == "inactive" ]] && status_icon="🔴" && status_color="$RED"
             echo -e "    $status_icon $service: ${status_color}$status${NC}"
         done
     else
-        echo -e "  Active Services: ${YELLOW}⚠️  No services found${NC}"
+        echo -e "  Services: ${YELLOW}⚠️  No services found${NC}"
     fi
     
     # Check configurations
