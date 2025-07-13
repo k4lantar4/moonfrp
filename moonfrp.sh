@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MoonFRP - Advanced FRP Management Script
-# Version: 1.0.5
+# Version: 1.0.9
 # Author: MoonFRP Team
 # Description: Modular FRP configuration and service management tool
 #
@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.8"
+MOONFRP_VERSION="1.0.9"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
