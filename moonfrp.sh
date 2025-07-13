@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.9"
+MOONFRP_VERSION="1.0.8"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -3118,24 +3118,12 @@ list_frp_services() {
     local current_time=$(date +%s)
     if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
         # More comprehensive service detection with new naming
-        # Use list-unit-files to find all service files and list-units to get loaded services
-        local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
+        CACHED_SERVICES=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
             grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
             grep -v "@" | \
             awk '{print $1}' | \
             sed 's/\.service//' | \
             grep -v "^$" || echo ""))
-        
-        local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-            grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-            grep -v "@" | \
-            awk '{print $1}' | \
-            sed 's/\.service//' | \
-            grep -v "^$" || echo ""))
-        
-        # Combine both lists and remove duplicates
-        local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-        CACHED_SERVICES=($(printf '%s\n' "${all_services[@]}" | sort -u))
         SERVICES_CACHE_TIME=$current_time
     fi
     
@@ -3218,10 +3206,9 @@ service_management_menu() {
         echo "9. Real-time Status Monitor"
         echo "10. Current Configuration Summary"
         echo "11. 🔧 Modify Server Configuration"
-        echo -e "12. ${GREEN}⏰ Schedule Auto-Restart (Cron Job)${NC}"
         echo "0. Back to Main Menu"
         
-        echo -e "\n${YELLOW}Enter your choice [0-12]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-11]:${NC} "
         read -r choice
         
         # Check for Ctrl+C after read
@@ -3242,11 +3229,993 @@ service_management_menu() {
             9) real_time_status_monitor ;;
             10) show_current_config_summary ;;
             11) modify_server_configuration ;;
-            12) schedule_restart_cron ;;
             0) return ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
     done
+}
+
+# Enhanced service status display
+show_enhanced_service_status() {
+    local selected_service="$1"
+    
+    clear
+    echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║                            🔍 Enhanced Service Status                                ║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════════════════════════════╝${NC}"
+    
+    echo -e "\n${CYAN}📋 Service: ${YELLOW}$selected_service${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    # Basic service information
+    local status=$(systemctl is-active "$selected_service" 2>/dev/null || echo "inactive")
+    local enabled=$(systemctl is-enabled "$selected_service" 2>/dev/null || echo "disabled")
+    local uptime=$(systemctl show "$selected_service" -p ActiveEnterTimestamp --value 2>/dev/null)
+    
+    echo -e "\n${CYAN}🔧 Service Information:${NC}"
+    echo -e "  Status: $([ "$status" == "active" ] && echo "${GREEN}🟢 Active${NC}" || echo "${RED}🔴 Inactive${NC}")"
+    echo -e "  Enabled: $([ "$enabled" == "enabled" ] && echo "${GREEN}✅ Enabled${NC}" || echo "${YELLOW}⚠️  Disabled${NC}")"
+    
+    if [[ "$status" == "active" && -n "$uptime" ]]; then
+        local uptime_formatted=$(date -d "$uptime" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "Unknown")
+        echo -e "  Started: ${GREEN}$uptime_formatted${NC}"
+    fi
+    
+    # Memory and CPU usage
+    local memory_usage=$(systemctl show "$selected_service" -p MemoryCurrent --value 2>/dev/null)
+    if [[ -n "$memory_usage" && "$memory_usage" != "18446744073709551615" ]]; then
+        local memory_mb=$((memory_usage / 1024 / 1024))
+        echo -e "  Memory: ${YELLOW}${memory_mb}MB${NC}"
+    fi
+    
+    # Configuration file information
+    local config_file=""
+    local service_type=""
+    
+    if [[ "$selected_service" =~ moonfrps ]]; then
+        config_file="$CONFIG_DIR/frps.toml"
+        service_type="server"
+    elif [[ "$selected_service" =~ moonfrpc ]]; then
+        local ip_suffix=$(echo "$selected_service" | grep -o '[0-9]\+$')
+        if [[ -n "$ip_suffix" ]]; then
+            config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
+            service_type="client"
+        fi
+    fi
+    
+    if [[ -f "$config_file" ]]; then
+        echo -e "\n${CYAN}📄 Configuration:${NC}"
+        echo -e "  File: ${GREEN}$config_file${NC}"
+        echo -e "  Size: ${YELLOW}$(ls -lh "$config_file" | awk '{print $5}')${NC}"
+        echo -e "  Modified: ${YELLOW}$(stat -c '%y' "$config_file" | cut -d'.' -f1)${NC}"
+        
+        # Extract key configuration details
+        if [[ "$service_type" == "server" ]]; then
+            local bind_port=$(grep "bindPort" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            local dashboard_port=$(grep "webServer.port" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            local token=$(grep "auth.token" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            
+            echo -e "  Bind Port: ${GREEN}${bind_port:-"Not set"}${NC}"
+            echo -e "  Dashboard: ${GREEN}${dashboard_port:-"Disabled"}${NC}"
+            echo -e "  Token: ${GREEN}${token:0:8}...${NC}"
+            
+        elif [[ "$service_type" == "client" ]]; then
+            local server_addr=$(grep "serverAddr" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            local server_port=$(grep "serverPort" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            local proxy_count=$(grep -c "^\[\[proxies\]\]" "$config_file" 2>/dev/null || echo "0")
+            
+            echo -e "  Server: ${GREEN}${server_addr:-"Not set"}:${server_port:-"Not set"}${NC}"
+            echo -e "  Proxies: ${GREEN}$proxy_count${NC}"
+        fi
+    fi
+    
+    # Connection and port status
+    if [[ "$status" == "active" ]]; then
+        echo -e "\n${CYAN}🌐 Connection Status:${NC}"
+        
+        if [[ "$service_type" == "server" && -f "$config_file" ]]; then
+            local bind_port=$(grep "bindPort" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            local dashboard_port=$(grep "webServer.port" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            
+            if [[ -n "$bind_port" ]]; then
+                if netstat -tuln 2>/dev/null | grep -q ":$bind_port "; then
+                    echo -e "  Main Port $bind_port: ${GREEN}🟢 Listening${NC}"
+                else
+                    echo -e "  Main Port $bind_port: ${RED}🔴 Not listening${NC}"
+                fi
+            fi
+            
+            if [[ -n "$dashboard_port" ]]; then
+                if netstat -tuln 2>/dev/null | grep -q ":$dashboard_port "; then
+                    echo -e "  Dashboard Port $dashboard_port: ${GREEN}🟢 Listening${NC}"
+                else
+                    echo -e "  Dashboard Port $dashboard_port: ${RED}🔴 Not listening${NC}"
+                fi
+            fi
+            
+        elif [[ "$service_type" == "client" && -f "$config_file" ]]; then
+            local server_addr=$(grep "serverAddr" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            local server_port=$(grep "serverPort" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            
+            if [[ -n "$server_addr" && -n "$server_port" ]]; then
+                if timeout 3 bash -c "echo >/dev/tcp/$server_addr/$server_port" 2>/dev/null; then
+                    echo -e "  Server Connection: ${GREEN}🟢 Connected${NC}"
+                else
+                    echo -e "  Server Connection: ${RED}🔴 Failed${NC}"
+                fi
+            fi
+            
+            # Check proxy ports
+            local proxy_names=($(grep "name = " "$config_file" 2>/dev/null | awk '{print $3}' | tr -d '"'))
+            local proxy_ports=($(grep "remotePort = " "$config_file" 2>/dev/null | awk '{print $3}' | tr -d '"'))
+            
+            if [[ ${#proxy_names[@]} -gt 0 ]]; then
+                echo -e "  Proxy Status:"
+                for i in "${!proxy_names[@]}"; do
+                    local proxy_name="${proxy_names[$i]}"
+                    local proxy_port="${proxy_ports[$i]}"
+                    if [[ -n "$proxy_port" ]]; then
+                        if netstat -tuln 2>/dev/null | grep -q ":$proxy_port "; then
+                            echo -e "    ${proxy_name}: ${GREEN}🟢 Port $proxy_port active${NC}"
+                        else
+                            echo -e "    ${proxy_name}: ${YELLOW}🟡 Port $proxy_port inactive${NC}"
+                        fi
+                    else
+                        echo -e "    ${proxy_name}: ${BLUE}🔵 No port specified${NC}"
+                    fi
+                done
+            fi
+        fi
+    fi
+    
+    # Recent logs and activity
+    echo -e "\n${CYAN}📊 Recent Activity:${NC}"
+    local log_count=$(journalctl -u "$selected_service" -n 5 --no-pager -q 2>/dev/null | wc -l)
+    if [[ $log_count -gt 0 ]]; then
+        echo -e "  Recent entries: ${GREEN}$log_count${NC}"
+        echo -e "  Latest logs:"
+        journalctl -u "$selected_service" -n 3 --no-pager --since "10 minutes ago" -o short-precise 2>/dev/null | \
+            sed 's/^/    /' | head -3
+    else
+        echo -e "  ${YELLOW}No recent activity${NC}"
+    fi
+    
+    # Log level information
+    if [[ -f "$config_file" ]]; then
+        local log_level=$(grep "log.level" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+        local log_file=$(grep "log.to" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+        
+        if [[ -n "$log_level" || -n "$log_file" ]]; then
+            echo -e "\n${CYAN}📝 Logging Configuration:${NC}"
+            echo -e "  Level: ${GREEN}${log_level:-"info (default)"}${NC}"
+            echo -e "  Output: ${GREEN}${log_file:-"systemd journal"}${NC}"
+        fi
+    fi
+    
+    # Quick actions menu
+    echo -e "\n${CYAN}🔧 Quick Actions:${NC}"
+    echo -e "  ${GREEN}1.${NC} View real-time logs"
+    echo -e "  ${GREEN}2.${NC} Restart service"
+    echo -e "  ${GREEN}3.${NC} Change log level"
+    echo -e "  ${GREEN}4.${NC} Test connections"
+    echo -e "  ${GREEN}5.${NC} View full systemctl status"
+    echo -e "  ${GREEN}0.${NC} Back to service management"
+    
+    echo -e "\n${YELLOW}Select action [0-5]:${NC} "
+    read -r action_choice
+    
+    case "$action_choice" in
+        1)
+            echo -e "\n${CYAN}📋 Real-time logs (Press Ctrl+C to stop):${NC}"
+            journalctl -u "$selected_service" -f --output=short-precise
+            ;;
+        2)
+            echo -e "\n${CYAN}🔄 Restarting service...${NC}"
+            if systemctl restart "$selected_service"; then
+                echo -e "${GREEN}✅ Service restarted successfully${NC}"
+            else
+                echo -e "${RED}❌ Failed to restart service${NC}"
+            fi
+            sleep 2
+            ;;
+        3)
+            change_log_level "$selected_service" "$config_file"
+            ;;
+        4)
+            test_service_connections "$selected_service" "$config_file"
+            ;;
+        5)
+            echo -e "\n${CYAN}📊 Full systemctl status:${NC}"
+            systemctl status "$selected_service" --no-pager
+            ;;
+        0)
+            return
+            ;;
+        *)
+            echo -e "${RED}❌ Invalid choice${NC}"
+            ;;
+    esac
+    
+    read -p "Press Enter to continue..."
+}
+
+# Change log level for FRP service
+change_log_level() {
+    local service_name="$1"
+    local config_file="$2"
+    
+    if [[ ! -f "$config_file" ]]; then
+        echo -e "${RED}❌ Configuration file not found${NC}"
+        return 1
+    fi
+    
+    echo -e "\n${CYAN}📝 Change Log Level${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local current_level=$(grep "log.level" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+    echo -e "Current log level: ${GREEN}${current_level:-"info (default)"}${NC}"
+    
+    echo -e "\n${CYAN}Available log levels:${NC}"
+    echo -e "  ${GREEN}1.${NC} trace (Most verbose - all details)"
+    echo -e "  ${GREEN}2.${NC} debug (Debug information)"
+    echo -e "  ${GREEN}3.${NC} info (General information) - Default"
+    echo -e "  ${GREEN}4.${NC} warn (Warning messages only)"
+    echo -e "  ${GREEN}5.${NC} error (Error messages only)"
+    echo -e "  ${GREEN}0.${NC} Cancel"
+    
+    echo -e "\n${YELLOW}Select new log level [0-5]:${NC} "
+    read -r level_choice
+    
+    local new_level=""
+    case "$level_choice" in
+        1) new_level="trace" ;;
+        2) new_level="debug" ;;
+        3) new_level="info" ;;
+        4) new_level="warn" ;;
+        5) new_level="error" ;;
+        0) return ;;
+        *) 
+            echo -e "${RED}❌ Invalid choice${NC}"
+            return 1
+            ;;
+    esac
+    
+    echo -e "\n${CYAN}🔧 Updating log level to: ${YELLOW}$new_level${NC}"
+    
+    # Backup config file
+    cp "$config_file" "${config_file}.backup"
+    
+    # Update log level
+    if grep -q "log.level" "$config_file"; then
+        # Replace existing log level
+        sed -i "s/log.level = .*/log.level = \"$new_level\"/" "$config_file"
+    else
+        # Add log level after serverPort or other configuration
+        if grep -q "serverPort" "$config_file"; then
+            sed -i "/serverPort = .*/a\\nlog.level = \"$new_level\"" "$config_file"
+        elif grep -q "bindPort" "$config_file"; then
+            sed -i "/bindPort = .*/a\\nlog.level = \"$new_level\"" "$config_file"
+        else
+            # Add at the end of the file
+            echo -e "\nlog.level = \"$new_level\"" >> "$config_file"
+        fi
+    fi
+    
+    # Add log file if not present
+    if ! grep -q "log.to" "$config_file"; then
+        local log_file_path="$LOG_DIR/frp_${service_name}.log"
+        if grep -q "log.level" "$config_file"; then
+            sed -i "/log.level = .*/a log.to = \"$log_file_path\"" "$config_file"
+        else
+            echo -e "log.to = \"$log_file_path\"" >> "$config_file"
+        fi
+        echo -e "  Added log file: ${GREEN}$log_file_path${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Log level updated successfully${NC}"
+    
+    # Ask to restart service
+    echo -e "\n${YELLOW}Service restart required for changes to take effect.${NC}"
+    echo -e "${YELLOW}Restart $service_name now? (y/N):${NC} "
+    read -r restart_choice
+    
+    if [[ "$restart_choice" =~ ^[Yy]$ ]]; then
+        echo -e "\n${CYAN}🔄 Restarting service...${NC}"
+        if systemctl restart "$service_name"; then
+            echo -e "${GREEN}✅ Service restarted successfully${NC}"
+            echo -e "${CYAN}New log level is now active${NC}"
+        else
+            echo -e "${RED}❌ Failed to restart service${NC}"
+            echo -e "${YELLOW}Restoring backup configuration...${NC}"
+            mv "${config_file}.backup" "$config_file"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Service not restarted. Changes will take effect on next restart.${NC}"
+    fi
+    
+    # Clean up backup if successful
+    [[ -f "${config_file}.backup" ]] && rm -f "${config_file}.backup"
+}
+
+# Test service connections
+test_service_connections() {
+    local service_name="$1"
+    local config_file="$2"
+    
+    echo -e "\n${CYAN}🔍 Testing Service Connections${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    if [[ ! -f "$config_file" ]]; then
+        echo -e "${RED}❌ Configuration file not found${NC}"
+        return 1
+    fi
+    
+    # Determine service type
+    local service_type=""
+    if [[ "$service_name" =~ moonfrps ]]; then
+        service_type="server"
+    elif [[ "$service_name" =~ moonfrpc ]]; then
+        service_type="client"
+    fi
+    
+    if [[ "$service_type" == "server" ]]; then
+        echo -e "\n${CYAN}🖥️  Server Connection Tests:${NC}"
+        
+        # Test main FRP port
+        local bind_port=$(grep "bindPort" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+        if [[ -n "$bind_port" ]]; then
+            echo -e "  Testing main port $bind_port..."
+            if netstat -tuln 2>/dev/null | grep -q ":$bind_port "; then
+                echo -e "    ${GREEN}✅ Port $bind_port is listening${NC}"
+            else
+                echo -e "    ${RED}❌ Port $bind_port is not listening${NC}"
+            fi
+        fi
+        
+        # Test dashboard port
+        local dashboard_port=$(grep "webServer.port" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+        if [[ -n "$dashboard_port" ]]; then
+            echo -e "  Testing dashboard port $dashboard_port..."
+            if netstat -tuln 2>/dev/null | grep -q ":$dashboard_port "; then
+                echo -e "    ${GREEN}✅ Dashboard port $dashboard_port is listening${NC}"
+                
+                # Test HTTP response
+                if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$dashboard_port" 2>/dev/null | grep -q "200\|401"; then
+                    echo -e "    ${GREEN}✅ Dashboard HTTP response OK${NC}"
+                else
+                    echo -e "    ${YELLOW}⚠️  Dashboard HTTP response failed${NC}"
+                fi
+            else
+                echo -e "    ${RED}❌ Dashboard port $dashboard_port is not listening${NC}"
+            fi
+        fi
+        
+        # Test external connectivity
+        echo -e "  Testing external connectivity..."
+        local public_ip=$(curl -s --connect-timeout 5 ipinfo.io/ip 2>/dev/null || echo "Unable to determine")
+        echo -e "    Public IP: ${GREEN}$public_ip${NC}"
+        
+    elif [[ "$service_type" == "client" ]]; then
+        echo -e "\n${CYAN}📡 Client Connection Tests:${NC}"
+        
+        # Test server connection
+        local server_addr=$(grep "serverAddr" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+        local server_port=$(grep "serverPort" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+        
+        if [[ -n "$server_addr" && -n "$server_port" ]]; then
+            echo -e "  Testing server connection $server_addr:$server_port..."
+            if timeout 5 bash -c "echo >/dev/tcp/$server_addr/$server_port" 2>/dev/null; then
+                echo -e "    ${GREEN}✅ Server connection successful${NC}"
+                
+                # Test with ping
+                if ping -c 1 -W 2 "$server_addr" >/dev/null 2>&1; then
+                    echo -e "    ${GREEN}✅ Server ping successful${NC}"
+                else
+                    echo -e "    ${YELLOW}⚠️  Server ping failed (may be blocked)${NC}"
+                fi
+            else
+                echo -e "    ${RED}❌ Server connection failed${NC}"
+                echo -e "    ${YELLOW}Troubleshooting server connection...${NC}"
+                
+                # DNS resolution test
+                if nslookup "$server_addr" >/dev/null 2>&1; then
+                    echo -e "    ${GREEN}✅ DNS resolution OK${NC}"
+                else
+                    echo -e "    ${RED}❌ DNS resolution failed${NC}"
+                fi
+            fi
+        fi
+        
+        # Test local proxy ports
+        echo -e "  Testing local proxy ports..."
+        local proxy_names=($(grep "name = " "$config_file" 2>/dev/null | awk '{print $3}' | tr -d '"'))
+        local local_ports=($(grep "localPort = " "$config_file" 2>/dev/null | awk '{print $3}' | tr -d '"'))
+        
+        if [[ ${#proxy_names[@]} -gt 0 ]]; then
+            for i in "${!proxy_names[@]}"; do
+                local proxy_name="${proxy_names[$i]}"
+                local local_port="${local_ports[$i]}"
+                
+                if [[ -n "$local_port" ]]; then
+                    echo -e "    Testing ${proxy_name} (local port $local_port)..."
+                    if netstat -tuln 2>/dev/null | grep -q ":$local_port "; then
+                        echo -e "      ${GREEN}✅ Local service on port $local_port is running${NC}"
+                    else
+                        echo -e "      ${YELLOW}⚠️  Local service on port $local_port is not running${NC}"
+                    fi
+                fi
+            done
+        fi
+    fi
+    
+    # Authentication test
+    echo -e "\n${CYAN}🔐 Authentication Test:${NC}"
+    local token=$(grep "auth.token" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+    if [[ -n "$token" ]]; then
+        echo -e "  Token configured: ${GREEN}${token:0:8}...${NC}"
+        echo -e "  Token length: ${GREEN}${#token} characters${NC}"
+        
+        if [[ ${#token} -lt 8 ]]; then
+            echo -e "  ${YELLOW}⚠️  Token is very short (recommended: 16+ chars)${NC}"
+        fi
+    else
+        echo -e "  ${RED}❌ No authentication token configured${NC}"
+    fi
+    
+    echo -e "\n${CYAN}📊 Connection Summary:${NC}"
+    local status=$(systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
+    echo -e "  Service Status: $([ "$status" == "active" ] && echo "${GREEN}🟢 Active${NC}" || echo "${RED}🔴 Inactive${NC}")"
+    
+    # Process information
+    local pid=$(systemctl show "$service_name" -p MainPID --value 2>/dev/null)
+    if [[ -n "$pid" && "$pid" != "0" ]]; then
+        echo -e "  Process ID: ${GREEN}$pid${NC}"
+        local connections=$(netstat -antp 2>/dev/null | grep "$pid" | wc -l)
+        echo -e "  Active connections: ${GREEN}$connections${NC}"
+         fi
+}
+
+# Enhanced service logs viewer
+show_enhanced_service_logs() {
+    local selected_service="$1"
+    
+    while true; do
+        clear
+        echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}║                            📋 Enhanced Service Logs                                 ║${NC}"
+        echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════════════════════════════╝${NC}"
+        
+        echo -e "\n${CYAN}📋 Service: ${YELLOW}$selected_service${NC}"
+        echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        
+        # Log statistics
+        local total_logs=$(journalctl -u "$selected_service" --no-pager -q | wc -l)
+        local today_logs=$(journalctl -u "$selected_service" --since today --no-pager -q | wc -l)
+        local hour_logs=$(journalctl -u "$selected_service" --since "1 hour ago" --no-pager -q | wc -l)
+        local error_logs=$(journalctl -u "$selected_service" --since "24 hours ago" --no-pager -q | grep -i error | wc -l)
+        local warn_logs=$(journalctl -u "$selected_service" --since "24 hours ago" --no-pager -q | grep -i warn | wc -l)
+        
+        echo -e "\n${CYAN}📊 Log Statistics:${NC}"
+        echo -e "  Total logs: ${GREEN}$total_logs${NC}"
+        echo -e "  Today: ${GREEN}$today_logs${NC}"
+        echo -e "  Last hour: ${GREEN}$hour_logs${NC}"
+        echo -e "  Errors (24h): ${RED}$error_logs${NC}"
+        echo -e "  Warnings (24h): ${YELLOW}$warn_logs${NC}"
+        
+        # Log file information
+        local config_file=""
+        if [[ "$selected_service" =~ moonfrps ]]; then
+            config_file="$CONFIG_DIR/frps.toml"
+        elif [[ "$selected_service" =~ moonfrpc ]]; then
+            local ip_suffix=$(echo "$selected_service" | grep -o '[0-9]\+$')
+            if [[ -n "$ip_suffix" ]]; then
+                config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
+            fi
+        fi
+        
+        if [[ -f "$config_file" ]]; then
+            local log_file=$(grep "log.to" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            local log_level=$(grep "log.level" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            
+            if [[ -n "$log_file" && -f "$log_file" ]]; then
+                local file_size=$(ls -lh "$log_file" | awk '{print $5}')
+                echo -e "  Log file: ${GREEN}$log_file${NC} (${YELLOW}$file_size${NC})"
+            fi
+            echo -e "  Log level: ${GREEN}${log_level:-"info (default)"}${NC}"
+        fi
+        
+        echo -e "\n${CYAN}📋 Log Viewer Options:${NC}"
+        echo -e "  ${GREEN}1.${NC} Recent logs (last 50 lines)"
+        echo -e "  ${GREEN}2.${NC} Real-time logs (follow mode)"
+        echo -e "  ${GREEN}3.${NC} Search logs"
+        echo -e "  ${GREEN}4.${NC} Filter by time range"
+        echo -e "  ${GREEN}5.${NC} Filter by log level"
+        echo -e "  ${GREEN}6.${NC} Error analysis"
+        echo -e "  ${GREEN}7.${NC} Export logs"
+        echo -e "  ${GREEN}8.${NC} Clear old logs"
+        echo -e "  ${GREEN}0.${NC} Back to service management"
+        
+        echo -e "\n${YELLOW}Select option [0-8]:${NC} "
+        read -r log_choice
+        
+        case "$log_choice" in
+            1)
+                show_recent_logs "$selected_service"
+                ;;
+            2)
+                show_realtime_logs "$selected_service"
+                ;;
+            3)
+                search_logs "$selected_service"
+                ;;
+            4)
+                filter_logs_by_time "$selected_service"
+                ;;
+            5)
+                filter_logs_by_level "$selected_service"
+                ;;
+            6)
+                analyze_errors "$selected_service"
+                ;;
+            7)
+                export_logs "$selected_service"
+                ;;
+            8)
+                clear_old_logs "$selected_service"
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}❌ Invalid choice${NC}"
+                sleep 2
+                ;;
+        esac
+    done
+}
+
+# Show recent logs
+show_recent_logs() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}📋 Recent Logs: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo -e "\n${YELLOW}How many lines to show?${NC}"
+    echo -e "  ${GREEN}1.${NC} Last 20 lines"
+    echo -e "  ${GREEN}2.${NC} Last 50 lines"
+    echo -e "  ${GREEN}3.${NC} Last 100 lines"
+    echo -e "  ${GREEN}4.${NC} Custom number"
+    
+    echo -e "\n${YELLOW}Select option [1-4]:${NC} "
+    read -r lines_choice
+    
+    local lines=50
+    case "$lines_choice" in
+        1) lines=20 ;;
+        2) lines=50 ;;
+        3) lines=100 ;;
+        4) 
+            echo -e "${YELLOW}Enter number of lines:${NC} "
+            read -r custom_lines
+            if [[ "$custom_lines" =~ ^[0-9]+$ ]]; then
+                lines=$custom_lines
+            fi
+            ;;
+    esac
+    
+    echo -e "\n${CYAN}📋 Last $lines log entries:${NC}"
+    journalctl -u "$service_name" -n "$lines" --no-pager --output=short-precise | \
+        sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
+        sed -E 's/(WARN|WARNING)/\o033[33m&\o033[0m/g' | \
+        sed -E 's/(INFO|SUCCESS)/\o033[32m&\o033[0m/g' | \
+        sed -E 's/(DEBUG|TRACE)/\o033[36m&\o033[0m/g'
+    
+    read -p "Press Enter to continue..."
+}
+
+# Show real-time logs
+show_realtime_logs() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}📋 Real-time Logs: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo -e "\n${YELLOW}Real-time log monitoring (Press Ctrl+C to stop)${NC}"
+    echo -e "${GRAY}Starting in 3 seconds...${NC}"
+    sleep 3
+    
+    # Color-coded real-time logs
+    journalctl -u "$service_name" -f --output=short-precise | \
+        sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
+        sed -E 's/(WARN|WARNING)/\o033[33m&\o033[0m/g' | \
+        sed -E 's/(INFO|SUCCESS)/\o033[32m&\o033[0m/g' | \
+        sed -E 's/(DEBUG|TRACE)/\o033[36m&\o033[0m/g'
+}
+
+# Search logs
+search_logs() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}🔍 Search Logs: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo -e "\n${YELLOW}Enter search term:${NC} "
+    read -r search_term
+    
+    if [[ -z "$search_term" ]]; then
+        echo -e "${RED}❌ Search term cannot be empty${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo -e "\n${CYAN}🔍 Search results for: ${YELLOW}$search_term${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local results=$(journalctl -u "$service_name" --no-pager -q | grep -i "$search_term" | wc -l)
+    
+    if [[ $results -eq 0 ]]; then
+        echo -e "${YELLOW}No results found for '$search_term'${NC}"
+    else
+        echo -e "${GREEN}Found $results matches:${NC}\n"
+        
+        # Show search results with highlighting
+        journalctl -u "$service_name" --no-pager --output=short-precise | \
+            grep -i "$search_term" | \
+            sed -E "s/($search_term)/\o033[43m\o033[30m&\o033[0m/gi" | \
+            sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
+            sed -E 's/(WARN|WARNING)/\o033[33m&\o033[0m/g' | \
+            sed -E 's/(INFO|SUCCESS)/\o033[32m&\o033[0m/g' | \
+            head -20
+        
+        if [[ $results -gt 20 ]]; then
+            echo -e "\n${YELLOW}... and $((results - 20)) more results${NC}"
+        fi
+    fi
+    
+    read -p "Press Enter to continue..."
+}
+
+# Filter logs by time range
+filter_logs_by_time() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}⏰ Filter by Time Range: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo -e "\n${YELLOW}Select time range:${NC}"
+    echo -e "  ${GREEN}1.${NC} Last 15 minutes"
+    echo -e "  ${GREEN}2.${NC} Last hour"
+    echo -e "  ${GREEN}3.${NC} Last 6 hours"
+    echo -e "  ${GREEN}4.${NC} Today"
+    echo -e "  ${GREEN}5.${NC} Yesterday"
+    echo -e "  ${GREEN}6.${NC} Last 7 days"
+    echo -e "  ${GREEN}7.${NC} Custom range"
+    
+    echo -e "\n${YELLOW}Select option [1-7]:${NC} "
+    read -r time_choice
+    
+    local since_time=""
+    local until_time=""
+    
+    case "$time_choice" in
+        1) since_time="15 minutes ago" ;;
+        2) since_time="1 hour ago" ;;
+        3) since_time="6 hours ago" ;;
+        4) since_time="today" ;;
+        5) 
+            since_time="yesterday"
+            until_time="today"
+            ;;
+        6) since_time="7 days ago" ;;
+        7)
+            echo -e "${YELLOW}Enter start time (e.g., '2024-01-01 10:00'):${NC} "
+            read -r start_time
+            echo -e "${YELLOW}Enter end time (optional, press Enter for now):${NC} "
+            read -r end_time
+            
+            since_time="$start_time"
+            [[ -n "$end_time" ]] && until_time="$end_time"
+            ;;
+        *)
+            echo -e "${RED}❌ Invalid choice${NC}"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+    esac
+    
+    echo -e "\n${CYAN}📋 Logs from: ${YELLOW}$since_time${NC}"
+    [[ -n "$until_time" ]] && echo -e "${CYAN}Until: ${YELLOW}$until_time${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local cmd="journalctl -u $service_name --since \"$since_time\""
+    [[ -n "$until_time" ]] && cmd="$cmd --until \"$until_time\""
+    cmd="$cmd --no-pager --output=short-precise"
+    
+    eval "$cmd" | \
+        sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
+        sed -E 's/(WARN|WARNING)/\o033[33m&\o033[0m/g' | \
+        sed -E 's/(INFO|SUCCESS)/\o033[32m&\o033[0m/g' | \
+        sed -E 's/(DEBUG|TRACE)/\o033[36m&\o033[0m/g'
+    
+    read -p "Press Enter to continue..."
+}
+
+# Filter logs by level
+filter_logs_by_level() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}🔍 Filter by Log Level: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo -e "\n${YELLOW}Select log level to filter:${NC}"
+    echo -e "  ${GREEN}1.${NC} Errors only"
+    echo -e "  ${GREEN}2.${NC} Warnings only"
+    echo -e "  ${GREEN}3.${NC} Info messages"
+    echo -e "  ${GREEN}4.${NC} Debug messages"
+    echo -e "  ${GREEN}5.${NC} All levels"
+    
+    echo -e "\n${YELLOW}Select option [1-5]:${NC} "
+    read -r level_choice
+    
+    local filter_pattern=""
+    local level_name=""
+    
+    case "$level_choice" in
+        1) 
+            filter_pattern="ERROR|FAILED|FAIL"
+            level_name="Errors"
+            ;;
+        2) 
+            filter_pattern="WARN|WARNING"
+            level_name="Warnings"
+            ;;
+        3) 
+            filter_pattern="INFO|SUCCESS"
+            level_name="Info"
+            ;;
+        4) 
+            filter_pattern="DEBUG|TRACE"
+            level_name="Debug"
+            ;;
+        5) 
+            filter_pattern=".*"
+            level_name="All levels"
+            ;;
+        *)
+            echo -e "${RED}❌ Invalid choice${NC}"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+    esac
+    
+    echo -e "\n${CYAN}📋 $level_name logs:${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local results=$(journalctl -u "$service_name" --no-pager -q | grep -iE "$filter_pattern" | wc -l)
+    
+    if [[ $results -eq 0 ]]; then
+        echo -e "${YELLOW}No $level_name logs found${NC}"
+    else
+        echo -e "${GREEN}Found $results $level_name entries:${NC}\n"
+        
+        journalctl -u "$service_name" --no-pager --output=short-precise | \
+            grep -iE "$filter_pattern" | \
+            sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
+            sed -E 's/(WARN|WARNING)/\o033[33m&\o033[0m/g' | \
+            sed -E 's/(INFO|SUCCESS)/\o033[32m&\o033[0m/g' | \
+            sed -E 's/(DEBUG|TRACE)/\o033[36m&\o033[0m/g' | \
+            tail -50
+    fi
+    
+    read -p "Press Enter to continue..."
+}
+
+# Analyze errors
+analyze_errors() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}🔍 Error Analysis: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    # Get error statistics
+    local total_errors=$(journalctl -u "$service_name" --since "24 hours ago" --no-pager -q | grep -iE "ERROR|FAILED|FAIL" | wc -l)
+    local connection_errors=$(journalctl -u "$service_name" --since "24 hours ago" --no-pager -q | grep -iE "connection|connect" | grep -iE "ERROR|FAILED|FAIL" | wc -l)
+    local auth_errors=$(journalctl -u "$service_name" --since "24 hours ago" --no-pager -q | grep -iE "auth|token" | grep -iE "ERROR|FAILED|FAIL" | wc -l)
+    local timeout_errors=$(journalctl -u "$service_name" --since "24 hours ago" --no-pager -q | grep -iE "timeout|timed out" | wc -l)
+    
+    echo -e "\n${CYAN}📊 Error Statistics (Last 24 hours):${NC}"
+    echo -e "  Total errors: ${RED}$total_errors${NC}"
+    echo -e "  Connection errors: ${RED}$connection_errors${NC}"
+    echo -e "  Authentication errors: ${RED}$auth_errors${NC}"
+    echo -e "  Timeout errors: ${RED}$timeout_errors${NC}"
+    
+    if [[ $total_errors -eq 0 ]]; then
+        echo -e "\n${GREEN}✅ No errors found in the last 24 hours!${NC}"
+    else
+        echo -e "\n${CYAN}🔍 Common Error Patterns:${NC}"
+        
+        # Show most common error patterns
+        journalctl -u "$service_name" --since "24 hours ago" --no-pager -q | \
+            grep -iE "ERROR|FAILED|FAIL" | \
+            awk '{for(i=6;i<=NF;i++) printf "%s ", $i; printf "\n"}' | \
+            sort | uniq -c | sort -nr | head -5 | \
+            while read count message; do
+                echo -e "  ${RED}$count${NC}x: $message"
+            done
+        
+        echo -e "\n${CYAN}📋 Recent Error Messages:${NC}"
+        journalctl -u "$service_name" --since "1 hour ago" --no-pager --output=short-precise | \
+            grep -iE "ERROR|FAILED|FAIL" | \
+            sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
+            tail -10
+        
+        echo -e "\n${CYAN}💡 Troubleshooting Suggestions:${NC}"
+        if [[ $connection_errors -gt 0 ]]; then
+            echo -e "  ${YELLOW}• Check network connectivity and firewall settings${NC}"
+        fi
+        if [[ $auth_errors -gt 0 ]]; then
+            echo -e "  ${YELLOW}• Verify authentication tokens match between client and server${NC}"
+        fi
+        if [[ $timeout_errors -gt 0 ]]; then
+            echo -e "  ${YELLOW}• Consider increasing timeout values or checking network latency${NC}"
+        fi
+    fi
+    
+    read -p "Press Enter to continue..."
+}
+
+# Export logs
+export_logs() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}📤 Export Logs: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local export_file="$LOG_DIR/${service_name}_export_${timestamp}.log"
+    
+    echo -e "\n${YELLOW}Select export range:${NC}"
+    echo -e "  ${GREEN}1.${NC} Last 100 lines"
+    echo -e "  ${GREEN}2.${NC} Last 24 hours"
+    echo -e "  ${GREEN}3.${NC} All logs"
+    echo -e "  ${GREEN}4.${NC} Custom range"
+    
+    echo -e "\n${YELLOW}Select option [1-4]:${NC} "
+    read -r export_choice
+    
+    local cmd=""
+    case "$export_choice" in
+        1) cmd="journalctl -u $service_name -n 100 --no-pager" ;;
+        2) cmd="journalctl -u $service_name --since '24 hours ago' --no-pager" ;;
+        3) cmd="journalctl -u $service_name --no-pager" ;;
+        4)
+            echo -e "${YELLOW}Enter start time (e.g., '2024-01-01 10:00'):${NC} "
+            read -r start_time
+            echo -e "${YELLOW}Enter end time (optional):${NC} "
+            read -r end_time
+            
+            cmd="journalctl -u $service_name --since '$start_time'"
+            [[ -n "$end_time" ]] && cmd="$cmd --until '$end_time'"
+            cmd="$cmd --no-pager"
+            ;;
+        *)
+            echo -e "${RED}❌ Invalid choice${NC}"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+    esac
+    
+    echo -e "\n${CYAN}📤 Exporting logs to: ${YELLOW}$export_file${NC}"
+    
+    if eval "$cmd" > "$export_file"; then
+        local file_size=$(ls -lh "$export_file" | awk '{print $5}')
+        echo -e "${GREEN}✅ Export completed successfully${NC}"
+        echo -e "  File: ${GREEN}$export_file${NC}"
+        echo -e "  Size: ${GREEN}$file_size${NC}"
+        echo -e "  Lines: ${GREEN}$(wc -l < "$export_file")${NC}"
+        
+        echo -e "\n${YELLOW}Open exported file now? (y/N):${NC} "
+        read -r open_choice
+        if [[ "$open_choice" =~ ^[Yy]$ ]]; then
+            less "$export_file"
+        fi
+    else
+        echo -e "${RED}❌ Export failed${NC}"
+    fi
+    
+    read -p "Press Enter to continue..."
+}
+
+# Clear old logs
+clear_old_logs() {
+    local service_name="$1"
+    
+    clear
+    echo -e "${CYAN}🗑️  Clear Old Logs: $service_name${NC}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local current_size=$(journalctl -u "$service_name" --no-pager -q | wc -l)
+    echo -e "\n${CYAN}Current log size: ${YELLOW}$current_size lines${NC}"
+    
+    echo -e "\n${YELLOW}⚠️  This will permanently delete old logs!${NC}"
+    echo -e "\n${YELLOW}Select retention period:${NC}"
+    echo -e "  ${GREEN}1.${NC} Keep last 24 hours"
+    echo -e "  ${GREEN}2.${NC} Keep last 7 days"
+    echo -e "  ${GREEN}3.${NC} Keep last 30 days"
+    echo -e "  ${GREEN}4.${NC} Clear all logs"
+    echo -e "  ${GREEN}0.${NC} Cancel"
+    
+    echo -e "\n${YELLOW}Select option [0-4]:${NC} "
+    read -r clear_choice
+    
+    local retention_time=""
+    case "$clear_choice" in
+        1) retention_time="24 hours" ;;
+        2) retention_time="7 days" ;;
+        3) retention_time="30 days" ;;
+        4) retention_time="0 seconds" ;;
+        0) return ;;
+        *)
+            echo -e "${RED}❌ Invalid choice${NC}"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+    esac
+    
+    echo -e "\n${RED}⚠️  Are you sure you want to clear logs older than $retention_time? (y/N):${NC} "
+    read -r confirm_clear
+    
+    if [[ "$confirm_clear" =~ ^[Yy]$ ]]; then
+        echo -e "\n${CYAN}🗑️  Clearing old logs...${NC}"
+        
+        # Clear systemd journal logs
+        if journalctl --vacuum-time="$retention_time" >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Systemd journal logs cleared${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Failed to clear systemd journal logs${NC}"
+        fi
+        
+        # Clear custom log files if any
+        local config_file=""
+        if [[ "$service_name" =~ moonfrps ]]; then
+            config_file="$CONFIG_DIR/frps.toml"
+        elif [[ "$service_name" =~ moonfrpc ]]; then
+            local ip_suffix=$(echo "$service_name" | grep -o '[0-9]\+$')
+            if [[ -n "$ip_suffix" ]]; then
+                config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
+            fi
+        fi
+        
+        if [[ -f "$config_file" ]]; then
+            local log_file=$(grep "log.to" "$config_file" 2>/dev/null | head -1 | awk '{print $3}' | tr -d '"')
+            if [[ -n "$log_file" && -f "$log_file" ]]; then
+                if [[ "$retention_time" == "0 seconds" ]]; then
+                    > "$log_file"
+                    echo -e "${GREEN}✅ Custom log file cleared${NC}"
+                else
+                    echo -e "${YELLOW}⚠️  Custom log file not cleared (use log rotation)${NC}"
+                fi
+            fi
+        fi
+        
+        local new_size=$(journalctl -u "$service_name" --no-pager -q | wc -l)
+        echo -e "\n${GREEN}✅ Log cleanup completed${NC}"
+        echo -e "  Previous size: ${YELLOW}$current_size lines${NC}"
+        echo -e "  Current size: ${YELLOW}$new_size lines${NC}"
+        echo -e "  Cleaned: ${GREEN}$((current_size - new_size)) lines${NC}"
+    else
+        echo -e "${YELLOW}Operation cancelled${NC}"
+    fi
+    
+    read -p "Press Enter to continue..."
 }
 
 # Service action handler
@@ -3254,25 +4223,7 @@ manage_service_action() {
     local action="$1"
     
     echo -e "\n${CYAN}Available services:${NC}"
-    
-    # Get all service files and loaded units
-    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    # Combine both lists and remove duplicates
-    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -3314,14 +4265,8 @@ manage_service_action() {
         ((i++))
     done
     
-    echo -e "\n${YELLOW}Select service number (or 'all' for all services) [default: all]:${NC} "
+    echo -e "\n${YELLOW}Select service number (or 'all' for all services):${NC} "
     read -r service_num
-    
-    # Set default to "all" if empty
-    if [[ -z "$service_num" ]]; then
-        service_num="all"
-        echo -e "${GREEN}✅ Selected: All services (default)${NC}"
-    fi
     
     if [[ "$service_num" == "all" ]]; then
         # Handle all services
@@ -3350,66 +4295,49 @@ manage_service_action() {
     fi
     
     if [[ ! "$service_num" =~ ^[0-9]+$ ]] || [[ $service_num -lt 1 ]] || [[ $service_num -gt ${#services[@]} ]]; then
-        log "ERROR" "Invalid service number"
+        log "ERROR" "Invalid service number. Please enter a number between 1-${#services[@]} or 'all'"
         read -p "Press Enter to continue..."
         return
     fi
     
     local selected_service="${services[$((service_num-1))]}"
+    if [[ -z "$selected_service" ]]; then
+        log "ERROR" "Selected service is empty or invalid"
+        read -p "Press Enter to continue..."
+        return
+    fi
     
     case "$action" in
         "start")
+            echo -e "\n${CYAN}Starting service: $selected_service${NC}"
             start_service "$selected_service"
             ;;
         "stop")
+            echo -e "\n${CYAN}Stopping service: $selected_service${NC}"
             stop_service "$selected_service"
             ;;
         "restart")
+            echo -e "\n${CYAN}Restarting service: $selected_service${NC}"
             restart_service "$selected_service"
             ;;
         "status")
-            echo -e "\n${CYAN}🔍 Detailed Service Status: $selected_service${NC}"
-            echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            
-            # Basic status
-            local status=$(systemctl is-active "$selected_service" 2>/dev/null || echo "inactive")
-            local enabled=$(systemctl is-enabled "$selected_service" 2>/dev/null || echo "disabled")
-            
-            echo -e "${CYAN}Status:${NC} $([ "$status" == "active" ] && echo "${GREEN}✅ $status${NC}" || echo "${RED}❌ $status${NC}")"
-            echo -e "${CYAN}Enabled:${NC} $([ "$enabled" == "enabled" ] && echo "${GREEN}✅ $enabled${NC}" || echo "${YELLOW}⚠️  $enabled${NC}")"
-            
-            # Systemctl status output
-            echo -e "\n${CYAN}Full Status:${NC}"
-            systemctl status "$selected_service" --no-pager
-            
-            # Configuration file info if available
-            if [[ "$selected_service" =~ moonfrps ]]; then
-                if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
-                    echo -e "\n${CYAN}Configuration:${NC} $CONFIG_DIR/frps.toml"
-                    echo -e "${CYAN}Config Size:${NC} $(ls -lh "$CONFIG_DIR/frps.toml" | awk '{print $5}')"
-                fi
-            elif [[ "$selected_service" =~ moonfrpc ]]; then
-                local ip_suffix=$(echo "$selected_service" | grep -o '[0-9]\+$')
-                if [[ -n "$ip_suffix" && -f "$CONFIG_DIR/frpc_${ip_suffix}.toml" ]]; then
-                    echo -e "\n${CYAN}Configuration:${NC} $CONFIG_DIR/frpc_${ip_suffix}.toml"
-                    echo -e "${CYAN}Config Size:${NC} $(ls -lh "$CONFIG_DIR/frpc_${ip_suffix}.toml" | awk '{print $5}')"
-                fi
-            fi
+            show_enhanced_service_status "$selected_service"
             ;;
         "logs")
-            echo -e "\n${CYAN}📋 Service Logs: $selected_service${NC}"
-            echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            
-            echo -e "${YELLOW}Recent logs (last 50 lines):${NC}"
-            journalctl -u "$selected_service" -n 50 --no-pager --output=short-precise
-            
-            echo -e "\n${YELLOW}Real-time logs (press Ctrl+C to stop):${NC}"
-            echo -e "${GRAY}Starting in 3 seconds...${NC}"
-            sleep 3
-            journalctl -u "$selected_service" -f --output=short-precise
+            show_enhanced_service_logs "$selected_service"
             ;;
         "reload")
-            systemctl reload "$selected_service" 2>/dev/null || systemctl restart "$selected_service"
+            echo -e "\n${CYAN}Reloading service: $selected_service${NC}"
+            if systemctl reload "$selected_service" 2>/dev/null; then
+                echo -e "${GREEN}✅ Service reloaded successfully${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Reload failed, attempting restart...${NC}"
+                if systemctl restart "$selected_service" 2>/dev/null; then
+                    echo -e "${GREEN}✅ Service restarted successfully${NC}"
+                else
+                    echo -e "${RED}❌ Failed to restart service${NC}"
+                fi
+            fi
             log "INFO" "Reloaded service: $selected_service"
             ;;
     esac
@@ -4664,24 +5592,7 @@ service_removal_menu() {
 
 # Remove single service
 remove_single_service() {
-    # Get all service files and loaded units
-    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    # Combine both lists and remove duplicates
-    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -4700,12 +5611,17 @@ remove_single_service() {
     read -r service_num
     
     if [[ ! "$service_num" =~ ^[0-9]+$ ]] || [[ $service_num -lt 1 ]] || [[ $service_num -gt ${#services[@]} ]]; then
-        log "ERROR" "Invalid service number"
+        log "ERROR" "Invalid service number. Please enter a number between 1-${#services[@]}"
         read -p "Press Enter to continue..."
         return
     fi
     
     local selected_service="${services[$((service_num-1))]}"
+    if [[ -z "$selected_service" ]]; then
+        log "ERROR" "Selected service is empty or invalid"
+        read -p "Press Enter to continue..."
+        return
+    fi
     
     echo -e "\n${RED}Are you sure you want to remove service '$selected_service'? (y/N):${NC} "
     read -r confirm
@@ -4722,24 +5638,7 @@ remove_single_service() {
 
 # Remove all services
 remove_all_services() {
-    # Get all service files and loaded units
-    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    # Combine both lists and remove duplicates
-    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -4849,268 +5748,6 @@ check_updates_cached() {
         # Don't wait for background process
         disown
     fi
-}
-
-# Schedule restart cron job
-schedule_restart_cron() {
-    clear
-    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║         ⏰ Schedule Auto-Restart     ║${NC}"
-    echo -e "${PURPLE}║          Cron Job Management        ║${NC}"
-    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
-    
-    # Find available FRP services
-    # Get all service files and loaded units
-    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    # Combine both lists and remove duplicates
-    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
-    
-    if [[ ${#services[@]} -eq 0 ]]; then
-        echo -e "\n${RED}❌ No FRP services found${NC}"
-        echo -e "${YELLOW}Please create and start some FRP services first.${NC}"
-        read -p "Press Enter to continue..."
-        return
-    fi
-    
-    # Display available services
-    echo -e "\n${CYAN}📋 Available FRP services:${NC}"
-    printf "%-4s %-25s %-12s %-15s\n" "No." "Service" "Status" "Type"
-    printf "%-4s %-25s %-12s %-15s\n" "---" "-------" "------" "----"
-    
-    local i=1
-    for service in "${services[@]}"; do
-        local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
-        local type="Unknown"
-        
-        if [[ "$service" =~ (frps|moonfrps) ]]; then
-            type="Server"
-        elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
-            type="Client"
-        fi
-        
-        local status_color="$RED"
-        case "$status" in
-            "active") status_color="$GREEN" ;;
-            "inactive") status_color="$RED" ;;
-            "failed") status_color="$RED" ;;
-            *) status_color="$GRAY" ;;
-        esac
-        
-        printf "%-4s %-25s ${status_color}%-12s${NC} %-15s\n" "$i." "$service" "$status" "$type"
-        ((i++))
-    done
-    
-    # Service selection with default "all"
-    echo -e "\n${CYAN}🎯 Service Selection:${NC}"
-    echo -e "${YELLOW}Select service number (or 'all' for all services) [default: all]:${NC} "
-    read -r service_choice
-    
-    # Set default to "all" if empty
-    if [[ -z "$service_choice" ]]; then
-        service_choice="all"
-        echo -e "${GREEN}✅ Selected: All services (default)${NC}"
-    fi
-    
-    # Validate service selection
-    local selected_services=()
-    if [[ "$service_choice" == "all" ]]; then
-        selected_services=("${services[@]}")
-        echo -e "${GREEN}✅ Will schedule auto-restart for all ${#selected_services[@]} services${NC}"
-    else
-        if [[ "$service_choice" =~ ^[0-9]+$ ]] && [[ $service_choice -gt 0 ]] && [[ $service_choice -le ${#services[@]} ]]; then
-            selected_services=("${services[$((service_choice-1))]}")
-            echo -e "${GREEN}✅ Selected service: ${selected_services[0]}${NC}"
-        else
-            echo -e "${RED}❌ Invalid service selection${NC}"
-            read -p "Press Enter to continue..."
-            return
-        fi
-    fi
-    
-    # Time interval selection
-    echo -e "\n${CYAN}⏱️  Schedule Interval Options:${NC}"
-    echo "1. Every 30 minutes"
-    echo "2. Every 1 hour"
-    echo "3. Every 2 hours"
-    echo "4. Every 4 hours"
-    echo "5. Every 12 hours"
-    echo "6. Every 24 hours"
-    echo "0. Cancel"
-    
-    echo -e "\n${YELLOW}Select interval [1-6]:${NC} "
-    read -r interval_choice
-    
-    local cron_expression=""
-    local interval_desc=""
-    
-    case $interval_choice in
-        1)
-            cron_expression="*/30 * * * *"
-            interval_desc="Every 30 minutes"
-            ;;
-        2)
-            cron_expression="0 * * * *"
-            interval_desc="Every hour"
-            ;;
-        3)
-            cron_expression="0 */2 * * *"
-            interval_desc="Every 2 hours"
-            ;;
-        4)
-            cron_expression="0 */4 * * *"
-            interval_desc="Every 4 hours"
-            ;;
-        5)
-            cron_expression="0 */12 * * *"
-            interval_desc="Every 12 hours"
-            ;;
-        6)
-            cron_expression="0 0 * * *"
-            interval_desc="Every 24 hours"
-            ;;
-        0)
-            echo -e "${YELLOW}⚠️  Operation cancelled${NC}"
-            read -p "Press Enter to continue..."
-            return
-            ;;
-        *)
-            echo -e "${RED}❌ Invalid interval selection${NC}"
-            read -p "Press Enter to continue..."
-            return
-            ;;
-    esac
-    
-    # Create log directory for restart logs
-    local restart_log_dir="/var/log/frp/restart"
-    mkdir -p "$restart_log_dir"
-    
-    # Create cron job script
-    local cron_script="/usr/local/bin/moonfrp_restart_cron.sh"
-    cat > "$cron_script" << 'EOF'
-#!/bin/bash
-
-# MoonFRP Auto-Restart Cron Script
-# This script is generated automatically by MoonFRP
-
-LOG_DIR="/var/log/frp/restart"
-LOG_FILE="$LOG_DIR/restart_$(date +%Y%m%d).log"
-MAX_LOG_AGE=3
-
-# Create log directory if it doesn't exist
-mkdir -p "$LOG_DIR"
-
-# Function to log messages
-log_message() {
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] $1" >> "$LOG_FILE"
-}
-
-# Function to clean old logs (keep only last 3 days)
-cleanup_old_logs() {
-    find "$LOG_DIR" -name "restart_*.log" -mtime +$MAX_LOG_AGE -delete 2>/dev/null
-}
-
-# Clean old logs first
-cleanup_old_logs
-
-log_message "=== MoonFRP Auto-Restart Started ==="
-
-# Restart services
-SERVICES_TO_RESTART="$@"
-
-for service in $SERVICES_TO_RESTART; do
-    log_message "Restarting service: $service"
-    
-    # Check if service exists
-    if systemctl list-units --type=service --all --no-legend --plain | grep -q "^$service.service"; then
-        # Stop service
-        systemctl stop "$service" 2>/dev/null
-        sleep 2
-        
-        # Start service
-        systemctl start "$service" 2>/dev/null
-        sleep 2
-        
-        # Check status
-        if systemctl is-active "$service" >/dev/null 2>&1; then
-            log_message "✅ Successfully restarted: $service"
-        else
-            log_message "❌ Failed to restart: $service"
-        fi
-    else
-        log_message "⚠️  Service not found: $service"
-    fi
-done
-
-log_message "=== MoonFRP Auto-Restart Completed ==="
-log_message ""
-EOF
-    
-    # Make script executable
-    chmod +x "$cron_script"
-    
-    # Create cron job entry
-    local cron_comment="# MoonFRP Auto-Restart - $interval_desc"
-    local cron_command="$cron_expression $cron_script ${selected_services[*]} >/dev/null 2>&1"
-    
-    # Show confirmation
-    echo -e "\n${CYAN}📋 Cron Job Summary:${NC}"
-    echo -e "${GREEN}• Services:${NC} ${selected_services[*]}"
-    echo -e "${GREEN}• Interval:${NC} $interval_desc"
-    echo -e "${GREEN}• Cron Expression:${NC} $cron_expression"
-    echo -e "${GREEN}• Log Directory:${NC} $restart_log_dir"
-    echo -e "${GREEN}• Log Retention:${NC} 3 days"
-    
-    echo -e "\n${YELLOW}⚠️  This will create a cron job that automatically restarts the selected services.${NC}"
-    echo -e "${YELLOW}Do you want to proceed? (y/N):${NC} "
-    read -r confirm
-    
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}⚠️  Operation cancelled${NC}"
-        read -p "Press Enter to continue..."
-        return
-    fi
-    
-    # Add cron job
-    echo -e "\n${CYAN}📝 Creating cron job...${NC}"
-    
-    # Remove existing MoonFRP cron jobs first
-    crontab -l 2>/dev/null | grep -v "MoonFRP Auto-Restart" | crontab -
-    
-    # Add new cron job
-    (crontab -l 2>/dev/null; echo "$cron_comment"; echo "$cron_command") | crontab -
-    
-    if [[ $? -eq 0 ]]; then
-        echo -e "${GREEN}✅ Cron job created successfully!${NC}"
-        echo -e "\n${CYAN}📋 Active cron jobs:${NC}"
-        crontab -l | grep -A1 "MoonFRP Auto-Restart"
-        
-        echo -e "\n${CYAN}📝 Management Commands:${NC}"
-        echo -e "${GREEN}• View logs:${NC} tail -f $restart_log_dir/restart_\$(date +%Y%m%d).log"
-        echo -e "${GREEN}• List cron jobs:${NC} crontab -l"
-        echo -e "${GREEN}• Remove cron job:${NC} crontab -e (manually remove MoonFRP entries)"
-        
-        log "INFO" "Created auto-restart cron job for services: ${selected_services[*]} with interval: $interval_desc"
-    else
-        echo -e "${RED}❌ Failed to create cron job${NC}"
-        log "ERROR" "Failed to create auto-restart cron job"
-    fi
-    
-    read -p "Press Enter to continue..."
 }
 
 # Main menu
@@ -5505,24 +6142,7 @@ view_service_logs_menu() {
     clear
     echo -e "${CYAN}📋 Service Logs Viewer${NC}"
     
-    # Get all service files and loaded units
-    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    # Combine both lists and remove duplicates
-    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -5601,25 +6221,7 @@ fix_common_issues() {
             log "INFO" "Cleared all log files"
             ;;
         5)
-            # Get all service files and loaded units
-            local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
-                grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-                grep -v "@" | \
-                awk '{print $1}' | \
-                sed 's/\.service//' | \
-                grep -v "^$" || echo ""))
-            
-            local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-                grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-                grep -v "@" | \
-                awk '{print $1}' | \
-                sed 's/\.service//' | \
-                grep -v "^$" || echo ""))
-            
-            # Combine both lists and remove duplicates
-            local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-            local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
-            
+            local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
             for service in "${services[@]}"; do
                 restart_service "$service"
             done
@@ -5739,37 +6341,18 @@ show_about_info() {
     fi
     
     # Check services
-    # Get all service files and loaded units
-    local unit_files=($(systemctl list-unit-files --type=service --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    local loaded_units=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-        grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-        grep -v "@" | \
-        awk '{print $1}' | \
-        sed 's/\.service//' | \
-        grep -v "^$" || echo ""))
-    
-    # Combine both lists and remove duplicates
-    local all_services=("${unit_files[@]}" "${loaded_units[@]}")
-    local services=($(printf '%s\n' "${all_services[@]}" | sort -u))
-    
+    local services=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//' || echo ""))
     if [[ ${#services[@]} -gt 0 ]] && [[ "${services[0]}" != "" ]]; then
-        echo -e "  Services: ${GREEN}${#services[@]} service(s)${NC}"
+        echo -e "  Active Services: ${GREEN}${#services[@]} service(s)${NC}"
         for service in "${services[@]}"; do
             local status=$(get_service_status "$service")
             local status_icon="❌"
             local status_color="$RED"
             [[ "$status" == "active" ]] && status_icon="✅" && status_color="$GREEN"
-            [[ "$status" == "inactive" ]] && status_icon="🔴" && status_color="$RED"
             echo -e "    $status_icon $service: ${status_color}$status${NC}"
         done
     else
-        echo -e "  Services: ${YELLOW}⚠️  No services found${NC}"
+        echo -e "  Active Services: ${YELLOW}⚠️  No services found${NC}"
     fi
     
     # Check configurations
