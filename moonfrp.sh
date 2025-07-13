@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.8"
+MOONFRP_VERSION="1.0.9"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -1296,6 +1296,8 @@ auth.token = "$token"
 # Additional scopes for enhanced security
 auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
+kcpBindPort = $bind_port
+
 # Logging
 log.to = "$LOG_DIR/frps.log"
 log.level = "warn"
@@ -1317,8 +1319,8 @@ tcpmuxPassthrough = false
 transport.maxPoolCount = 5
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
-transport.heartbeatTimeout = 60
-transport.tcpKeepalive = 60
+transport.heartbeatTimeout = 90
+transport.tcpKeepalive = 90
 
 # TLS settings (enabled by default in v0.63.0)
 transport.tls.force = false
@@ -1463,9 +1465,9 @@ log.disablePrintColor = false
 # Transport settings
 transport.poolCount = 5
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 60
+transport.heartbeatTimeout = 90
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 1800
+transport.dialServerKeepalive = 1000
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
@@ -2447,16 +2449,16 @@ log.maxDays = 2
 log.disablePrintColor = false
 
 # Transport settings
-transport.poolCount = 2
+transport.poolCount = 5
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 60
+transport.heartbeatTimeout = 90
 transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 1800
+transport.dialServerKeepalive = 1000
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 
 # TLS settings (enabled by default in v0.63.0)
-#transport.tls.force = true
+transport.tls.force = false
 # Uncomment and configure for custom certificates
 # transport.tls.certFile = "server.crt"
 # transport.tls.keyFile = "server.key"
@@ -2691,8 +2693,8 @@ EOF
     then
         # Reload systemd daemon
         if systemctl daemon-reload; then
-            # Invalidate services cache
-            CACHED_SERVICES=()
+            # Clear all performance caches
+            clear_performance_caches
             log "INFO" "Created systemd service: $service_name"
             return 0
         else
@@ -2703,6 +2705,15 @@ EOF
         log "ERROR" "Failed to create service file: $service_file"
         return 1
     fi
+}
+
+# Clear all performance caches
+clear_performance_caches() {
+    CACHED_SERVICES=()
+    SERVICES_CACHE_TIME=0
+    SERVICE_STATUS_CACHE=()
+    SERVICE_STATUS_CACHE_TIME=0
+    log "DEBUG" "Performance caches cleared"
 }
 
 # Service management functions
@@ -2724,6 +2735,9 @@ start_service() {
     if systemctl start "$service_name"; then
         log "INFO" "Started service: $service_name"
         
+        # Clear caches after service change
+        clear_performance_caches
+        
         # Enable service
         if systemctl enable "$service_name"; then
             log "INFO" "Enabled service: $service_name"
@@ -2742,18 +2756,39 @@ stop_service() {
     local service_name="$1"
     systemctl stop "$service_name" 2>/dev/null || true
     systemctl disable "$service_name" 2>/dev/null || true
+    # Clear caches after service change
+    clear_performance_caches
     log "INFO" "Stopped and disabled service: $service_name"
 }
 
 restart_service() {
     local service_name="$1"
     systemctl restart "$service_name"
+    # Clear caches after service change
+    clear_performance_caches
     log "INFO" "Restarted service: $service_name"
 }
 
+# Improved service status with caching
+declare -A SERVICE_STATUS_CACHE
+SERVICE_STATUS_CACHE_TIME=0
+
 get_service_status() {
     local service_name="$1"
-    systemctl is-active "$service_name" 2>/dev/null || echo "inactive"
+    local current_time=$(date +%s)
+    
+    # Use cached status if available and not expired (5 seconds)
+    if [[ -n "${SERVICE_STATUS_CACHE[$service_name]}" ]] && [[ $((current_time - SERVICE_STATUS_CACHE_TIME)) -lt 5 ]]; then
+        echo "${SERVICE_STATUS_CACHE[$service_name]}"
+        return
+    fi
+    
+    # Get fresh status and cache it
+    local status=$(systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
+    SERVICE_STATUS_CACHE[$service_name]="$status"
+    SERVICE_STATUS_CACHE_TIME=$current_time
+    
+    echo "$status"
 }
 
 # Check if FRP is already installed
@@ -3106,49 +3141,64 @@ show_spinner() {
 optimize_systemctl_calls() {
     # Reduce systemctl timeout for faster responses
     export SYSTEMD_COLORS=0
-    alias systemctl='systemctl --no-pager --quiet'
+    export SYSTEMCTL_TIMEOUT=3
+    # Create faster aliases for systemctl commands
+    alias systemctl='timeout 3 systemctl --no-pager --quiet'
+    alias journalctl='timeout 3 journalctl --no-pager --quiet'
+    
+    # Optimize systemd settings for better performance
+    export SYSTEMD_PAGER=""
+    export SYSTEMD_LESS=""
 }
 
-# List all FRP services with caching
 # List all FRP services with caching
 list_frp_services() {
     echo -e "\n${CYAN}=== FRP Services Status ===${NC}"
     
-    # Cache services list for 5 seconds to improve performance
+    # Improved caching with longer duration for better performance
     local current_time=$(date +%s)
-    if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
-        # More comprehensive service detection with new naming
-        CACHED_SERVICES=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-            grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-            grep -v "@" | \
-            awk '{print $1}' | \
-            sed 's/\.service//' | \
-            grep -v "^$" || echo ""))
+    if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 10 ]]; then
+        # Much faster service detection with optimized grep
+        local all_services
+        all_services=$(systemctl list-units --type=service --no-legend --plain 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//')
+        
+        # Filter and cache results
+        CACHED_SERVICES=()
+        if [[ -n "$all_services" ]]; then
+            while IFS= read -r service; do
+                [[ -n "$service" && "$service" != " " ]] && CACHED_SERVICES+=("$service")
+            done <<< "$all_services"
+        fi
+        
         SERVICES_CACHE_TIME=$current_time
     fi
     
     local services=("${CACHED_SERVICES[@]}")
     
-    # Filter out empty entries
-    local filtered_services=()
-    for service in "${services[@]}"; do
-        [[ -n "$service" && "$service" != " " ]] && filtered_services+=("$service")
-    done
-    
-    if [[ ${#filtered_services[@]} -eq 0 ]]; then
+    if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
         return
     fi
     
+    # Batch get all service statuses at once for better performance
+    local status_output
+    status_output=$(systemctl is-active "${services[@]}" 2>/dev/null || true)
+    
+    # Convert to array
+    local statuses=()
+    while IFS= read -r status; do
+        statuses+=("$status")
+    done <<< "$status_output"
+    
     printf "%-20s %-12s %-15s\n" "Service" "Status" "Type"
     printf "%-20s %-12s %-15s\n" "-------" "------" "----"
     
-    for service in "${filtered_services[@]}"; do
-        [[ -z "$service" ]] && continue
-        
-        local status=$(get_service_status "$service")
+    for i in "${!services[@]}"; do
+        local service="${services[$i]}"
+        local status="${statuses[$i]:-inactive}"
         local type="Unknown"
         
+        # Determine service type
         if [[ "$service" =~ (frps|moonfrps) ]]; then
             type="Server"
         elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
@@ -3163,6 +3213,7 @@ list_frp_services() {
             clean_status="${clean_status:0:10}"
         fi
         
+        # Color status
         local status_color="$RED"
         case "$status" in
             "active") status_color="$GREEN" ;;
@@ -4223,7 +4274,14 @@ manage_service_action() {
     local action="$1"
     
     echo -e "\n${CYAN}Available services:${NC}"
-    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    
+    # Use cached services if available, otherwise get fresh list
+    local services=("${CACHED_SERVICES[@]}")
+    if [[ ${#services[@]} -eq 0 ]]; then
+        # Force refresh if cache is empty
+        list_frp_services >/dev/null 2>&1
+        services=("${CACHED_SERVICES[@]}")
+    fi
     
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -4231,12 +4289,23 @@ manage_service_action() {
         return
     fi
     
+    # Batch get all service statuses for better performance
+    local status_output
+    status_output=$(systemctl is-active "${services[@]}" 2>/dev/null || true)
+    
+    # Convert to array
+    local statuses=()
+    while IFS= read -r status; do
+        statuses+=("$status")
+    done <<< "$status_output"
+    
     printf "%-4s %-25s %-12s %-15s\n" "No." "Service" "Status" "Type"
     printf "%-4s %-25s %-12s %-15s\n" "---" "-------" "------" "----"
     
     local i=1
-    for service in "${services[@]}"; do
-        local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
+    for idx in "${!services[@]}"; do
+        local service="${services[$idx]}"
+        local status="${statuses[$idx]:-inactive}"
         local type="Unknown"
         
         if [[ "$service" =~ (frps|moonfrps) ]]; then
@@ -4798,7 +4867,7 @@ create_iran_server_config() {
         return
     fi
     
-    local enable_kcp="false"
+    local enable_kcp="true"
     local enable_quic="false"
     local custom_subdomain="moonfrp.local"
     local max_clients="0"
@@ -4807,9 +4876,9 @@ create_iran_server_config() {
         echo -e "\n${CYAN}📡 Protocol Options:${NC}"
         
         # KCP Protocol
-        echo -e "${YELLOW}Enable KCP protocol (better for poor networks)? (y/N):${NC} "
+        echo -e "${YELLOW}Enable KCP protocol (better for poor networks)? (Y/n):${NC} "
         read -r kcp_choice
-        [[ "$kcp_choice" =~ ^[Nn]$ ]] && enable_kcp="false"
+        [[ "$kcp_choice" =~ ^[Nn]$ ]] && enable_kcp="true"
         
         # QUIC Protocol
         echo -e "${YELLOW}Enable QUIC protocol (experimental, modern)? (y/N):${NC} "
@@ -4822,7 +4891,7 @@ create_iran_server_config() {
         [[ -n "$user_subdomain" ]] && custom_subdomain="$user_subdomain"
         
         # Max clients
-        echo -e "${CYAN}Maximum ports per client (default: 10):${NC} "
+        echo -e "${CYAN}Maximum ports per client (default: 0):${NC} "
         read -r user_max_clients
         if [[ -n "$user_max_clients" && "$user_max_clients" =~ ^[0-9]+$ ]]; then
             max_clients="$user_max_clients"
@@ -5703,8 +5772,8 @@ remove_service() {
     echo -e "${CYAN}Reloading systemd daemon...${NC}"
     systemctl daemon-reload
     
-    # Invalidate services cache
-    CACHED_SERVICES=()
+    # Clear all performance caches
+    clear_performance_caches
     
     log "INFO" "Successfully removed service: $service_name"
 }
@@ -6427,10 +6496,13 @@ real_time_status_monitor() {
         echo -e "${GRAY}$(date)${NC}"
         echo ""
         
-        # Get all services
-        local services=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
-            grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
-            awk '{print $1}' | sed 's/\.service//' | grep -v "^$"))
+        # Get all services (use cached if available)
+        local services=("${CACHED_SERVICES[@]}")
+        if [[ ${#services[@]} -eq 0 ]]; then
+            # Force refresh if cache is empty
+            list_frp_services >/dev/null 2>&1
+            services=("${CACHED_SERVICES[@]}")
+        fi
         
         # Services status table (always show)
         printf "%-25s %-12s %-15s %-20s\n" "Service" "Status" "Type" "Last Activity"
