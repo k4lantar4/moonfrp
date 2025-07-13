@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MoonFRP - Advanced FRP Management Script
-# Version: 1.0.9
+# Version: 1.0.5
 # Author: MoonFRP Team
 # Description: Modular FRP configuration and service management tool
 #
@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.9"
+MOONFRP_VERSION="1.0.8"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -1317,7 +1317,7 @@ tcpmuxPassthrough = false
 transport.maxPoolCount = 5
 transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
-transport.heartbeatTimeout = 90
+transport.heartbeatTimeout = 60
 transport.tcpKeepalive = 60
 
 # TLS settings (enabled by default in v0.63.0)
@@ -1463,7 +1463,7 @@ log.disablePrintColor = false
 # Transport settings
 transport.poolCount = 5
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 90
+transport.heartbeatTimeout = 60
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 1800
 transport.tcpMux = true
@@ -2449,7 +2449,7 @@ log.disablePrintColor = false
 # Transport settings
 transport.poolCount = 2
 transport.protocol = "$transport_protocol"
-transport.heartbeatTimeout = 90
+transport.heartbeatTimeout = 60
 transport.dialServerTimeout = 10
 transport.dialServerKeepalive = 1800
 transport.tcpMux = true
@@ -3109,165 +3109,72 @@ optimize_systemctl_calls() {
     alias systemctl='systemctl --no-pager --quiet'
 }
 
-# Helper function to calculate uptime from monotonic timestamps
-_calculate_uptime() {
-    local status="$1"
-    local start_timestamp="$2"
-    local system_uptime="$3"
-
-    if [[ "$status" != "active" || -z "$start_timestamp" || "$start_timestamp" == "0" ]]; then
-        echo "-"
-        return
-    fi
+# List all FRP services with caching
+# List all FRP services with caching
+list_frp_services() {
+    echo -e "\n${CYAN}=== FRP Services Status ===${NC}"
     
-    local service_start_sec=$((start_timestamp / 1000000))
-    # Ensure uptime is not negative if clocks are slightly out of sync
-    local uptime_seconds=$((system_uptime > service_start_sec ? system_uptime - service_start_sec : 0))
-    
-    if [[ $uptime_seconds -le 0 ]]; then
-        echo "< 1s"
-        return
-    fi
-
-    local d=$((uptime_seconds / 86400))
-    local h=$(( (uptime_seconds % 86400) / 3600))
-    local m=$(( (uptime_seconds % 3600) / 60))
-    local s=$((uptime_seconds % 60))
-    
-    local uptime_str=""
-    [[ $d -gt 0 ]] && uptime_str+="${d}d "
-    [[ $h -gt 0 ]] && uptime_str+="${h}h "
-    [[ $m -gt 0 ]] && uptime_str+="${m}m "
-    uptime_str+="${s}s"
-    echo "$uptime_str"
-}
-
-# Efficiently get status for all FRP services in one go
-get_all_services_status() {
-    local services_info=()
-    
-    # Get all services from our fast, cached function
-    local services_list
-    services_list=($(get_frp_services))
-    if [[ ${#services_list[@]} -eq 0 ]]; then
-        return
-    fi
-    
-    # Add .service suffix for systemctl
-    local services_with_suffix=("${services_list[@]/%/.service}")
-
-    # Get all properties in one go. This is much faster than individual calls.
-    local output
-    output=$(systemctl show ${services_with_suffix[@]} --property=Id,ActiveState,UnitFileState,ActiveEnterTimestampMonotonic --no-pager 2>/dev/null)
-    
-    if [[ -z "$output" ]]; then
-        return # No output from systemctl
-    fi
-
-    local current_service=""
-    local status=""
-    local enabled=""
-    local start_timestamp=""
-    
-    # Calculate system uptime once to avoid repeated calls
-    local boot_time=$(date -d "$(uptime -s)" +%s)
+    # Cache services list for 5 seconds to improve performance
     local current_time=$(date +%s)
-    local system_uptime=$((current_time - boot_time))
-
-    # Process each line of the output
-    while IFS= read -r line; do
-        if [[ -z "$line" ]]; then # Empty line separates service blocks
-            if [[ -n "$current_service" ]]; then
-                local uptime=$(_calculate_uptime "$status" "$start_timestamp" "$system_uptime")
-                services_info+=("$current_service;$status;$enabled;$uptime")
-                # Reset for next service
-                current_service=""
-                status=""
-                enabled=""
-                start_timestamp=""
-            fi
-            continue
+    if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 5 ]]; then
+        # More comprehensive service detection with new naming
+        CACHED_SERVICES=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | \
+            grep -E "(moonfrps|moonfrpc|moonfrp|frp)" | \
+            grep -v "@" | \
+            awk '{print $1}' | \
+            sed 's/\.service//' | \
+            grep -v "^$" || echo ""))
+        SERVICES_CACHE_TIME=$current_time
+    fi
+    
+    local services=("${CACHED_SERVICES[@]}")
+    
+    # Filter out empty entries
+    local filtered_services=()
+    for service in "${services[@]}"; do
+        [[ -n "$service" && "$service" != " " ]] && filtered_services+=("$service")
+    done
+    
+    if [[ ${#filtered_services[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No FRP services found${NC}"
+        return
+    fi
+    
+    printf "%-20s %-12s %-15s\n" "Service" "Status" "Type"
+    printf "%-20s %-12s %-15s\n" "-------" "------" "----"
+    
+    for service in "${filtered_services[@]}"; do
+        [[ -z "$service" ]] && continue
+        
+        local status=$(get_service_status "$service")
+        local type="Unknown"
+        
+        if [[ "$service" =~ (frps|moonfrps) ]]; then
+            type="Server"
+        elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
+            type="Client"
+        elif [[ "$service" =~ moonfrp ]]; then
+            type="MoonFRP"
         fi
         
-        local key="${line%%=*}"
-        local value="${line#*=}"
+        # Clean up status text and limit length
+        local clean_status="$status"
+        if [[ ${#clean_status} -gt 10 ]]; then
+            clean_status="${clean_status:0:10}"
+        fi
         
-        case "$key" in
-            Id)
-                current_service="${value%.service}"
-                ;;
-            ActiveState)
-                status="$value"
-                ;;
-            UnitFileState)
-                enabled="$value"
-                ;;
-            ActiveEnterTimestampMonotonic)
-                start_timestamp="$value"
-                ;;
+        local status_color="$RED"
+        case "$status" in
+            "active") status_color="$GREEN" ;;
+            "inactive") status_color="$RED" ;;
+            "activating") status_color="$YELLOW" ;;
+            "deactivating") status_color="$YELLOW" ;;
+            "failed") status_color="$RED" ;;
+            *) status_color="$GRAY" ;;
         esac
-    done <<< "$output"
-
-    # Process the last service block if the output doesn't end with a blank line
-    if [[ -n "$current_service" ]]; then
-        local uptime=$(_calculate_uptime "$status" "$start_timestamp" "$system_uptime")
-        services_info+=("$current_service;$status;$enabled;$uptime")
-    fi
-    
-    # Sort and print
-    if [[ ${#services_info[@]} -gt 0 ]]; then
-        printf "%s\n" "${services_info[@]}" | sort
-    fi
-}
-
-# List all FRP services (active and inactive)
-list_frp_services() {
-    local format="${1:-list}" # list or table
-    
-    # Get all service statuses efficiently
-    local services_status_raw
-    IFS=$'\n' read -d '' -ra services_status_raw < <(get_all_services_status && printf '\0')
-
-    if [[ ${#services_status_raw[@]} -eq 0 ]]; then
-        echo -e "${YELLOW}No FRP services found.${NC}"
-        return 1
-    fi
-
-    if [[ "$format" == "table" ]]; then
-        # Use a wider column for service name to prevent misalignment
-        printf "${CYAN}%-35s %-15s %-15s %-15s${NC}\n" "SERVICE" "STATUS" "ENABLED" "UPTIME"
-        echo -e "${GRAY}----------------------------------------------------------------------------------${NC}"
         
-        for service_info in "${services_status_raw[@]}"; do
-            IFS=';' read -r service status enabled uptime <<< "$service_info"
-            
-            local status_color="$RED"
-            [[ "$status" == "active" ]] && status_color="$GREEN"
-            
-            local enabled_color="$RED"
-            if [[ "$enabled" == "enabled" || "$enabled" == "enabled-runtime" ]]; then
-                enabled_color="$GREEN"
-            fi
-            
-            printf "%-35s ${status_color}%-15s${NC} ${enabled_color}%-15s${NC} %-15s\n" \
-                "$service" \
-                "$status" \
-                "$enabled" \
-                "$uptime"
-        done
-    else
-        # Standard list format
-        local i=1
-        for service_info in "${services_status_raw[@]}"; do
-            IFS=';' read -r service status enabled uptime <<< "$service_info"
-            local status_color="$RED"
-            [[ "$status" == "active" ]] && status_color="$GREEN"
-            echo -e "${CYAN}${i})${NC} ${service} - Status: ${status_color}${status}${NC}"
-            ((i++))
-        done
-    fi
-    
-    return 0
+        printf "%-20s ${status_color}%-12s${NC} %-15s\n" "$service" "$clean_status" "$type"
+    done
 }
 
 # Service management menu
