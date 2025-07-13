@@ -1296,8 +1296,6 @@ auth.token = "$token"
 # Additional scopes for enhanced security
 auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
-kcpBindPort = $bind_port
-
 # Logging
 log.to = "$LOG_DIR/frps.log"
 log.level = "warn"
