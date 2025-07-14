@@ -48,7 +48,7 @@ LOG_DIR="/var/log/frp"
 TEMP_DIR="/tmp/moonfrp"
 
 # MoonFRP Repository Settings
-MOONFRP_VERSION="1.0.9"
+MOONFRP_VERSION="1.1.0"
 MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest"
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
@@ -1286,61 +1286,41 @@ generate_frps_config() {
 # Generated on $(date)
 # Compatible with FRP v0.63.0
 
-# Basic server settings
 bindAddr = "0.0.0.0"
 bindPort = $bind_port
 
-# Authentication
 auth.method = "token"
 auth.token = "$token"
-# Additional scopes for enhanced security
-auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
-# Logging
 log.to = "$LOG_DIR/frps.log"
 log.level = "warn"
 log.maxDays = 2
 log.disablePrintColor = false
 
-# HTTP/HTTPS proxy settings
 vhostHTTPPort = 80
 vhostHTTPSPort = 443
-# Response timeout for vhost servers
 vhostHTTPTimeout = 60
 
-# 🚨 CRITICAL FIX: TCPMUX server port for HTTP CONNECT multiplexing
 tcpmuxHTTPConnectPort = 5002
-# TCPMUX passthrough mode (false = process traffic, true = direct passthrough)
 tcpmuxPassthrough = false
 
-# Transport settings
-transport.maxPoolCount = 5
+transport.maxPoolCount = 50
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 30
+transport.tcpMuxKeepaliveInterval = 5
 transport.heartbeatTimeout = 90
-transport.tcpKeepalive = 90
+transport.tcpKeepalive = 300
 
-# TLS settings (enabled by default in v0.63.0)
 transport.tls.force = false
-# Uncomment and configure for custom certificates
-# transport.tls.certFile = "server.crt"
-# transport.tls.keyFile = "server.key"
-# transport.tls.trustedCaFile = "ca.crt"
 
-# Subdomain settings for HTTP/HTTPS proxies
 subDomainHost = "$custom_subdomain"
 
-# Connection limits per client
 maxPortsPerClient = 0
-# Maximum time to wait for work connections
 userConnTimeout = 10
 
-# Extended port ranges for better compatibility
 allowPorts = [
-    { start = 1000, end = 65535 } # Simplified to allow all common ports
+    { start = 1000, end = 65535 }
 ]
 
-# Performance and monitoring
 detailedErrorsToClient = false
 enablePrometheus = true
 udpPacketSize = 1500
@@ -1444,47 +1424,32 @@ generate_frpc_config() {
 # Generated on $(date)
 # Compatible with FRP v0.63.0
 
-# Server connection settings
 serverAddr = "$server_ip"
 serverPort = $server_port
 
-# Authentication
 auth.method = "token"
 auth.token = "$token"
-# Additional scopes for enhanced security
-auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
 
-# Logging
 log.to = "$LOG_DIR/frpc_${ip_suffix}.log"
 log.level = "warn"
 log.maxDays = 2
 log.disablePrintColor = false
 
-# Transport settings
-transport.poolCount = 5
+transport.poolCount = 10
 transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 90
-transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 1000
+transport.heartbeatInterval = 5
+transport.dialServerTimeout = 5
+transport.dialServerKeepalive = 300
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 30
+transport.tcpMuxKeepaliveInterval = 5
 
-# TLS settings (enabled by default in v0.63.0)
 transport.tls.enable = false
-#transport.tls.disableCustomTLSFirstByte = true
-# Uncomment and configure for custom certificates
-# transport.tls.certFile = "client.crt"
-# transport.tls.keyFile = "client.key"
-# transport.tls.trustedCaFile = "ca.crt"
-# transport.tls.serverName = "example.com"
 
-# Connection behavior settings
 loginFailExit = true
 
-# Client identification
 user = "moonfrp_${ip_suffix}_${timestamp}"
 
-# UDP packet size (must match server setting)
 udpPacketSize = 1500
 
 EOF
@@ -2165,46 +2130,6 @@ EOF
     
     # Add visitor configuration comment for user reference
     cat >> "$config_file" << EOF
-# XTCP P2P Connection Instructions:
-# XTCP creates direct P2P connections with NAT hole punching
-#
-# To connect to XTCP proxies, use a visitor configuration like this:
-# [[visitors]]
-# name = "xtcp_visitor"
-# type = "xtcp"
-# serverName = "xtcp-PORT-${ip_suffix}"
-# secretKey = "$secret_key"
-# bindAddr = "127.0.0.1"
-# bindPort = LOCAL_PORT
-# # Optional: Enable persistent tunnel
-# keepTunnelOpen = true
-# maxRetriesAnHour = 8
-# minRetryInterval = 90
-# # Optional: Fallback to STCP if P2P fails
-# fallbackTo = "stcp_${unique_name}"
-# fallbackTimeoutMs = 1000
-#
-# 🚀 XTCP Features:
-# • True P2P connection with NAT traversal
-# • Automatic fallback to relay mode if P2P fails
-# • Persistent tunnel option for always-on connections
-# • Superior performance for real-time applications
-# • Built-in connection recovery mechanisms
-#
-# 📋 Usage Examples:
-# 1. Gaming: Direct P2P connection for low latency
-# 2. File Transfer: High-speed direct connections
-# 3. Real-time Apps: WebRTC, video streaming
-# 4. Development: Direct access to services without relay overhead
-#
-# 🔧 Advanced Options:
-# • keepTunnelOpen: Maintains persistent connection
-# • maxRetriesAnHour: Controls retry frequency
-# • minRetryInterval: Minimum time between retries
-# • fallbackTo: Automatic fallback proxy for reliability
-#
-# 🚀 Auto-generated visitor configuration available!
-# Check: $CONFIG_DIR/frpc_visitor_${ip_suffix}.toml
 
 EOF
 }
@@ -2428,43 +2353,32 @@ generate_visitor_config() {
 # Generated on $(date)
 # This configuration allows you to connect to ${proxy_type^^} proxies
 
-# Server connection settings
 serverAddr = "$server_ip"
 serverPort = $server_port
 
-# Authentication
 auth.method = "token"
 auth.token = "$token"
-# Additional scopes for enhanced security
-auth.additionalScopes = ["HeartBeats", "NewWorkConns"]  
-# Connection behavior settings
-loginFailExit = false
 
-# Logging
+loginFailExit = true
+
 log.to = "$LOG_DIR/frpc_visitor_${ip_suffix}.log"
 log.level = "warn"
 log.maxDays = 2
 log.disablePrintColor = false
 
-# Transport settings
-transport.poolCount = 5
+transport.poolCount = 10
 transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 90
-transport.dialServerTimeout = 10
-transport.dialServerKeepalive = 1000
+transport.heartbeatInterval = 5
+transport.dialServerTimeout = 5
+transport.dialServerKeepalive = 300
 transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 30
+transport.tcpMuxKeepaliveInterval = 5
 
-# TLS settings (enabled by default in v0.63.0)
 transport.tls.force = false
-# Uncomment and configure for custom certificates
-# transport.tls.certFile = "server.crt"
-# transport.tls.keyFile = "server.key"
 
-# Client identification
 user = "moonfrp_${ip_suffix}_$(date +%s)"
 
-# UDP packet size (must match server setting)
 udpPacketSize = 1500
 
 EOF
@@ -2473,31 +2387,18 @@ EOF
     case "$transport_protocol" in
         "kcp")
             cat >> "$visitor_config_file" << EOF
-# KCP Protocol specific settings for visitor
-# Note: Server must have KCP enabled (kcpBindPort configured)
-
 EOF
             ;;
         "quic")
             cat >> "$visitor_config_file" << EOF
-# QUIC Protocol specific settings for visitor
-# Note: Server must have QUIC enabled (quicBindPort configured)
-#transport.quic.keepalivePeriod = 10
-#transport.quic.maxIdleTimeout = 30
-#transport.quic.maxIncomingStreams = 100000
-
 EOF
             ;;
         "websocket")
             cat >> "$visitor_config_file" << EOF
-# WebSocket Protocol specific settings for visitor
-
 EOF
             ;;
         "wss")
             cat >> "$visitor_config_file" << EOF
-# WebSocket Secure (WSS) Protocol specific settings for visitor
-
 EOF
             ;;
     esac
@@ -2535,15 +2436,11 @@ EOF
         # Add XTCP-specific options
         if [[ "$proxy_type" == "xtcp" ]]; then
             cat >> "$visitor_config_file" << EOF
-# XTCP P2P options - Advanced NAT traversal and P2P settings
 keepTunnelOpen = true
 maxRetriesAnHour = 8
 minRetryInterval = 90
-# Fallback to STCP if P2P fails
 fallbackTo = "stcp_${server_name}"
 fallbackTimeoutMs = 1000
-# Optional: Enable specific user connections only
-# serverUser = "specific_user"
 EOF
         fi
 
@@ -3251,7 +3148,7 @@ service_management_menu() {
         echo "5. View Service Logs"
         echo "6. Reload Service"
         echo "7. Remove Service"
-        echo "8. Remove All Services"
+        echo "8. 🕐 Setup Cron Job (Auto-restart)"
         echo "9. Real-time Status Monitor"
         echo "10. Current Configuration Summary"
         echo "11. 🔧 Modify Server Configuration"
@@ -3273,8 +3170,8 @@ service_management_menu() {
             4) manage_service_action "status" ;;
             5) manage_service_action "logs" ;;
             6) manage_service_action "reload" ;;
-            7) remove_single_service ;;
-            8) remove_all_services ;;
+            7) remove_service_menu ;;
+            8) setup_cron_job ;;
             9) real_time_status_monitor ;;
             10) show_current_config_summary ;;
             11) modify_server_configuration ;;
@@ -4676,10 +4573,9 @@ restart_server_services() {
     fi
 }
 
-# Configuration creation menu
+# Configuration creation menu (optimized)
 config_creation_menu() {
     while true; do
-        # Check for Ctrl+C signal
         if [[ "$CTRL_C_PRESSED" == "true" ]]; then
             CTRL_C_PRESSED=false
             return
@@ -4688,58 +4584,49 @@ config_creation_menu() {
         clear
         echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
         echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
-        echo -e "${PURPLE}║       Configuration Creator          ║${NC}"
+        echo -e "${PURPLE}║     Quick Configuration Setup       ║${NC}"
         echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
         
-        echo -e "\n${CYAN}Select Server Location:${NC}"
-        echo "1. Iran (Server Configuration)"
-        echo "2. Foreign (Client Configuration)"
-        echo "0. Back to Main Menu"
+        echo -e "\n${CYAN}Select Configuration Type:${NC}"
+        echo -e "${GREEN}1.${NC} ${CYAN}Iran Server${NC} ${YELLOW}(Host FRP server)${NC}"
+        echo -e "${GREEN}2.${NC} ${CYAN}Foreign Client${NC} ${YELLOW}(Connect to Iran server)${NC}"
+        echo -e "${GREEN}0.${NC} Back to Main Menu"
         
-        echo -e "\n${YELLOW}Enter your choice [0-2] (default: 1):${NC} "
+        echo -e "\n${YELLOW}Choice [0-2]:${NC} "
         read -r choice
         
-        # Check for Ctrl+C after read
         if [[ "$CTRL_C_PRESSED" == "true" ]]; then
             CTRL_C_PRESSED=false
             return
         fi
         
-        # Default to Iran if no input
         [[ -z "$choice" ]] && choice=1
         
         case $choice in
             1) create_iran_server_config ;;
             2) create_foreign_client_config ;;
             0) return ;;
-            *) log "WARN" "Invalid choice. Please try again." ;;
+            *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
         esac
     done
 }
 
-# Create Iran server configuration
+# Create Iran server configuration (streamlined)
 create_iran_server_config() {
     clear
     echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║        Iran Server Setup            ║${NC}"
-    echo -e "${PURPLE}║     (frps Configuration)             ║${NC}"
+    echo -e "${PURPLE}║         Iran Server Setup           ║${NC}"
     echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
     
     local token dashboard_user dashboard_password
-    local bind_port=7000
-    local dashboard_port=7500
-    local enable_dashboard="y"
+    local bind_port=7000 dashboard_port=7500 enable_dashboard="y"
     
-    echo -e "\n${CYAN}🌐 Server Configuration${NC}"
-    echo -e "${GRAY}This will create the FRP server configuration for Iran location${NC}"
-    echo -e "${GRAY}✨ Supports ALL protocols: TCP, UDP, HTTP/HTTPS, TCPMUX, STCP/XTCP, Plugins${NC}"
+    echo -e "\n${CYAN}📝 Server Configuration${NC}"
     
-    # Authentication Token
-    echo -e "\n${CYAN}🔐 Authentication Settings:${NC}"
-    echo -e "${YELLOW}Generate random token automatically? (Y/n):${NC} "
+    # Quick token setup
+    echo -e "\n${YELLOW}Auto-generate secure token? (Y/n):${NC} "
     read -r auto_token
     
-    # Check for Ctrl+C
     if [[ "$CTRL_C_PRESSED" == "true" ]]; then
         CTRL_C_PRESSED=false
         return
@@ -4747,263 +4634,82 @@ create_iran_server_config() {
     
     if [[ "$auto_token" =~ ^[Nn]$ ]]; then
         while true; do
-            echo -e "${CYAN}Enter custom authentication token (minimum 8 characters):${NC} "
+            echo -e "${CYAN}Custom token (8+ chars):${NC} "
             read -r token
-            
-            # Check for Ctrl+C
             if [[ "$CTRL_C_PRESSED" == "true" ]]; then
                 CTRL_C_PRESSED=false
                 return
             fi
-            
-            if [[ ${#token} -ge 8 ]]; then
-                break
-            else
-                echo -e "${RED}❌ Token must be at least 8 characters long${NC}"
-            fi
+            [[ ${#token} -ge 8 ]] && break
+            echo -e "${RED}Too short${NC}"
         done
     else
         token=$(generate_token)
-        echo -e "${GREEN}✅ Generated secure token: ${token:0:8}...${NC}"
+        echo -e "${GREEN}✅ Token: ${token:0:8}...${NC}"
     fi
     
-    # Bind Port Configuration
-    echo -e "\n${CYAN}🚪 Port Configuration:${NC}"
-    while true; do
-        echo -e "${CYAN}FRP Server Port (default: 7000):${NC} "
-        read -r user_bind_port
-        
-        # Check for Ctrl+C
-        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
-            CTRL_C_PRESSED=false
-            return
-        fi
-        
-        if [[ -z "$user_bind_port" ]]; then
-            bind_port=7000
-            break
-        elif validate_port "$user_bind_port"; then
-            bind_port="$user_bind_port"
-            break
-        else
-            echo -e "${RED}❌ Invalid port number. Please enter a port between 1-65535${NC}"
-        fi
-    done
-    echo -e "${GREEN}✅ FRP Server Port: $bind_port${NC}"
+    # Port setup
+    echo -e "\n${CYAN}Server port (default 7000):${NC} "
+    read -r user_bind_port
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
+        return
+    fi
     
-    # Dashboard Configuration
-    echo -e "\n${CYAN}📊 Web Dashboard Settings:${NC}"
-    echo -e "${YELLOW}Enable web dashboard for monitoring? (Y/n):${NC} "
+    if [[ -n "$user_bind_port" ]] && validate_port "$user_bind_port"; then
+        bind_port="$user_bind_port"
+    fi
+    echo -e "${GREEN}✅ Port: $bind_port${NC}"
+    
+    # Dashboard setup
+    echo -e "\n${CYAN}Enable web dashboard? (Y/n):${NC} "
     read -r enable_dashboard
-    
-    # Check for Ctrl+C
     if [[ "$CTRL_C_PRESSED" == "true" ]]; then
         CTRL_C_PRESSED=false
         return
     fi
     
     if [[ ! "$enable_dashboard" =~ ^[Nn]$ ]]; then
-        # Dashboard Port
-        while true; do
-            echo -e "${CYAN}Dashboard Port (default: 7500):${NC} "
-            read -r user_dashboard_port
-            
-            if [[ -z "$user_dashboard_port" ]]; then
-                dashboard_port=7500
-                break
-            elif validate_port "$user_dashboard_port"; then
-                if [[ "$user_dashboard_port" == "$bind_port" ]]; then
-                    echo -e "${RED}❌ Dashboard port cannot be the same as FRP server port${NC}"
-                else
-                    dashboard_port="$user_dashboard_port"
-                    break
-                fi
-            else
-                echo -e "${RED}❌ Invalid port number${NC}"
-            fi
-        done
-        
-        # Dashboard Credentials
-        echo -e "${CYAN}Dashboard Username (default: admin):${NC} "
-        read -r dashboard_user
-        
-        # Check for Ctrl+C
-        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
-            CTRL_C_PRESSED=false
-            return
+        echo -e "${CYAN}Dashboard port (7500):${NC} "
+        read -r user_dashboard_port
+        if [[ -n "$user_dashboard_port" ]] && validate_port "$user_dashboard_port" && [[ "$user_dashboard_port" != "$bind_port" ]]; then
+            dashboard_port="$user_dashboard_port"
         fi
         
+        echo -e "${CYAN}Username (admin):${NC} "
+        read -r dashboard_user
         [[ -z "$dashboard_user" ]] && dashboard_user="admin"
         
-        echo -e "${CYAN}Dashboard Password (leave empty for auto-generated):${NC} "
+        echo -e "${CYAN}Password (auto):${NC} "
         read -r dashboard_password
-        
-        # Check for Ctrl+C
-        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
-            CTRL_C_PRESSED=false
-            return
-        fi
-        
         [[ -z "$dashboard_password" ]] && dashboard_password=$(generate_token | cut -c1-12)
         
-        echo -e "${GREEN}✅ Dashboard enabled on port $dashboard_port${NC}"
+        echo -e "${GREEN}✅ Dashboard: $dashboard_user @ :$dashboard_port${NC}"
     else
         dashboard_port=""
         dashboard_user=""
         dashboard_password=""
-        echo -e "${YELLOW}⚠️  Dashboard disabled${NC}"
     fi
     
-    # Advanced Protocol Settings
-    echo -e "\n${CYAN}🚀 Advanced Protocol Configuration:${NC}"
-    echo -e "${YELLOW}Enable advanced protocol settings? (Y/n):${NC} "
-    read -r enable_advanced
-    
-    # Check for Ctrl+C
-    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
-        CTRL_C_PRESSED=false
-        return
-    fi
-    
-    local enable_kcp="true"
-    local enable_quic="false"
-    local custom_subdomain="moonfrp.local"
-    local max_clients="0"
-    
-    if [[ ! "$enable_advanced" =~ ^[Nn]$ ]]; then
-        echo -e "\n${CYAN}📡 Protocol Options:${NC}"
-        
-        # KCP Protocol
-        echo -e "${YELLOW}Enable KCP protocol (better for poor networks)? (Y/n):${NC} "
-        read -r kcp_choice
-        [[ "$kcp_choice" =~ ^[Nn]$ ]] && enable_kcp="true"
-        
-        # QUIC Protocol
-        echo -e "${YELLOW}Enable QUIC protocol (experimental, modern)? (y/N):${NC} "
-        read -r quic_choice
-        [[ "$quic_choice" =~ ^[Nn]$ ]] && enable_quic="false"
-        
-        # Subdomain
-        echo -e "${CYAN}Subdomain for HTTP/HTTPS (default: moonfrp.local):${NC} "
-        read -r user_subdomain
-        [[ -n "$user_subdomain" ]] && custom_subdomain="$user_subdomain"
-        
-        # Max clients
-        echo -e "${CYAN}Maximum ports per client (default: 0):${NC} "
-        read -r user_max_clients
-        if [[ -n "$user_max_clients" && "$user_max_clients" =~ ^[0-9]+$ ]]; then
-            max_clients="$user_max_clients"
-        fi
-        
-        echo -e "\n${GREEN}✅ Advanced protocols configured${NC}"
-        [[ "$enable_kcp" == "true" ]] && echo -e "  • ${GREEN}KCP enabled${NC}"
-        [[ "$enable_quic" == "true" ]] && echo -e "  • ${GREEN}QUIC enabled${NC}"
-        echo -e "  • ${GREEN}Subdomain: $custom_subdomain${NC}"
-        echo -e "  • ${GREEN}Max ports per client: $max_clients${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Using default configuration${NC}"
-    fi
-    
-    # Port Conflict Check
-    echo -e "\n${CYAN}🔍 System Check:${NC}"
-    local conflicts=0
-    
-    # Check FRP port
-    if netstat -tlnp 2>/dev/null | grep -q ":$bind_port "; then
-        echo -e "${RED}❌ Port $bind_port is already in use${NC}"
-        ((conflicts++))
-    else
-        echo -e "${GREEN}✅ Port $bind_port is available${NC}"
-    fi
-    
-    # Check dashboard port if enabled
-    if [[ -n "$dashboard_port" ]] && netstat -tlnp 2>/dev/null | grep -q ":$dashboard_port "; then
-        echo -e "${RED}❌ Dashboard port $dashboard_port is already in use${NC}"
-        ((conflicts++))
-    elif [[ -n "$dashboard_port" ]]; then
-        echo -e "${GREEN}✅ Dashboard port $dashboard_port is available${NC}"
-    fi
-    
-    # Handle conflicts
-    if [[ $conflicts -gt 0 ]]; then
-        echo -e "\n${YELLOW}⚠️  Port conflicts detected. Continue anyway? (y/N):${NC} "
-        read -r continue_anyway
-        
-        # Check for Ctrl+C
-        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
-            CTRL_C_PRESSED=false
-            return
-        fi
-        
-        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-            log "INFO" "Configuration cancelled due to port conflicts"
-            read -p "Press Enter to continue..."
-            return
-        fi
-    fi
-    
-    # Configuration Summary
-    # Check for existing server services
-    local existing_servers=($(systemctl list-units --type=service --all --no-legend --plain 2>/dev/null | grep moonfrps | awk '{print $1}' | sed 's/\.service//'))
-    if [[ ${#existing_servers[@]} -gt 0 ]]; then
-        echo -e "\n${YELLOW}⚠️  Existing server service(s) detected:${NC}"
-        for server in "${existing_servers[@]}"; do
-            local server_status=$(systemctl is-active "$server" 2>/dev/null || echo "inactive")
-            echo -e "  • $server: ${server_status}"
-        done
-        
-        echo -e "\n${CYAN}Remove existing servers and create new one? (Y/n):${NC} "
-        read -r remove_servers
-        
-        # Check for Ctrl+C
-        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
-            CTRL_C_PRESSED=false
-            return
-        fi
-        
-        if [[ ! "$remove_servers" =~ ^[Nn]$ ]]; then
-            echo -e "${YELLOW}Removing existing server services...${NC}"
-            for server in "${existing_servers[@]}"; do
-                systemctl stop "$server" 2>/dev/null || true
-                systemctl disable "$server" 2>/dev/null || true
-                rm -f "/etc/systemd/system/${server}.service"
-            done
-            systemctl daemon-reload
-            echo -e "${GREEN}✅ Existing servers removed${NC}"
-        else
-            echo -e "${GREEN}Creating additional server service...${NC}"
-        fi
-    fi
+    # Use optimized defaults
+    local enable_kcp="true" enable_quic="false" custom_subdomain="moonfrp.local" max_clients="0"
 
-    echo -e "\n${CYAN}📋 Configuration Summary:${NC}"
-    echo -e "${GRAY}┌─────────────────────────────────────────────────┐${NC}"
-    echo -e "${GRAY}│${NC} ${GREEN}FRP Server Port:${NC} $bind_port"
-    echo -e "${GRAY}│${NC} ${GREEN}Authentication Token:${NC} ${token:0:8}..."
-    if [[ -n "$dashboard_port" ]]; then
-        echo -e "${GRAY}│${NC} ${GREEN}Dashboard:${NC} Enabled on port $dashboard_port"
-        echo -e "${GRAY}│${NC} ${GREEN}Dashboard User:${NC} $dashboard_user"
-        echo -e "${GRAY}│${NC} ${GREEN}Dashboard Pass:${NC} ${dashboard_password:0:4}..."
-    else
-        echo -e "${GRAY}│${NC} ${YELLOW}Dashboard:${NC} Disabled"
-    fi
-    echo -e "${GRAY}│${NC} ${GREEN}Protocols:${NC} TCP/UDP/HTTP/HTTPS/TCPMUX/STCP/XTCP"
-    [[ "$enable_kcp" == "true" ]] && echo -e "${GRAY}│${NC} ${GREEN}KCP:${NC} Enabled"
-    [[ "$enable_quic" == "true" ]] && echo -e "${GRAY}│${NC} ${GREEN}QUIC:${NC} Enabled"
-    echo -e "${GRAY}│${NC} ${GREEN}Subdomain:${NC} $custom_subdomain"
-    echo -e "${GRAY}│${NC} ${GREEN}Max Ports/Client:${NC} $max_clients"
-    echo -e "${GRAY}└─────────────────────────────────────────────────┘${NC}"
+    echo -e "\n${CYAN}📋 Summary:${NC}"
+    echo -e "  Server Port: ${GREEN}$bind_port${NC}"
+    echo -e "  Token: ${GREEN}${token:0:8}...${NC}"
+    [[ -n "$dashboard_port" ]] && echo -e "  Dashboard: ${GREEN}$dashboard_user @ :$dashboard_port${NC}"
+    echo -e "  Protocols: ${GREEN}All supported${NC}"
     
-    echo -e "\n${YELLOW}Proceed with this configuration? (Y/n):${NC} "
+    echo -e "\n${YELLOW}Create server? (Y/n):${NC} "
     read -r confirm
     
-    # Check for Ctrl+C
     if [[ "$CTRL_C_PRESSED" == "true" ]]; then
         CTRL_C_PRESSED=false
         return
     fi
     
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
-        log "INFO" "Configuration cancelled by user"
+        echo -e "${YELLOW}Cancelled${NC}"
         read -p "Press Enter to continue..."
         return
     fi
@@ -5657,6 +5363,46 @@ service_removal_menu() {
     done
 }
 
+# Remove service menu (includes both single and all)
+remove_service_menu() {
+    while true; do
+        # Check for Ctrl+C signal
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
+        clear
+        echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
+        echo -e "${PURPLE}║         Remove Services              ║${NC}"
+        echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+        
+        list_frp_services
+        
+        echo -e "\n${CYAN}Service Removal Options:${NC}"
+        echo "1. Remove Single Service"
+        echo "2. Remove All Services"
+        echo "0. Back to Service Management"
+        
+        echo -e "\n${YELLOW}Enter your choice [0-2]:${NC} "
+        read -r choice
+        
+        # Check for Ctrl+C after read
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+        
+        case $choice in
+            1) remove_single_service ;;
+            2) remove_all_services ;;
+            0) return ;;
+            *) log "WARN" "Invalid choice. Please try again." ;;
+        esac
+    done
+}
+
 # Remove single service
 remove_single_service() {
     local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
@@ -5699,6 +5445,175 @@ remove_single_service() {
     else
         log "INFO" "Service removal cancelled"
     fi
+    
+    read -p "Press Enter to continue..."
+}
+
+# Setup cron job for auto-restart services
+setup_cron_job() {
+    clear
+    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
+    echo -e "${PURPLE}║       Setup Cron Job                ║${NC}"
+    echo -e "${PURPLE}║    (Auto-restart Services)           ║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+    
+    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+    
+    if [[ ${#services[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No FRP services found${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo -e "\n${CYAN}📋 Available Services:${NC}"
+    list_frp_services
+    
+    echo -e "\n${CYAN}Select service to setup cron job:${NC}"
+    local i=1
+    for service in "${services[@]}"; do
+        echo "$i. $service"
+        ((i++))
+    done
+    echo "$i. Setup for ALL services"
+    
+    echo -e "\n${YELLOW}Select service number:${NC} "
+    read -r service_num
+    
+    local selected_services=()
+    if [[ "$service_num" == "$i" ]]; then
+        # All services
+        selected_services=("${services[@]}")
+        echo -e "${GREEN}✅ Selected: ALL services${NC}"
+    elif [[ "$service_num" =~ ^[0-9]+$ ]] && [[ $service_num -ge 1 ]] && [[ $service_num -le ${#services[@]} ]]; then
+        selected_services=("${services[$((service_num-1))]}")
+        echo -e "${GREEN}✅ Selected: ${selected_services[0]}${NC}"
+    else
+        log "ERROR" "Invalid service number"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    # Select cron schedule
+    echo -e "\n${CYAN}🕐 Select Auto-restart Schedule:${NC}"
+    echo -e "${YELLOW}How often should the service(s) be checked and restarted if needed?${NC}"
+    echo ""
+    echo "1. Every 30 minutes"
+    echo "2. Every 1 hour"
+    echo "3. Every 2 hours"
+    echo "4. Every 6 hours"
+    echo "5. Every 12 hours"
+    echo "6. Every 24 hours"
+    echo "0. Cancel"
+    
+    echo -e "\n${YELLOW}Select schedule [0-6]:${NC} "
+    read -r schedule_choice
+    
+    local cron_schedule=""
+    local schedule_desc=""
+    
+    case $schedule_choice in
+        1) 
+            cron_schedule="*/30 * * * *"
+            schedule_desc="Every 30 minutes"
+            ;;
+        2) 
+            cron_schedule="0 * * * *"
+            schedule_desc="Every 1 hour"
+            ;;
+        3) 
+            cron_schedule="0 */2 * * *"
+            schedule_desc="Every 2 hours"
+            ;;
+        4) 
+            cron_schedule="0 */6 * * *"
+            schedule_desc="Every 6 hours"
+            ;;
+        5) 
+            cron_schedule="0 */12 * * *"
+            schedule_desc="Every 12 hours"
+            ;;
+        6) 
+            cron_schedule="0 0 * * *"
+            schedule_desc="Every 24 hours (midnight)"
+            ;;
+        0)
+            echo -e "${YELLOW}Cron job setup cancelled${NC}"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+        *)
+            log "ERROR" "Invalid schedule choice"
+            read -p "Press Enter to continue..."
+            return
+            ;;
+    esac
+    
+    # Show summary and confirm
+    echo -e "\n${CYAN}📋 Cron Job Summary:${NC}"
+    echo -e "  ${GREEN}Services:${NC} ${#selected_services[@]} service(s)"
+    for svc in "${selected_services[@]}"; do
+        echo -e "    • $svc"
+    done
+    echo -e "  ${GREEN}Schedule:${NC} $schedule_desc"
+    echo -e "  ${GREEN}Cron Pattern:${NC} $cron_schedule"
+    echo -e "  ${GREEN}Action:${NC} Check and restart if not active"
+    
+    echo -e "\n${YELLOW}⚠️  This will add entries to root's crontab${NC}"
+    echo -e "${YELLOW}Create cron job(s)? (y/N):${NC} "
+    read -r confirm_cron
+    
+    if [[ ! "$confirm_cron" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Cron job setup cancelled${NC}"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    # Create cron job entries
+    echo -e "\n${CYAN}🔧 Setting up cron job(s)...${NC}"
+    
+    # Create backup of current crontab
+    crontab -l > /tmp/moonfrp_crontab_backup_$(date +%s) 2>/dev/null || true
+    
+    # Create temporary crontab file
+    local temp_crontab="/tmp/moonfrp_new_crontab_$(date +%s)"
+    
+    # Get current crontab (excluding old MoonFRP entries)
+    crontab -l 2>/dev/null | grep -v "# MoonFRP Auto-restart" > "$temp_crontab" || true
+    
+    # Add new entries
+    echo "" >> "$temp_crontab"
+    echo "# MoonFRP Auto-restart Jobs - Generated $(date)" >> "$temp_crontab"
+    
+    for service in "${selected_services[@]}"; do
+        local cron_command="systemctl is-active $service >/dev/null || systemctl restart $service"
+        echo "$cron_schedule $cron_command # MoonFRP Auto-restart: $service" >> "$temp_crontab"
+        echo -e "${GREEN}✅ Added cron job for: $service${NC}"
+    done
+    
+    # Install new crontab
+    if crontab "$temp_crontab"; then
+        echo -e "\n${GREEN}✅ Cron job(s) installed successfully!${NC}"
+        
+        # Show current MoonFRP cron jobs
+        echo -e "\n${CYAN}📋 Current MoonFRP Cron Jobs:${NC}"
+        crontab -l | grep "MoonFRP Auto-restart" | while read -r line; do
+            echo -e "  ${YELLOW}$line${NC}"
+        done
+        
+        echo -e "\n${CYAN}💡 Management Commands:${NC}"
+        echo -e "  • View all cron jobs: ${GREEN}crontab -l${NC}"
+        echo -e "  • Edit cron jobs: ${GREEN}crontab -e${NC}"
+        echo -e "  • Remove all cron jobs: ${GREEN}crontab -r${NC}"
+        
+        log "INFO" "Cron job(s) created successfully for ${#selected_services[@]} service(s)"
+    else
+        echo -e "\n${RED}❌ Failed to install cron job(s)${NC}"
+        log "ERROR" "Failed to install crontab"
+    fi
+    
+    # Cleanup
+    rm -f "$temp_crontab"
     
     read -p "Press Enter to continue..."
 }
@@ -6473,81 +6388,105 @@ show_about_info() {
 
 # Real-time status monitor
 real_time_status_monitor() {
-    clear
-    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║        Real-time Status Monitor     ║${NC}"
-    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
-    
-    echo -e "\n${CYAN}🔄 Real-time monitoring (Press Ctrl+C to exit)${NC}"
-    
-    local update_interval=3
+    # Initialize monitoring
+    local update_interval=2
     local iteration=0
+    local last_refresh=0
+    
+    # Trap Ctrl+C for clean exit
+    trap 'echo -e "\n${GREEN}Monitoring stopped${NC}"; read -p "Press Enter to continue..."; trap - INT; return' INT
+    
+    echo -e "${CYAN}🔄 Starting real-time monitoring...${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to exit monitoring${NC}"
+    sleep 1
     
     while true; do
         ((iteration++))
+        local current_time=$(date +%s)
         
-        # Clear screen and show header
-        tput cup 5 0
-        tput ed
+        # Only refresh if enough time has passed (prevent flicker)
+        if [[ $((current_time - last_refresh)) -ge $update_interval ]]; then
+            last_refresh=$current_time
+            
+            # Use more stable clear method
+            printf '\033[2J\033[H'
+            
+            # Header with fixed position
+            echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+            echo -e "${PURPLE}║        Real-time Status Monitor     ║${NC}"
+            echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
         
-        echo -e "${CYAN}📊 Live Status (Update #$iteration - Every ${update_interval}s)${NC}"
-        echo -e "${GRAY}$(date)${NC}"
-        echo ""
+            echo -e "${CYAN}📊 Live Status (Update #$iteration - Every ${update_interval}s)${NC}"
+            echo -e "${GRAY}$(date)${NC}"
+            echo ""
+            
+            # Get all services with fresh data (avoid cache issues)
+            local services=($(systemctl list-units --type=service --no-legend --plain 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
+            
+            if [[ ${#services[@]} -eq 0 ]]; then
+                echo -e "${YELLOW}⚠️  No FRP services found${NC}"
+                echo ""
+            fi
         
-        # Get all services (use cached if available)
-        local services=("${CACHED_SERVICES[@]}")
-        if [[ ${#services[@]} -eq 0 ]]; then
-            # Force refresh if cache is empty
-            list_frp_services >/dev/null 2>&1
-            services=("${CACHED_SERVICES[@]}")
-        fi
-        
-        # Services status table (always show)
-        printf "%-25s %-12s %-15s %-20s\n" "Service" "Status" "Type" "Last Activity"
-        printf "%-25s %-12s %-15s %-20s\n" "-------" "------" "----" "-------------"
-        
-        if [[ ${#services[@]} -eq 0 ]]; then
-            printf "%-25s %-12s %-15s %-20s\n" "No services found" "${YELLOW}N/A${NC}" "N/A" "N/A"
-        else
-            for service in "${services[@]}"; do
-                [[ -z "$service" ]] && continue
-                
-                local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
-                local type="Unknown"
-                local last_activity=""
-                
-                # Determine service type
-                if [[ "$service" =~ (frps|moonfrps) ]]; then
-                    type="Server"
-                elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
-                    type="Client"
-                fi
-                
-                # Get last activity
-                last_activity=$(journalctl -u "$service" -n 1 --no-pager --since "1 hour ago" -o short 2>/dev/null | tail -1 | awk '{print $1, $2}' || echo "N/A")
-                [[ -z "$last_activity" || "$last_activity" == " " ]] && last_activity="No recent logs"
-                
-                # Clean up status text and limit length
-                local clean_status="$status"
-                if [[ ${#clean_status} -gt 10 ]]; then
-                    clean_status="${clean_status:0:10}"
-                fi
-                
-                # Color status
-                local status_color="$RED"
-                case "$status" in
-                    "active") status_color="$GREEN" ;;
-                    "inactive") status_color="$RED" ;;
-                    "activating") status_color="$YELLOW" ;;
-                    "deactivating") status_color="$YELLOW" ;;
-                    "failed") status_color="$RED" ;;
-                    *) status_color="$GRAY" ;;
-                esac
-                
-                printf "%-25s ${status_color}%-12s${NC} %-15s %-20s\n" \
-                    "$service" "$clean_status" "$type" "$last_activity"
-            done
-        fi
+            # Services status table (stable layout)
+            printf "%-25s %-12s %-15s %-20s\n" "Service" "Status" "Type" "Uptime"
+            printf "%-25s %-12s %-15s %-20s\n" "-------" "------" "----" "------"
+            
+            if [[ ${#services[@]} -eq 0 ]]; then
+                printf "%-25s %-12s %-15s %-20s\n" "No services found" "${YELLOW}N/A${NC}" "N/A" "N/A"
+            else
+                for service in "${services[@]}"; do
+                    [[ -z "$service" ]] && continue
+                    
+                    # Get status efficiently
+                    local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
+                    local type="Unknown"
+                    local uptime="N/A"
+                    
+                    # Determine service type
+                    if [[ "$service" =~ (frps|moonfrps) ]]; then
+                        type="Server"
+                    elif [[ "$service" =~ (frpc|moonfrpc) ]]; then
+                        type="Client"
+                    fi
+                    
+                    # Get uptime for active services
+                    if [[ "$status" == "active" ]]; then
+                        uptime=$(systemctl show -p ActiveEnterTimestamp "$service" 2>/dev/null | cut -d= -f2-)
+                        if [[ -n "$uptime" && "$uptime" != "n/a" ]]; then
+                            local start_time=$(date -d "$uptime" +%s 2>/dev/null || echo "0")
+                            local current_time=$(date +%s)
+                            local diff=$((current_time - start_time))
+                            
+                            if [[ $diff -gt 86400 ]]; then
+                                uptime="$((diff / 86400))d"
+                            elif [[ $diff -gt 3600 ]]; then
+                                uptime="$((diff / 3600))h"
+                            elif [[ $diff -gt 60 ]]; then
+                                uptime="$((diff / 60))m"
+                            else
+                                uptime="${diff}s"
+                            fi
+                        else
+                            uptime="unknown"
+                        fi
+                    fi
+                    
+                    # Color status
+                    local status_color="$RED"
+                    case "$status" in
+                        "active") status_color="$GREEN" ;;
+                        "inactive") status_color="$RED" ;;
+                        "activating") status_color="$YELLOW" ;;
+                        "deactivating") status_color="$YELLOW" ;;
+                        "failed") status_color="$RED" ;;
+                        *) status_color="$GRAY" ;;
+                    esac
+                    
+                    printf "%-25s ${status_color}%-12s${NC} %-15s %-20s\n" \
+                        "${service:0:24}" "$status" "$type" "$uptime"
+                done
+            fi
         
         # Configuration files status (always show)
         echo ""
@@ -6727,12 +6666,14 @@ real_time_status_monitor() {
         echo ""
         echo -e "${GRAY}Press Ctrl+C to exit monitoring${NC}"
         
-        # Wait for update interval or Ctrl+C
-        sleep $update_interval || break
+            
+            echo ""
+            echo -e "${GRAY}Last update: $(date '+%H:%M:%S') | Next update in ${update_interval}s | Press Ctrl+C to exit${NC}"
+        fi
+        
+        # Short sleep to prevent busy waiting
+        sleep 0.5
     done
-    
-    echo -e "\n${GREEN}Monitoring stopped${NC}"
-    read -p "Press Enter to continue..."
 }
 
 # Show current configuration summary
