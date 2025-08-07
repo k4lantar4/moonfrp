@@ -15,7 +15,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Global variables
-MOONFRP_VERSION="1.1.0"
+MOONFRP_VERSION="1.1.1"
 INSTALL_DIR="/usr/local/bin"
 SCRIPT_NAME="moonfrp"
 SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
@@ -26,7 +26,7 @@ log() {
     local level="$1"
     shift
     local message="$*"
-    
+
     case "$level" in
         "INFO")  echo -e "${GREEN}[INFO]${NC} $message" ;;
         "WARN")  echo -e "${YELLOW}[WARN]${NC} $message" ;;
@@ -70,7 +70,7 @@ detect_system() {
         log "ERROR" "Cannot detect operating system"
         exit 1
     fi
-    
+
     ARCH=$(uname -m)
     case $ARCH in
         x86_64)
@@ -87,7 +87,7 @@ detect_system() {
             exit 1
             ;;
     esac
-    
+
     log "INFO" "Detected OS: $OS $VERSION"
     log "INFO" "Detected Architecture: $ARCH"
 }
@@ -96,13 +96,13 @@ detect_system() {
 check_dependencies() {
     local deps=("curl" "tar" "systemctl")
     local missing_deps=()
-    
+
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             missing_deps+=("$dep")
         fi
     done
-    
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         log "WARN" "Missing dependencies: ${missing_deps[*]}"
         install_dependencies "${missing_deps[@]}"
@@ -112,7 +112,7 @@ check_dependencies() {
 # Install dependencies
 install_dependencies() {
     local deps=("$@")
-    
+
     case "$OS" in
         ubuntu|debian)
             log "INFO" "Installing dependencies using apt..."
@@ -138,53 +138,53 @@ install_dependencies() {
 # Create directories
 create_directories() {
     local dirs=("/opt/frp" "/etc/frp" "/var/log/frp" "$TEMP_DIR")
-    
+
     for dir in "${dirs[@]}"; do
         [[ ! -d "$dir" ]] && mkdir -p "$dir"
     done
-    
+
     log "INFO" "Created required directories"
 }
 
 # Download and install moonfrp script
 install_moonfrp() {
     log "INFO" "Downloading MoonFRP script..."
-    
+
     # Create temporary directory
     mkdir -p "$TEMP_DIR"
-    
+
     # Download the script
     if ! curl -fsSL "$SCRIPT_URL" -o "$TEMP_DIR/$SCRIPT_NAME"; then
         log "ERROR" "Failed to download MoonFRP script"
         exit 1
     fi
-    
+
     # Make it executable
     chmod +x "$TEMP_DIR/$SCRIPT_NAME"
-    
+
     # Ensure installation directory exists
     mkdir -p "$INSTALL_DIR"
-    
+
     # Move to installation directory
     mv "$TEMP_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$SCRIPT_NAME"
-    
+
     log "INFO" "MoonFRP script installed to $INSTALL_DIR/$SCRIPT_NAME"
 }
 
 # Create symlink for global access
 create_symlink() {
     local symlink_path="/usr/bin/moonfrp"
-    
+
     # Remove any existing moonfrp installations in common paths
     local existing_paths=("/usr/bin/moonfrp" "/opt/moonfrp/moonfrp")
-    
+
     for path in "${existing_paths[@]}"; do
         if [[ -f "$path" ]] && [[ "$path" != "$INSTALL_DIR/$SCRIPT_NAME" ]]; then
             log "INFO" "Removing existing installation: $path"
             rm -f "$path"
         fi
     done
-    
+
     # Remove existing symlinks that don't point to our installation
     if [[ -L "$symlink_path" ]]; then
         local current_target=$(readlink "$symlink_path")
@@ -200,7 +200,7 @@ create_symlink() {
         rm -f "$symlink_path"
         log "INFO" "Removed existing file: $symlink_path"
     fi
-    
+
     # Create the symlink
     if ln -sf "$INSTALL_DIR/$SCRIPT_NAME" "$symlink_path"; then
         log "INFO" "Created symlink: $symlink_path -> $INSTALL_DIR/$SCRIPT_NAME"
@@ -253,16 +253,16 @@ main() {
     echo -e "${PURPLE}║     Advanced FRP Management         ║${NC}"
     echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
     echo
-    
+
     log "INFO" "Starting MoonFRP installation..."
-    
+
     check_root
     detect_system
     check_dependencies
     create_directories
     install_moonfrp
     create_symlink
-    
+
     if verify_installation; then
         display_summary
         cleanup
@@ -274,4 +274,4 @@ main() {
 }
 
 # Run main function
-main "$@" 
+main "$@"
