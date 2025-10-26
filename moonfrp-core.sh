@@ -6,6 +6,17 @@
 # Description: Core utilities and functions for MoonFRP
 #==============================================================================
 
+# Prevent multiple sourcing
+if [[ "${MOONFRP_CORE_LOADED:-}" == "true" ]]; then
+    # If we're in a sourced context, return
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+        return 0
+    fi
+    # If we're being executed directly, exit
+    exit 0
+fi
+export MOONFRP_CORE_LOADED="true"
+
 # Use safer bash settings
 set -euo pipefail
 
@@ -14,69 +25,73 @@ if [[ -f "/etc/moonfrp/config" ]]; then
     source "/etc/moonfrp/config"
 fi
 
-# Colors for output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly PURPLE='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly GRAY='\033[0;37m'
-readonly NC='\033[0m' # No Color
+# Colors for output (only declare if not already set)
+[[ -z "${RED:-}" ]] && readonly RED='\033[0;31m'
+[[ -z "${GREEN:-}" ]] && readonly GREEN='\033[0;32m'
+[[ -z "${YELLOW:-}" ]] && readonly YELLOW='\033[1;33m'
+[[ -z "${BLUE:-}" ]] && readonly BLUE='\033[0;34m'
+[[ -z "${PURPLE:-}" ]] && readonly PURPLE='\033[0;35m'
+[[ -z "${CYAN:-}" ]] && readonly CYAN='\033[0;36m'
+[[ -z "${GRAY:-}" ]] && readonly GRAY='\033[0;37m'
+[[ -z "${NC:-}" ]] && readonly NC='\033[0m' # No Color
 
-# Global variables with defaults
-readonly MOONFRP_VERSION="2.0.0"
-readonly FRP_VERSION="${MOONFRP_FRP_VERSION:-0.65.0}"
-readonly FRP_ARCH="${MOONFRP_FRP_ARCH:-linux_amd64}"
-readonly FRP_DIR="${MOONFRP_INSTALL_DIR:-/opt/frp}"
-readonly CONFIG_DIR="${MOONFRP_CONFIG_DIR:-/etc/frp}"
-readonly LOG_DIR="${MOONFRP_LOG_DIR:-/var/log/frp}"
-readonly TEMP_DIR="/tmp/moonfrp"
+# Global variables with defaults (only declare if not already set)
+[[ -z "${MOONFRP_VERSION:-}" ]] && readonly MOONFRP_VERSION="2.0.0"
+[[ -z "${FRP_VERSION:-}" ]] && readonly FRP_VERSION="${MOONFRP_FRP_VERSION:-0.65.0}"
+[[ -z "${FRP_ARCH:-}" ]] && readonly FRP_ARCH="${MOONFRP_FRP_ARCH:-linux_amd64}"
+[[ -z "${FRP_DIR:-}" ]] && readonly FRP_DIR="${MOONFRP_INSTALL_DIR:-/opt/frp}"
+[[ -z "${CONFIG_DIR:-}" ]] && readonly CONFIG_DIR="${MOONFRP_CONFIG_DIR:-/etc/frp}"
+[[ -z "${LOG_DIR:-}" ]] && readonly LOG_DIR="${MOONFRP_LOG_DIR:-/var/log/frp}"
+[[ -z "${TEMP_DIR:-}" ]] && readonly TEMP_DIR="/tmp/moonfrp"
 
-# Service names
-readonly SERVER_SERVICE="moonfrp-server"
-readonly CLIENT_SERVICE_PREFIX="moonfrp-client"
+# Service names (only declare if not already set)
+[[ -z "${SERVER_SERVICE:-}" ]] && readonly SERVER_SERVICE="moonfrp-server"
+[[ -z "${CLIENT_SERVICE_PREFIX:-}" ]] && readonly CLIENT_SERVICE_PREFIX="moonfrp-client"
 
-# Configuration defaults
-readonly DEFAULT_SERVER_BIND_ADDR="${MOONFRP_SERVER_BIND_ADDR:-0.0.0.0}"
-readonly DEFAULT_SERVER_BIND_PORT="${MOONFRP_SERVER_BIND_PORT:-7000}"
-readonly DEFAULT_SERVER_AUTH_TOKEN="${MOONFRP_SERVER_AUTH_TOKEN:-}"
-readonly DEFAULT_SERVER_DASHBOARD_PORT="${MOONFRP_SERVER_DASHBOARD_PORT:-7500}"
-readonly DEFAULT_SERVER_DASHBOARD_USER="${MOONFRP_SERVER_DASHBOARD_USER:-admin}"
-readonly DEFAULT_SERVER_DASHBOARD_PASSWORD="${MOONFRP_SERVER_DASHBOARD_PASSWORD:-}"
+# Configuration defaults (only declare if not already set)
+[[ -z "${DEFAULT_SERVER_BIND_ADDR:-}" ]] && readonly DEFAULT_SERVER_BIND_ADDR="${MOONFRP_SERVER_BIND_ADDR:-0.0.0.0}"
+[[ -z "${DEFAULT_SERVER_BIND_PORT:-}" ]] && readonly DEFAULT_SERVER_BIND_PORT="${MOONFRP_SERVER_BIND_PORT:-7000}"
+[[ -z "${DEFAULT_SERVER_AUTH_TOKEN:-}" ]] && readonly DEFAULT_SERVER_AUTH_TOKEN="${MOONFRP_SERVER_AUTH_TOKEN:-}"
+[[ -z "${DEFAULT_SERVER_DASHBOARD_PORT:-}" ]] && readonly DEFAULT_SERVER_DASHBOARD_PORT="${MOONFRP_SERVER_DASHBOARD_PORT:-7500}"
+[[ -z "${DEFAULT_SERVER_DASHBOARD_USER:-}" ]] && readonly DEFAULT_SERVER_DASHBOARD_USER="${MOONFRP_SERVER_DASHBOARD_USER:-admin}"
+[[ -z "${DEFAULT_SERVER_DASHBOARD_PASSWORD:-}" ]] && readonly DEFAULT_SERVER_DASHBOARD_PASSWORD="${MOONFRP_SERVER_DASHBOARD_PASSWORD:-}"
 
-readonly DEFAULT_CLIENT_SERVER_ADDR="${MOONFRP_CLIENT_SERVER_ADDR:-}"
-readonly DEFAULT_CLIENT_SERVER_PORT="${MOONFRP_CLIENT_SERVER_PORT:-7000}"
-readonly DEFAULT_CLIENT_AUTH_TOKEN="${MOONFRP_CLIENT_AUTH_TOKEN:-}"
-readonly DEFAULT_CLIENT_USER="${MOONFRP_CLIENT_USER:-}"
+[[ -z "${DEFAULT_CLIENT_SERVER_ADDR:-}" ]] && readonly DEFAULT_CLIENT_SERVER_ADDR="${MOONFRP_CLIENT_SERVER_ADDR:-}"
+[[ -z "${DEFAULT_CLIENT_SERVER_PORT:-}" ]] && readonly DEFAULT_CLIENT_SERVER_PORT="${MOONFRP_CLIENT_SERVER_PORT:-7000}"
+[[ -z "${DEFAULT_CLIENT_AUTH_TOKEN:-}" ]] && readonly DEFAULT_CLIENT_AUTH_TOKEN="${MOONFRP_CLIENT_AUTH_TOKEN:-}"
+[[ -z "${DEFAULT_CLIENT_USER:-}" ]] && readonly DEFAULT_CLIENT_USER="${MOONFRP_CLIENT_USER:-}"
 
-readonly DEFAULT_TLS_ENABLE="${MOONFRP_TLS_ENABLE:-true}"
-readonly DEFAULT_TLS_FORCE="${MOONFRP_TLS_FORCE:-false}"
-readonly DEFAULT_AUTH_METHOD="${MOONFRP_AUTH_METHOD:-token}"
-readonly DEFAULT_MAX_POOL_COUNT="${MOONFRP_MAX_POOL_COUNT:-5}"
-readonly DEFAULT_POOL_COUNT="${MOONFRP_POOL_COUNT:-5}"
-readonly DEFAULT_TCP_MUX="${MOONFRP_TCP_MUX:-true}"
-readonly DEFAULT_HEARTBEAT_INTERVAL="${MOONFRP_HEARTBEAT_INTERVAL:-30}"
-readonly DEFAULT_HEARTBEAT_TIMEOUT="${MOONFRP_HEARTBEAT_TIMEOUT:-90}"
+[[ -z "${DEFAULT_TLS_ENABLE:-}" ]] && readonly DEFAULT_TLS_ENABLE="${MOONFRP_TLS_ENABLE:-true}"
+[[ -z "${DEFAULT_TLS_FORCE:-}" ]] && readonly DEFAULT_TLS_FORCE="${MOONFRP_TLS_FORCE:-false}"
+[[ -z "${DEFAULT_AUTH_METHOD:-}" ]] && readonly DEFAULT_AUTH_METHOD="${MOONFRP_AUTH_METHOD:-token}"
+[[ -z "${DEFAULT_MAX_POOL_COUNT:-}" ]] && readonly DEFAULT_MAX_POOL_COUNT="${MOONFRP_MAX_POOL_COUNT:-5}"
+[[ -z "${DEFAULT_POOL_COUNT:-}" ]] && readonly DEFAULT_POOL_COUNT="${MOONFRP_POOL_COUNT:-5}"
+[[ -z "${DEFAULT_TCP_MUX:-}" ]] && readonly DEFAULT_TCP_MUX="${MOONFRP_TCP_MUX:-true}"
+[[ -z "${DEFAULT_HEARTBEAT_INTERVAL:-}" ]] && readonly DEFAULT_HEARTBEAT_INTERVAL="${MOONFRP_HEARTBEAT_INTERVAL:-30}"
+[[ -z "${DEFAULT_HEARTBEAT_TIMEOUT:-}" ]] && readonly DEFAULT_HEARTBEAT_TIMEOUT="${MOONFRP_HEARTBEAT_TIMEOUT:-90}"
 
-readonly DEFAULT_LOG_LEVEL="${MOONFRP_LOG_LEVEL:-info}"
-readonly DEFAULT_LOG_MAX_DAYS="${MOONFRP_LOG_MAX_DAYS:-7}"
-readonly DEFAULT_LOG_DISABLE_COLOR="${MOONFRP_LOG_DISABLE_COLOR:-false}"
+[[ -z "${DEFAULT_LOG_LEVEL:-}" ]] && readonly DEFAULT_LOG_LEVEL="${MOONFRP_LOG_LEVEL:-info}"
+[[ -z "${DEFAULT_LOG_MAX_DAYS:-}" ]] && readonly DEFAULT_LOG_MAX_DAYS="${MOONFRP_LOG_MAX_DAYS:-7}"
+[[ -z "${DEFAULT_LOG_DISABLE_COLOR:-}" ]] && readonly DEFAULT_LOG_DISABLE_COLOR="${MOONFRP_LOG_DISABLE_COLOR:-false}"
 
-# Multi-IP configuration
-readonly SERVER_IPS="${MOONFRP_SERVER_IPS:-}"
-readonly SERVER_PORTS="${MOONFRP_SERVER_PORTS:-}"
-readonly CLIENT_PORTS="${MOONFRP_CLIENT_PORTS:-}"
+# Multi-IP configuration (only declare if not already set)
+[[ -z "${SERVER_IPS:-}" ]] && readonly SERVER_IPS="${MOONFRP_SERVER_IPS:-}"
+[[ -z "${SERVER_PORTS:-}" ]] && readonly SERVER_PORTS="${MOONFRP_SERVER_PORTS:-}"
+[[ -z "${CLIENT_PORTS:-}" ]] && readonly CLIENT_PORTS="${MOONFRP_CLIENT_PORTS:-}"
 
-# Menu state tracking
-declare -A MENU_STATE
-MENU_STATE["depth"]="0"
-MENU_STATE["ctrl_c_pressed"]="false"
+# Menu state tracking (only declare if not already set)
+if [[ -z "${MENU_STATE:-}" ]]; then
+    declare -A MENU_STATE
+    MENU_STATE["depth"]="0"
+    MENU_STATE["ctrl_c_pressed"]="false"
+fi
 
-# Cache for performance
-declare -A CACHE_DATA
-CACHE_DATA["frp_installation"]=""
-CACHE_DATA["update_check_done"]="false"
+# Cache for performance (only declare if not already set)
+if [[ -z "${CACHE_DATA:-}" ]]; then
+    declare -A CACHE_DATA
+    CACHE_DATA["frp_installation"]=""
+    CACHE_DATA["update_check_done"]="false"
+fi
 
 #==============================================================================
 # CORE FUNCTIONS

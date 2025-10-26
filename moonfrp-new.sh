@@ -32,15 +32,6 @@ init
 # Load configuration
 load_config
 
-# Check if running interactively
-if [[ -t 0 ]]; then
-    # Interactive mode - show main menu
-    main_menu
-else
-    # Non-interactive mode - show help
-    show_help
-fi
-
 # Show help for non-interactive usage
 show_help() {
     cat << EOF
@@ -145,7 +136,7 @@ For more information, visit: https://github.com/k4lantar4/moonfrp
 EOF
 }
 
-# Handle command line arguments
+# Handle command line arguments first
 if [[ $# -gt 0 ]]; then
     case "$1" in
         "setup")
@@ -264,4 +255,13 @@ if [[ $# -gt 0 ]]; then
             exit 1
             ;;
     esac
+else
+    # No arguments - check if running interactively
+    if [[ -t 0 ]]; then
+        # Interactive mode - show main menu
+        main_menu
+    else
+        # Non-interactive mode - show help
+        show_help
+    fi
 fi
