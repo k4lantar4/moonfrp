@@ -1,12 +1,9 @@
 #!/bin/bash
 
-#==============================================================================
-# MoonFRP - Advanced FRP Management Script (Refactored)
-# Version: 1.1.0
+# MoonFRP - Advanced FRP Management Script
+# Version: 1.0.5
 # Author: MoonFRP Team
 # Description: Modular FRP configuration and service management tool
-# Refactored: 2025-01-26 - Eliminated redundancy, improved structure
-#==============================================================================
 #
 # Performance Notes:
 # - Server settings in frps.toml:
@@ -20,114 +17,6 @@
 #   * transport.poolCount: Connection pool size (default: 5)
 #   * transport.dialServerKeepalive: Keep-alive interval (default: 300s)
 #   * transport.bandwidthLimit: Bandwidth limit (default: "10MB")
-#
-#==============================================================================
-# FUNCTION INDEX
-#==============================================================================
-# SECTION 1: INITIALIZATION & CONFIGURATION
-#   - create_directories()           - Setup required directories
-#   - setup_signal_handlers()        - Configure signal handling
-#   - init()                         - Initialize script environment
-#   - cleanup_and_exit()             - Cleanup and exit gracefully
-#
-# SECTION 2: UTILITY & HELPER FUNCTIONS  
-#   - log()                          - Centralized logging function
-#   - safe_read()                    - Safe input reading with Ctrl+C handling
-#   - safe_read_menu()               - Menu-specific input reading
-#   - show_spinner()                 - Display loading spinner
-#   - format_bytes()                 - Format byte values for display
-#   - generate_token()               - Generate secure authentication tokens
-#
-# SECTION 3: VALIDATION & ERROR HANDLING
-#   - validate()                     - Unified validation function
-#   - safe_execute()                 - Safe command execution wrapper
-#   - handle_error()                 - Centralized error handling
-#   - check_root()                   - Verify root privileges
-#   - check_dependencies()           - Verify system dependencies
-#   - validate_command()             - Validate command dependencies
-#   - validate_permissions()         - Validate file/directory permissions
-#   - sanitize_input()               - Sanitize input to prevent injection attacks
-#
-# SECTION 4: FRP CONFIGURATION GENERATORS
-#   - generate_proxy_config()        - Unified proxy configuration generator
-#   - generate_frps_config()         - Server configuration generator
-#   - generate_frpc_config()         - Client configuration generator
-#   - generate_visitor_config()      - Visitor configuration generator
-#   - apply_config_template()        - Apply configuration templates
-#   - backup_config()                - Backup configuration files
-#   - validate_config_syntax()      - Validate TOML/JSON/YAML syntax
-#   - create_config_template()      - Create configuration templates
-#
-# SECTION 5: SERVICE MANAGEMENT
-#   - manage_service()               - Unified service management
-#   - create_systemd_service()       - Create systemd service files
-#   - list_frp_services()            - List all FRP services
-#   - get_service_status()           - Get detailed service status
-#   - setup_cron_job()               - Setup automatic restart cron job
-#   - batch_systemctl_operation()     - Batch systemctl operations for performance
-#
-# SECTION 6: MENU SYSTEM
-#   - render_menu()                  - Unified menu rendering
-#   - handle_menu_choice()          - Unified menu input handling
-#   - run_menu()                     - Unified menu loop function
-#   - main_menu()                    - Main application menu
-#   - service_management_menu()      - Service management submenu
-#   - config_creation_menu()         - Configuration creation submenu
-#   - troubleshooting_menu()         - Troubleshooting submenu
-#
-# SECTION 7: DIAGNOSTICS & TROUBLESHOOTING
-#   - view_logs()                    - Unified log viewing system
-#   - check_all_proxy_conflicts()    - Check for proxy name conflicts
-#   - check_all_port_conflicts()     - Check for port conflicts
-#   - validate_all_connections()    - Validate server connections
-#   - fix_common_issues()            - Fix common configuration issues
-#   - generate_diagnostic_report()   - Generate system diagnostic report
-#   - monitor_all_proxies()          - Monitor proxy performance
-#
-# SECTION 8: CONFIG TEMPLATE SYSTEM
-#   - apply_config_template()        - Apply configuration template with variables
-#   - backup_config()                - Backup configuration file with timestamp
-#   - cleanup_old_backups()          - Clean up old backup files
-#   - validate_config_syntax()      - Validate configuration file syntax
-#   - validate_toml_syntax()         - Validate TOML syntax
-#   - validate_json_syntax()         - Validate JSON syntax
-#   - validate_yaml_syntax()         - Validate YAML syntax
-#   - create_config_template()      - Create configuration template
-#   - create_frpc_template()         - Create FRP client template
-#   - create_frps_template()         - Create FRP server template
-#   - create_custom_template()       - Create custom template
-#
-# SECTION 9: CLEANUP SYSTEM
-#   - cleanup()                      - Unified cleanup function
-#   - cleanup_services()             - Cleanup services (stop, disable, remove)
-#   - cleanup_configs()              - Cleanup configuration files
-#   - cleanup_logs()                 - Cleanup log files
-#   - cleanup_temp_files()           - Cleanup temporary files
-#   - cleanup_backups()              - Cleanup backup files
-#   - cleanup_all()                  - Cleanup everything
-#   - cleanup_selective()            - Selective cleanup based on criteria
-#   - cleanup_inactive_services()   - Cleanup inactive services
-#   - cleanup_old_logs()             - Cleanup old log files
-#   - cleanup_unused_configs()       - Cleanup unused config files
-#
-# SECTION 10: PERFORMANCE OPTIMIZATION
-#   - manage_cache()                 - Enhanced cache management with TTL
-#   - get_cached_value()             - Get cached value with TTL check
-#   - set_cached_value()             - Set cached value with timestamp
-#   - clear_cache_entry()            - Clear specific cache entry
-#   - invalidate_cache_entry()       - Invalidate cache entry
-#   - show_cache_stats()             - Show cache statistics
-#   - calculate_cache_hit_ratio()    - Calculate cache hit ratio
-#   - batch_systemctl_operation()   - Batch systemctl operations
-#   - get_services_optimized()       - Optimized service listing with caching
-#   - get_service_status_optimized() - Optimized service status checking
-#   - monitor_performance()          - Performance monitoring and optimization
-#   - clear_performance_caches()     - Clear all performance caches
-#   - optimize_systemctl()           - Optimize systemctl daemon operations
-#
-# SECTION 11: MAIN EXECUTION
-#   - main()                         - Main execution function
-#==============================================================================
 
 # Use safer bash settings, but allow for graceful error handling
 set -uo pipefail
@@ -148,13 +37,9 @@ WHITE='\033[1;37m'
 GRAY='\033[0;90m'
 NC='\033[0m' # No Color
 
-#==============================================================================
-# SECTION 1: INITIALIZATION & CONFIGURATION
-#==============================================================================
-
 # Global variables
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FRP_VERSION="0.65.0"
+FRP_VERSION="0.63.0"
 FRP_ARCH="linux_amd64"
 FRP_DIR="/opt/frp"
 CONFIG_DIR="/etc/frp"
@@ -168,38 +53,16 @@ MOONFRP_REPO_URL="https://api.github.com/repos/k4lantar4/moonfrp/releases/latest
 MOONFRP_SCRIPT_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main/moonfrp.sh"
 MOONFRP_INSTALL_PATH="/usr/local/bin/moonfrp"
 
-# Consolidated global state using associative arrays
-declare -A TEMPLATE_CONFIG=(
-    ["proxy_type"]=""
-    ["proxy_name"]=""
-    ["ports"]=""
-    ["name"]=""
-    ["description"]=""
-    ["custom_domains"]=""
-)
-
-declare -A MENU_STATE=(
-    ["depth"]="0"
-    ["stack"]=""
-    ["ctrl_c_pressed"]="false"
-)
-
-declare -A CACHE_DATA=(
-    ["services"]=""
-    ["services_time"]="0"
-    ["frp_installation"]=""
-    ["update_check_done"]="false"
-    ["last_update_check"]=""
-)
+# Global variables for template and proxy configuration
+SELECTED_PROXY_TYPE=""
+SELECTED_PROXY_NAME=""
+TEMPLATE_PORTS=""
+TEMPLATE_NAME=""
+TEMPLATE_DESCRIPTION=""
+TEMPLATE_PROXY_TYPE=""
+CUSTOM_DOMAINS=""
 
 # Create required directories
-#==============================================================================
-# INITIALIZATION & CONFIGURATION FUNCTIONS
-#==============================================================================
-
-# Create required directories for MoonFRP
-# Creates all necessary directories for configs, logs, services, backups, and templates
-# Returns: 0 on success, 1 on failure
 create_directories() {
     local dirs=("$FRP_DIR" "$CONFIG_DIR" "$LOG_DIR" "$TEMP_DIR")
     for dir in "${dirs[@]}"; do
@@ -207,10 +70,7 @@ create_directories() {
     done
 }
 
-# Centralized logging function with color coding and timestamp
-# Usage: log LEVEL "message"
-# Levels: DEBUG, INFO, WARN, ERROR
-# Colors: DEBUG=gray, INFO=green, WARN=yellow, ERROR=red
+# Logging function
 log() {
     local level="$1"
     shift
@@ -242,27 +102,31 @@ handle_error() {
 # Only trap errors for critical functions, not the entire script
 # trap 'handle_error $LINENO' ERR
 
+# Menu depth tracking for proper Ctrl+C handling
+MENU_DEPTH=0
+MENU_STACK=()
+
 # Signal handler for Ctrl+C
 signal_handler() {
     echo -e "\n${YELLOW}[CTRL+C] Operation cancelled...${NC}"
 
     # If we're in main menu (depth 0), exit gracefully
-    if [[ ${MENU_STATE["depth"]} -eq 0 ]]; then
+    if [[ $MENU_DEPTH -eq 0 ]]; then
         echo -e "${GREEN}Exiting MoonFRP. Goodbye! 🚀${NC}"
         cleanup_and_exit
     else
         # In submenu, return to previous menu
         echo -e "${CYAN}Returning to previous menu...${NC}"
         sleep 1
-        MENU_STATE["ctrl_c_pressed"]="true"
+        CTRL_C_PRESSED=true
         return 130  # Standard exit code for SIGINT
     fi
 }
 
+# Global flag for Ctrl+C detection
+CTRL_C_PRESSED=false
+
 # Setup signal trapping
-# Setup signal handlers for graceful shutdown
-# Configures SIGINT (Ctrl+C) and SIGTERM handlers for clean exit
-# Uses MENU_STATE associative array for tracking menu depth and Ctrl+C state
 setup_signal_handlers() {
     trap signal_handler SIGINT
 }
@@ -270,25 +134,24 @@ setup_signal_handlers() {
 # Enter a submenu (increase depth)
 enter_submenu() {
     local menu_name="$1"
-    ((MENU_STATE["depth"]++))
-    MENU_STATE["stack"]+="$menu_name "
-    MENU_STATE["ctrl_c_pressed"]="false"
+    ((MENU_DEPTH++))
+    MENU_STACK+=("$menu_name")
+    CTRL_C_PRESSED=false
 }
 
 # Exit a submenu (decrease depth)
 exit_submenu() {
-    if [[ ${MENU_STATE["depth"]} -gt 0 ]]; then
-        ((MENU_STATE["depth"]--))
-        # Remove last menu from stack
-        MENU_STATE["stack"]="${MENU_STATE["stack"]% *}"
+    if [[ $MENU_DEPTH -gt 0 ]]; then
+        ((MENU_DEPTH--))
+        unset MENU_STACK[-1]
     fi
-    MENU_STATE["ctrl_c_pressed"]="false"
+    CTRL_C_PRESSED=false
 }
 
 # Function to check if Ctrl+C was pressed during input
 check_ctrl_c() {
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         return 1  # Return to main menu
     fi
     return 0
@@ -301,7 +164,7 @@ safe_read() {
     local default_value="${3:-}"
 
     # Reset Ctrl+C flag
-    MENU_STATE["ctrl_c_pressed"]="false"
+    CTRL_C_PRESSED=false
 
     # Use regular read but check for Ctrl+C interrupt
     if read -r $var_name; then
@@ -313,7 +176,7 @@ safe_read() {
         return 0
     else
         # Read was interrupted (likely by Ctrl+C)
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
             return 1  # Ctrl+C was pressed
         fi
         return 0  # Normal completion
@@ -330,8 +193,8 @@ safe_read_menu() {
     read -r $var_name
 
     # Check for Ctrl+C after read
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         return 1
     fi
 
@@ -354,8 +217,8 @@ safe_read_with_return() {
     read -r $var_name
 
     # Check for Ctrl+C after read
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         echo -e "${CYAN}Returning to menu...${NC}"
         return 1  # Signal to return to menu
     fi
@@ -379,8 +242,8 @@ read_with_ctrl_c_check() {
     read -r $var_name
 
     # Check for Ctrl+C and return to menu if detected
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         echo -e "${CYAN}Returning to menu...${NC}"
         return 1
     fi
@@ -447,10 +310,6 @@ show_quick_help() {
     read -p "Press Enter to continue..."
 }
 
-#==============================================================================
-# SECTION 3: VALIDATION & ERROR HANDLING
-#==============================================================================
-
 # Input validation functions
 validate_ip() {
     local ip="$1"
@@ -509,8 +368,8 @@ validate_domain() {
 select_proxy_type() {
     while true; do
         # Check for Ctrl+C signal
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return 1
         fi
 
@@ -577,8 +436,8 @@ select_proxy_type() {
         read -r choice
 
         # Check for Ctrl+C after read
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return 1
         fi
 
@@ -654,8 +513,8 @@ select_proxy_type() {
 select_plugin_type() {
     while true; do
         # Check for Ctrl+C signal
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return 1
         fi
 
@@ -702,8 +561,8 @@ select_plugin_type() {
         read -r choice
 
         # Check for Ctrl+C after read
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return 1
         fi
 
@@ -1119,17 +978,17 @@ get_config_template() {
 
         case $template_choice in
             1)
-                TEMPLATE_CONFIG["ports"]="22"
-                TEMPLATE_CONFIG["name"]="SSH Server"
-                TEMPLATE_CONFIG["description"]="Secure Shell remote access"
-                TEMPLATE_CONFIG["proxy_type"]="tcp"
+                TEMPLATE_PORTS="22"
+                TEMPLATE_NAME="SSH Server"
+                TEMPLATE_DESCRIPTION="Secure Shell remote access"
+                TEMPLATE_PROXY_TYPE="tcp"
                 return 0
                 ;;
             2)
-                TEMPLATE_CONFIG["ports"]="3000,8080"
-                TEMPLATE_CONFIG["name"]="Web Development"
-                TEMPLATE_CONFIG["description"]="Development servers (React, Node.js, etc.)"
-                TEMPLATE_CONFIG["proxy_type"]="http"
+                TEMPLATE_PORTS="3000,8080"
+                TEMPLATE_NAME="Web Development"
+                TEMPLATE_DESCRIPTION="Development servers (React, Node.js, etc.)"
+                TEMPLATE_PROXY_TYPE="http"
                 return 0
                 ;;
             3)
@@ -1140,15 +999,15 @@ get_config_template() {
                 read -p "Choice [1-3]: " db_choice
 
                 case $db_choice in
-                    1) TEMPLATE_CONFIG["ports"]="3306" ;;
-                    2) TEMPLATE_CONFIG["ports"]="5432" ;;
-                    3) TEMPLATE_CONFIG["ports"]="3306,5432" ;;
+                    1) TEMPLATE_PORTS="3306" ;;
+                    2) TEMPLATE_PORTS="5432" ;;
+                    3) TEMPLATE_PORTS="3306,5432" ;;
                     *) continue ;;
                 esac
 
-                TEMPLATE_CONFIG["name"]="Database Server"
-                TEMPLATE_CONFIG["description"]="Database server access"
-                TEMPLATE_CONFIG["proxy_type"]="tcp"
+                TEMPLATE_NAME="Database Server"
+                TEMPLATE_DESCRIPTION="Database server access"
+                TEMPLATE_PROXY_TYPE="tcp"
                 return 0
                 ;;
             4)
@@ -1159,12 +1018,12 @@ get_config_template() {
                 read -p "Choice [1-3]: " game_choice
 
                 case $game_choice in
-                    1) TEMPLATE_CONFIG["ports"]="25565" ;;
-                    2) TEMPLATE_CONFIG["ports"]="27015" ;;
+                    1) TEMPLATE_PORTS="25565" ;;
+                    2) TEMPLATE_PORTS="27015" ;;
                     3)
                         read -p "Enter custom game port: " custom_port
                         if validate_port "$custom_port"; then
-                            TEMPLATE_CONFIG["ports"]="$custom_port"
+                            TEMPLATE_PORTS="$custom_port"
                         else
                             log "ERROR" "Invalid port number"
                             continue
@@ -1173,16 +1032,16 @@ get_config_template() {
                     *) continue ;;
                 esac
 
-                TEMPLATE_CONFIG["name"]="Game Server"
-                TEMPLATE_CONFIG["description"]="Game server access"
-                TEMPLATE_CONFIG["proxy_type"]="tcp"
+                TEMPLATE_NAME="Game Server"
+                TEMPLATE_DESCRIPTION="Game server access"
+                TEMPLATE_PROXY_TYPE="tcp"
                 return 0
                 ;;
             5)
-                TEMPLATE_CONFIG["ports"]="80,443"
-                TEMPLATE_CONFIG["name"]="Web Server"
-                TEMPLATE_CONFIG["description"]="HTTP/HTTPS web server"
-                TEMPLATE_CONFIG["proxy_type"]="http"
+                TEMPLATE_PORTS="80,443"
+                TEMPLATE_NAME="Web Server"
+                TEMPLATE_DESCRIPTION="HTTP/HTTPS web server"
+                TEMPLATE_PROXY_TYPE="http"
                 return 0
                 ;;
             6)
@@ -1193,22 +1052,22 @@ get_config_template() {
                 read -p "Choice [1-3]: " rdp_choice
 
                 case $rdp_choice in
-                    1) TEMPLATE_CONFIG["ports"]="3389" ;;
-                    2) TEMPLATE_CONFIG["ports"]="5900" ;;
-                    3) TEMPLATE_CONFIG["ports"]="3389,5900" ;;
+                    1) TEMPLATE_PORTS="3389" ;;
+                    2) TEMPLATE_PORTS="5900" ;;
+                    3) TEMPLATE_PORTS="3389,5900" ;;
                     *) continue ;;
                 esac
 
-                TEMPLATE_CONFIG["name"]="Remote Desktop"
-                TEMPLATE_CONFIG["description"]="Remote desktop access"
-                TEMPLATE_CONFIG["proxy_type"]="tcp"
+                TEMPLATE_NAME="Remote Desktop"
+                TEMPLATE_DESCRIPTION="Remote desktop access"
+                TEMPLATE_PROXY_TYPE="tcp"
                 return 0
                 ;;
             7)
-                TEMPLATE_CONFIG["ports"]="21,22"
-                TEMPLATE_CONFIG["name"]="File Transfer"
-                TEMPLATE_CONFIG["description"]="FTP/SFTP file transfer"
-                TEMPLATE_CONFIG["proxy_type"]="tcp"
+                TEMPLATE_PORTS="21,22"
+                TEMPLATE_NAME="File Transfer"
+                TEMPLATE_DESCRIPTION="FTP/SFTP file transfer"
+                TEMPLATE_PROXY_TYPE="tcp"
                 return 0
                 ;;
             8)
@@ -1221,10 +1080,10 @@ get_config_template() {
                     continue
                 fi
 
-                TEMPLATE_CONFIG["ports"]="$custom_ports"
-                TEMPLATE_CONFIG["name"]="Custom Configuration"
-                TEMPLATE_CONFIG["description"]="Custom port configuration"
-                TEMPLATE_CONFIG["proxy_type"]="tcp"
+                TEMPLATE_PORTS="$custom_ports"
+                TEMPLATE_NAME="Custom Configuration"
+                TEMPLATE_DESCRIPTION="Custom port configuration"
+                TEMPLATE_PROXY_TYPE="tcp"
                 return 0
                 ;;
             9)
@@ -1237,28 +1096,28 @@ get_config_template() {
                 read -p "Choose protocol [1-4]: " proto_choice
                 case $proto_choice in
                     1)
-                        TEMPLATE_CONFIG["ports"]="8080,8081,8082"
-                        TEMPLATE_CONFIG["name"]="TCPMUX Tunneling"
-                        TEMPLATE_CONFIG["description"]="HTTP CONNECT based TCP multiplexing"
-                        TEMPLATE_CONFIG["proxy_type"]="tcpmux"
+                        TEMPLATE_PORTS="8080,8081,8082"
+                        TEMPLATE_NAME="TCPMUX Tunneling"
+                        TEMPLATE_DESCRIPTION="HTTP CONNECT based TCP multiplexing"
+                        TEMPLATE_PROXY_TYPE="tcpmux"
                         ;;
                     2)
-                        TEMPLATE_CONFIG["ports"]="2222,3333,4444"
-                        TEMPLATE_CONFIG["name"]="STCP Secure Tunneling"
-                        TEMPLATE_CONFIG["description"]="Secure TCP P2P tunneling"
-                        TEMPLATE_CONFIG["proxy_type"]="stcp"
+                        TEMPLATE_PORTS="2222,3333,4444"
+                        TEMPLATE_NAME="STCP Secure Tunneling"
+                        TEMPLATE_DESCRIPTION="Secure TCP P2P tunneling"
+                        TEMPLATE_PROXY_TYPE="stcp"
                         ;;
                     3)
-                        TEMPLATE_CONFIG["ports"]="5555,6666,7777"
-                        TEMPLATE_CONFIG["name"]="SUDP Secure Tunneling"
-                        TEMPLATE_CONFIG["description"]="Secure UDP P2P tunneling"
-                        TEMPLATE_CONFIG["proxy_type"]="sudp"
+                        TEMPLATE_PORTS="5555,6666,7777"
+                        TEMPLATE_NAME="SUDP Secure Tunneling"
+                        TEMPLATE_DESCRIPTION="Secure UDP P2P tunneling"
+                        TEMPLATE_PROXY_TYPE="sudp"
                         ;;
                     4)
-                        TEMPLATE_CONFIG["ports"]="8888,9999,10000"
-                        TEMPLATE_CONFIG["name"]="XTCP P2P Tunneling"
-                        TEMPLATE_CONFIG["description"]="P2P TCP with NAT traversal"
-                        TEMPLATE_CONFIG["proxy_type"]="xtcp"
+                        TEMPLATE_PORTS="8888,9999,10000"
+                        TEMPLATE_NAME="XTCP P2P Tunneling"
+                        TEMPLATE_DESCRIPTION="P2P TCP with NAT traversal"
+                        TEMPLATE_PROXY_TYPE="xtcp"
                         ;;
                     *)
                         log "WARN" "Invalid choice"
@@ -1281,14 +1140,14 @@ get_config_template() {
 # Show template summary and confirmation
 confirm_template_configuration() {
     echo -e "\n${CYAN}📋 Template Configuration Summary:${NC}"
-    echo -e "${GREEN}Template:${NC} $TEMPLATE_CONFIG["name"]"
-    echo -e "${GREEN}Description:${NC} $TEMPLATE_CONFIG["description"]"
-    echo -e "${GREEN}Proxy Type:${NC} $TEMPLATE_CONFIG["proxy_type"]"
-    echo -e "${GREEN}Ports:${NC} $TEMPLATE_CONFIG["ports"]"
+    echo -e "${GREEN}Template:${NC} $TEMPLATE_NAME"
+    echo -e "${GREEN}Description:${NC} $TEMPLATE_DESCRIPTION"
+    echo -e "${GREEN}Proxy Type:${NC} $TEMPLATE_PROXY_TYPE"
+    echo -e "${GREEN}Ports:${NC} $TEMPLATE_PORTS"
 
     # Show port mapping
     echo -e "\n${CYAN}Port Mapping:${NC}"
-    IFS=',' read -ra PORT_ARRAY <<< "$TEMPLATE_CONFIG["ports"]"
+    IFS=',' read -ra PORT_ARRAY <<< "$TEMPLATE_PORTS"
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
         echo -e "  ${YELLOW}$port${NC} → ${GREEN}$port${NC}"
@@ -1423,10 +1282,6 @@ validate_server_connection() {
     fi
 }
 
-#==============================================================================
-# SECTION 4: FRP CONFIGURATION GENERATORS
-#==============================================================================
-
 # Generate frps.toml configuration
 generate_frps_config() {
     local token="${1:-$(generate_token)}"
@@ -1457,11 +1312,11 @@ generate_frps_config() {
         config_file="$CONFIG_DIR/frps_${config_suffix}.toml"
     fi
 
-    # Create complete and advanced configuration file based on official FRP v0.65.0 format
+    # Create complete and advanced configuration file based on official FRP v0.63.0 format
     cat > "$config_file" << EOF
 # MoonFRP Server Configuration
 # Generated on $(date)
-# Compatible with FRP v0.65.0
+# Compatible with FRP v0.63.0
 
 bindAddr = "0.0.0.0"
 bindPort = $bind_port
@@ -1595,11 +1450,11 @@ generate_frpc_config() {
     local config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
     local timestamp=$(date +%s)
 
-    # Create complete and advanced client configuration based on official FRP v0.65.0 format
+    # Create complete and advanced client configuration based on official FRP v0.63.0 format
     cat > "$config_file" << EOF
 # MoonFRP Client Configuration for IP ending with $ip_suffix
 # Generated on $(date)
-# Compatible with FRP v0.65.0
+# Compatible with FRP v0.63.0
 
 serverAddr = "$server_ip"
 serverPort = $server_port
@@ -1689,41 +1544,41 @@ EOF
     # Bandwidth management flag (will be passed from caller)
     local enable_bandwidth="${9:-false}"
 
-    # Add proxy configurations based on type using unified generator
+    # Add proxy configurations based on type
     case "$proxy_type" in
         "tcp")
-            generate_proxy_config "tcp" "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_tcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         "http")
-            generate_proxy_config "http" "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "false"
+            generate_http_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "false"
             ;;
         "https")
-            generate_proxy_config "http" "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "true"
+            generate_http_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "true"
             ;;
         "udp")
-            generate_proxy_config "udp" "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_udp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         "tcpmux")
-            generate_proxy_config "tcpmux" "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains"
+            generate_tcpmux_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains"
             ;;
         "stcp")
-            generate_proxy_config "stcp" "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_stcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         "sudp")
-            generate_proxy_config "sudp" "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_sudp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         "tcpmux-direct")
-            generate_proxy_config "tcpmux" "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains"
+            generate_tcpmux_direct_proxies "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         "xtcp")
-            generate_proxy_config "xtcp" "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_xtcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
         "plugin_"*)
-            generate_proxy_config "plugin" "$config_file" "$ports" "$ip_suffix" "$timestamp" "" "" "$proxy_type"
+            generate_plugin_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp" "$proxy_type"
             ;;
         *)
             log "WARN" "Unknown proxy type: $proxy_type, defaulting to TCP"
-            generate_proxy_config "tcp" "$config_file" "$ports" "$ip_suffix" "$timestamp"
+            generate_tcp_proxies_simple "$config_file" "$ports" "$ip_suffix" "$timestamp"
             ;;
     esac
 
@@ -1883,72 +1738,8 @@ EOF
     log "INFO" "Applied bandwidth limits to $proxy_name: $GLOBAL_BANDWIDTH_IN"
 }
 
-#==============================================================================
-# UNIFIED PROXY CONFIGURATION GENERATOR
-#==============================================================================
-
-# Unified proxy configuration generator
-generate_proxy_config() {
-    local type="$1"        # tcp|http|udp|tcpmux|stcp|sudp|xtcp|plugin
-    local config_file="$2"
-    local ports="$3"
-    local ip_suffix="$4"
-    local timestamp="$5"
-    local custom_domains="${6:-}"
-    local enable_https="${7:-false}"
-    local additional_params="${8:-}"
-
-    # Validate inputs
-    if [[ -z "$type" || -z "$config_file" || -z "$ports" || -z "$ip_suffix" || -z "$timestamp" ]]; then
-        log "ERROR" "Missing required parameters for proxy configuration"
-        return 1
-    fi
-
-    # Parse ports
-    IFS=',' read -ra PORT_ARRAY <<< "$ports"
-    
-    # Parse domains if provided
-    local DOMAIN_ARRAY=()
-    if [[ -n "$custom_domains" ]]; then
-        IFS=',' read -ra DOMAIN_ARRAY <<< "$custom_domains"
-    fi
-
-    # Generate proxy configurations based on type
-    case "$type" in
-        "tcp")
-            generate_tcp_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp"
-            ;;
-        "http")
-            generate_http_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp" "$custom_domains" "$enable_https"
-            ;;
-        "udp")
-            generate_udp_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp"
-            ;;
-        "tcpmux")
-            generate_tcpmux_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp"
-            ;;
-        "stcp")
-            generate_stcp_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp"
-            ;;
-        "sudp")
-            generate_sudp_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp"
-            ;;
-        "xtcp")
-            generate_xtcp_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp"
-            ;;
-        "plugin")
-            generate_plugin_proxies_unified "$config_file" "$ports" "$ip_suffix" "$timestamp" "$additional_params"
-            ;;
-        *)
-            log "ERROR" "Unknown proxy type: $type"
-            echo -e "${CYAN}Available types:${NC} tcp, http, udp, tcpmux, stcp, sudp, xtcp, plugin"
-            return 1
-            ;;
-    esac
-}
-
-# TCP proxy generator (unified)
-generate_tcp_proxies_unified() {
+# Generate simple TCP proxy configurations
+generate_tcp_proxies_simple() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
@@ -1978,16 +1769,15 @@ loadBalancer.groupKey = "moonfrp_${port}_static"
 
 # Metadata for monitoring
 metadatas.port = "$port"
-metadatas.type = "tcp"
-metadatas.created = "$timestamp"
 metadatas.ip_suffix = "$ip_suffix"
+metadatas.created = "$(date)"
 
 EOF
     done
 }
 
-# HTTP proxy generator (unified)
-generate_http_proxies_unified() {
+# Generate simple HTTP/HTTPS proxy configurations
+generate_http_proxies_simple() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
@@ -2022,32 +1812,62 @@ type = "$proxy_type"
 localIP = "127.0.0.1"
 localPort = $port
 customDomains = ["$domain"]
+# Optional: Use subdomain instead of customDomains
+# subdomain = "app$port"
+# Optional: Location-based routing
+# locations = ["/", "/api", "/admin"]
 
-# Health check configuration
-healthCheck.type = "$proxy_type"
+# Health check configuration for HTTP/HTTPS
+healthCheck.type = "http"
 healthCheck.path = "/health"
 healthCheck.timeoutSeconds = 5
 healthCheck.maxFailed = 3
 healthCheck.intervalSeconds = 30
+healthCheck.httpHeaders = [
+    { name = "User-Agent", value = "MoonFRP-HealthCheck" },
+    { name = "X-Health-Check", value = "true" }
+]
 
 # Load balancing configuration
-loadBalancer.group = "moonfrp_group_${port}"
-loadBalancer.groupKey = "moonfrp_${port}_static"
+loadBalancer.group = "moonfrp_web_group_${port}"
+loadBalancer.groupKey = "moonfrp_web_${port}_static"
+
+# HTTP-specific headers
+
+# HTTP header management
+hostHeaderRewrite = "localhost"
+requestHeaders.set.X-Forwarded-Proto = "$proxy_type"
+requestHeaders.set.X-Forwarded-For = "\$remote_addr"
+requestHeaders.set.X-Real-IP = "\$remote_addr"
+# Optional: Additional request headers
+# requestHeaders.set.X-Custom-Header = "value"
+
+# Optional: Response header management
+# responseHeaders.set.X-Powered-By = "MoonFRP"
+# responseHeaders.set.X-Frame-Options = "DENY"
+
+# Optional: HTTP authentication
+# httpUser = "admin"
+# httpPassword = "secure_password"
+
+# Optional: Route by HTTP user
+# routeByHTTPUser = "specific_user"
 
 # Metadata for monitoring
 metadatas.port = "$port"
-metadatas.type = "$proxy_type"
 metadatas.domain = "$domain"
-metadatas.created = "$timestamp"
 metadatas.ip_suffix = "$ip_suffix"
+metadatas.protocol = "$proxy_type"
+metadatas.created = "$(date)"
 
 EOF
+
         ((port_index++))
     done
 }
 
-# UDP proxy generator (unified)
-generate_udp_proxies_unified() {
+# Generate simple UDP proxy configurations
+generate_udp_proxies_simple() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
@@ -2065,18 +1885,87 @@ localIP = "127.0.0.1"
 localPort = $port
 remotePort = $port
 
+# Note: UDP doesn't support health checks, but we add metadata for monitoring
+# Load balancing configuration
+loadBalancer.group = "moonfrp_udp_group_${port}"
+loadBalancer.groupKey = "moonfrp_udp_${port}_static"
+
+# UDP-specific settings
+
 # Metadata for monitoring
 metadatas.port = "$port"
-metadatas.type = "udp"
-metadatas.created = "$timestamp"
 metadatas.ip_suffix = "$ip_suffix"
+metadatas.protocol = "udp"
+metadatas.created = "$(date)"
 
 EOF
     done
 }
 
-# TCPMUX proxy generator (unified)
-generate_tcpmux_proxies_unified() {
+# Generate TCPMUX proxy configurations
+generate_tcpmux_proxies_simple() {
+    local config_file="$1"
+    local ports="$2"
+    local ip_suffix="$3"
+    local timestamp="$4"
+    local custom_domains="$5"
+
+    IFS=',' read -ra PORT_ARRAY <<< "$ports"
+    IFS=',' read -ra DOMAIN_ARRAY <<< "$custom_domains"
+
+    local port_index=0
+    for port in "${PORT_ARRAY[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        local unique_name="tcpmux-${port}-${ip_suffix}"
+        local domain=""
+
+        # Use corresponding domain if available, otherwise generate unique default
+        if [[ $port_index -lt ${#DOMAIN_ARRAY[@]} ]] && [[ -n "${DOMAIN_ARRAY[$port_index]}" ]]; then
+            domain="${DOMAIN_ARRAY[$port_index]}"
+            domain=$(echo "$domain" | tr -d ' ')
+        else
+            # Create unique domain per IP+Port combination to avoid conflicts
+            domain="p${port}-ip${ip_suffix}.moonfrp.local"
+        fi
+
+        cat >> "$config_file" << EOF
+[[proxies]]
+name = "$unique_name"
+type = "tcpmux"
+multiplexer = "httpconnect"
+localIP = "127.0.0.1"
+localPort = $port
+customDomains = ["$domain"]
+
+EOF
+
+        ((port_index++))
+    done
+
+    # Add usage instructions for TCPMUX
+    cat >> "$config_file" << EOF
+# TCPMUX Usage Instructions:
+#
+# Method 1: HTTP CONNECT Proxy (Recommended)
+# Configure your application to use HTTP CONNECT proxy:
+# Proxy Server: SERVER_IP:5002
+# Target: DOMAIN_NAME:80 (e.g., p9016-ip1.moonfrp.local:80)
+#
+# Method 2: SSH ProxyCommand
+# ssh -o 'ProxyCommand socat - PROXY:SERVER_IP:%h:%p,proxyport=5002' user@p9016-ip1.moonfrp.local
+#
+# Method 3: Browser/Application Proxy Settings
+# HTTP Proxy: SERVER_IP:5002
+# Then access: http://p9016-ip1.moonfrp.local/
+#
+# Method 4: curl with proxy
+# curl -x http://SERVER_IP:5002 http://p9016-ip1.moonfrp.local/
+
+EOF
+}
+
+# Generate TCPMUX-Direct proxy configurations (TCP-like access with TCPMUX benefits)
+generate_tcpmux_direct_proxies() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
@@ -2085,7 +1974,10 @@ generate_tcpmux_proxies_unified() {
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
-        local unique_name="tcpmux-${port}-${ip_suffix}"
+        local unique_name="tcpmux-direct-${port}-${ip_suffix}"
+        # Use a predictable domain pattern for direct access
+        local domain="direct-${port}-${ip_suffix}.moonfrp.local"
+
         cat >> "$config_file" << EOF
 [[proxies]]
 name = "$unique_name"
@@ -2093,24 +1985,74 @@ type = "tcpmux"
 multiplexer = "httpconnect"
 localIP = "127.0.0.1"
 localPort = $port
-customDomains = ["app${port}.moonfrp.local"]
-
-# Metadata for monitoring
-metadatas.port = "$port"
-metadatas.type = "tcpmux"
-metadatas.created = "$timestamp"
-metadatas.ip_suffix = "$ip_suffix"
+customDomains = ["$domain"]
 
 EOF
     done
+
+    # Add comprehensive usage instructions for TCPMUX-Direct
+    cat >> "$config_file" << EOF
+# TCPMUX-Direct Usage Instructions:
+# This configuration provides TCP-like access while maintaining TCPMUX benefits
+#
+# 🚀 Quick Access Methods:
+#
+# 1. VMess/V2Ray Configuration:
+# {
+#   "outbounds": [{
+#     "protocol": "vmess",
+#     "settings": {
+#       "vnext": [{
+#         "address": "SERVER_IP",
+#         "port": 5002,
+#         "users": [{"id": "your-uuid", "security": "auto"}]
+#       }]
+#     },
+#     "streamSettings": {
+#       "network": "tcp",
+#       "tcpSettings": {
+#         "header": {
+#           "type": "http",
+#           "request": {
+#             "method": "CONNECT",
+#             "path": ["/"],
+#             "headers": {
+#               "Host": ["direct-PORT-${ip_suffix}.moonfrp.local:80"]
+#             }
+#           }
+#         }
+#       }
+#     }
+#   }]
+# }
+#
+# 2. SSH Tunnel:
+# ssh -o 'ProxyCommand socat - PROXY:SERVER_IP:%h:%p,proxyport=5002' user@direct-PORT-${ip_suffix}.moonfrp.local
+#
+# 3. Application Proxy Settings:
+# HTTP Proxy: SERVER_IP:5002
+# Target: direct-PORT-${ip_suffix}.moonfrp.local:80
+#
+# 4. Browser Access (for web services):
+# Set proxy: SERVER_IP:5002
+# Visit: http://direct-PORT-${ip_suffix}.moonfrp.local/
+#
+# 5. Command Line Tools:
+# curl -x http://SERVER_IP:5002 http://direct-PORT-${ip_suffix}.moonfrp.local/
+# wget -e use_proxy=yes -e http_proxy=SERVER_IP:5002 http://direct-PORT-${ip_suffix}.moonfrp.local/
+
+EOF
 }
 
-# STCP proxy generator (unified)
-generate_stcp_proxies_unified() {
+# Generate STCP proxy configurations
+generate_stcp_proxies_simple() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
     local timestamp="$4"
+
+    # Generate a unique secret key for this configuration
+    local secret_key="moonfrp-${ip_suffix}-${timestamp}"
 
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
     for port in "${PORT_ARRAY[@]}"; do
@@ -2120,26 +2062,43 @@ generate_stcp_proxies_unified() {
 [[proxies]]
 name = "$unique_name"
 type = "stcp"
-secretKey = "moonfrp_secret_${port}_${ip_suffix}"
+secretKey = "$secret_key"
 localIP = "127.0.0.1"
 localPort = $port
-
-# Metadata for monitoring
-metadatas.port = "$port"
-metadatas.type = "stcp"
-metadatas.created = "$timestamp"
-metadatas.ip_suffix = "$ip_suffix"
+# Allow all users to connect (use specific users for better security)
+allowUsers = ["*"]
+# Optional: Limit to specific users for better security
+# allowUsers = ["user1", "user2"]
 
 EOF
     done
+
+    # Add visitor configuration comment for user reference
+    cat >> "$config_file" << EOF
+# To connect to STCP proxies, use a visitor configuration like this:
+# [[visitors]]
+# name = "stcp_visitor"
+# type = "stcp"
+# serverName = "stcp-PORT-${ip_suffix}"
+# secretKey = "$secret_key"
+# bindAddr = "127.0.0.1"
+# bindPort = LOCAL_PORT
+#
+# 🚀 Auto-generated visitor configuration available!
+# Check: $CONFIG_DIR/frpc_visitor_${ip_suffix}.toml
+
+EOF
 }
 
-# SUDP proxy generator (unified)
-generate_sudp_proxies_unified() {
+# Generate SUDP proxy configurations
+generate_sudp_proxies_simple() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
     local timestamp="$4"
+
+    # Generate a unique secret key for this configuration
+    local secret_key="moonfrp-udp-${ip_suffix}-${timestamp}"
 
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
     for port in "${PORT_ARRAY[@]}"; do
@@ -2149,26 +2108,38 @@ generate_sudp_proxies_unified() {
 [[proxies]]
 name = "$unique_name"
 type = "sudp"
-secretKey = "moonfrp_secret_${port}_${ip_suffix}"
+secretKey = "$secret_key"
 localIP = "127.0.0.1"
 localPort = $port
-
-# Metadata for monitoring
-metadatas.port = "$port"
-metadatas.type = "sudp"
-metadatas.created = "$timestamp"
-metadatas.ip_suffix = "$ip_suffix"
+# Allow all users to connect (use specific users for better security)
+allowUsers = ["*"]
 
 EOF
     done
+
+    # Add visitor configuration comment for user reference
+    cat >> "$config_file" << EOF
+# To connect to SUDP proxies, use a visitor configuration like this:
+# [[visitors]]
+# name = "sudp_visitor"
+# type = "sudp"
+# serverName = "sudp-PORT-${ip_suffix}"
+# secretKey = "$secret_key"
+# bindAddr = "127.0.0.1"
+# bindPort = LOCAL_PORT
+
+EOF
 }
 
-# XTCP proxy generator (unified)
-generate_xtcp_proxies_unified() {
+# Generate XTCP proxy configurations (P2P with NAT traversal)
+generate_xtcp_proxies_simple() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
     local timestamp="$4"
+
+    # Generate a unique secret key for this configuration
+    local secret_key="moonfrp-xtcp-${ip_suffix}-${timestamp}"
 
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
     for port in "${PORT_ARRAY[@]}"; do
@@ -2178,52 +2149,221 @@ generate_xtcp_proxies_unified() {
 [[proxies]]
 name = "$unique_name"
 type = "xtcp"
-secretKey = "moonfrp_secret_${port}_${ip_suffix}"
+secretKey = "$secret_key"
 localIP = "127.0.0.1"
 localPort = $port
-
-# Metadata for monitoring
-metadatas.port = "$port"
-metadatas.type = "xtcp"
-metadatas.created = "$timestamp"
-metadatas.ip_suffix = "$ip_suffix"
+# Allow all users to connect (use specific users for better security)
+allowUsers = ["*"]
+# Optional: Limit to specific users for better security
+# allowUsers = ["user1", "user2"]
 
 EOF
     done
+
+    # Add visitor configuration comment for user reference
+    cat >> "$config_file" << EOF
+
+EOF
 }
 
-# Plugin proxy generator (unified)
-generate_plugin_proxies_unified() {
+# Generate Plugin proxy configurations
+generate_plugin_proxies_simple() {
     local config_file="$1"
     local ports="$2"
     local ip_suffix="$3"
     local timestamp="$4"
-    local plugin_type="${5:-unix_domain_socket}"
+    local plugin_type="$5"
+
+    # Extract plugin name from type
+    local plugin_name="${plugin_type#plugin_}"
 
     IFS=',' read -ra PORT_ARRAY <<< "$ports"
     for port in "${PORT_ARRAY[@]}"; do
         port=$(echo "$port" | tr -d ' ')
-        local unique_name="plugin-${port}-${ip_suffix}"
+        local unique_name="plugin-${plugin_name}-${port}-${ip_suffix}"
+
+        # Base proxy configuration
         cat >> "$config_file" << EOF
 [[proxies]]
 name = "$unique_name"
-type = "plugin"
-plugin = "$plugin_type"
-pluginLocalAddr = "127.0.0.1:$port"
+type = "tcp"
+remotePort = $port
+# Plugin configuration overrides localIP and localPort
+[proxies.plugin]
+EOF
 
-# Metadata for monitoring
-metadatas.port = "$port"
-metadatas.type = "plugin"
-metadatas.plugin_type = "$plugin_type"
-metadatas.created = "$timestamp"
-metadatas.ip_suffix = "$ip_suffix"
+        # Plugin-specific configuration
+        case "$plugin_name" in
+            "unix_socket")
+                cat >> "$config_file" << EOF
+type = "unix_domain_socket"
+unixPath = "/var/run/docker.sock"
+EOF
+                ;;
+            "http_proxy")
+                cat >> "$config_file" << EOF
+type = "http_proxy"
+httpUser = "moonfrp"
+httpPassword = "$(generate_token | cut -c1-12)"
+EOF
+                ;;
+            "socks5")
+                cat >> "$config_file" << EOF
+type = "socks5"
+username = "moonfrp"
+password = "$(generate_token | cut -c1-12)"
+EOF
+                ;;
+            "static_file")
+                cat >> "$config_file" << EOF
+type = "static_file"
+localPath = "/var/www/html"
+stripPrefix = "static"
+httpUser = "moonfrp"
+httpPassword = "$(generate_token | cut -c1-12)"
+EOF
+                ;;
+            "https2http")
+                cat >> "$config_file" << EOF
+type = "https2http"
+localAddr = "127.0.0.1:80"
+crtPath = "/etc/ssl/certs/server.crt"
+keyPath = "/etc/ssl/private/server.key"
+hostHeaderRewrite = "127.0.0.1"
+requestHeaders.set.x-from-where = "frp"
+EOF
+                ;;
+            "http2https")
+                cat >> "$config_file" << EOF
+type = "http2https"
+localAddr = "127.0.0.1:443"
+hostHeaderRewrite = "127.0.0.1"
+requestHeaders.set.x-from-where = "frp"
+EOF
+                ;;
+            "virtual_net")
+                cat >> "$config_file" << EOF
+type = "virtual_net"
+# Virtual network IP address for this client
+destinationIP = "100.86.0.$(($port % 254 + 1))"
+EOF
+                ;;
+        esac
+
+        cat >> "$config_file" << EOF
 
 EOF
     done
+
+    # Add plugin-specific usage instructions
+    cat >> "$config_file" << EOF
+# Plugin Configuration Instructions for $plugin_name:
+#
+EOF
+
+    case "$plugin_name" in
+        "unix_socket")
+            cat >> "$config_file" << EOF
+# Unix Domain Socket Plugin:
+# • Forwards TCP connections to Unix domain sockets
+# • Default socket: /var/run/docker.sock
+# • Change unixPath to your desired socket path
+# • Useful for Docker API, system services
+#
+# Example usage:
+# curl http://SERVER_IP:$port/version
+# (for Docker API version endpoint)
+EOF
+            ;;
+        "http_proxy")
+            cat >> "$config_file" << EOF
+# HTTP Proxy Plugin:
+# • Creates an HTTP proxy server
+# • Configure your applications to use SERVER_IP:$port as HTTP proxy
+# • Authentication: username=moonfrp, password=generated
+# • Supports HTTP CONNECT method for HTTPS tunneling
+#
+# Example usage:
+# curl -x http://moonfrp:password@SERVER_IP:$port http://example.com
+# export http_proxy=http://moonfrp:password@SERVER_IP:$port
+EOF
+            ;;
+        "socks5")
+            cat >> "$config_file" << EOF
+# SOCKS5 Proxy Plugin:
+# • Creates a SOCKS5 proxy server
+# • Supports both TCP and UDP traffic
+# • Configure your applications to use SERVER_IP:$port as SOCKS5 proxy
+# • Authentication: username=moonfrp, password=generated
+#
+# Example usage:
+# curl --socks5 moonfrp:password@SERVER_IP:$port http://example.com
+# ssh -o ProxyCommand="socat - SOCKS5:moonfrp:password@SERVER_IP:$port" user@target
+EOF
+            ;;
+        "static_file")
+            cat >> "$config_file" << EOF
+# Static File Server Plugin:
+# • Serves static files over HTTP
+# • Default directory: /var/www/html
+# • URL prefix 'static' is stripped from paths
+# • Authentication: username=moonfrp, password=generated
+#
+# Example usage:
+# Place files in /var/www/html/
+# Access via: http://SERVER_IP:$port/filename.html
+# With auth: curl -u moonfrp:password http://SERVER_IP:$port/filename.html
+EOF
+            ;;
+        "https2http")
+            cat >> "$config_file" << EOF
+# HTTPS2HTTP Plugin:
+# • Terminates HTTPS connections and forwards as HTTP
+# • Requires SSL certificate files
+# • Default backend: 127.0.0.1:80
+# • Update crtPath and keyPath to your certificate files
+#
+# Example usage:
+# Configure domain to point to SERVER_IP
+# Access via: https://yourdomain.com (terminates SSL, forwards to local:80)
+EOF
+            ;;
+        "http2https")
+            cat >> "$config_file" << EOF
+# HTTP2HTTPS Plugin:
+# • Receives HTTP requests and forwards as HTTPS
+# • Default backend: 127.0.0.1:443
+# • Useful for SSL wrapping legacy services
+#
+# Example usage:
+# Access via: http://SERVER_IP:$port (forwards to secure backend)
+EOF
+            ;;
+        "virtual_net")
+            cat >> "$config_file" << EOF
+# Virtual Network Plugin:
+# • Creates a virtual network between clients
+# • Allows direct IP communication between clients
+# • Requires enabling VirtualNet feature gate
+# • Each client gets a unique IP in the virtual network
+#
+# Setup Instructions:
+# 1. Enable feature gate in client config: featureGates = { VirtualNet = true }
+# 2. Configure virtual network address: virtualNet.address = "100.86.1.1/24"
+# 3. Use assigned IP for communication: 100.86.0.X
+#
+# Example usage:
+# ping 100.86.0.1  # Ping another client in virtual network
+# ssh user@100.86.0.2  # SSH to another client
+# curl http://100.86.0.3:8080  # HTTP request to another client
+EOF
+            ;;
+    esac
+
+    cat >> "$config_file" << EOF
+
+EOF
 }
-
-# Legacy function removed - replaced by generate_proxy_config()
-
 
 # Generate visitor configuration for STCP/XTCP proxies
 generate_visitor_config() {
@@ -2422,10 +2562,6 @@ EOF
     echo "$visitor_config_file"
 }
 
-#==============================================================================
-# SECTION 5: SERVICE MANAGEMENT
-#==============================================================================
-
 # Create systemd service file
 create_systemd_service() {
     local service_name="$1"
@@ -2500,8 +2636,10 @@ EOF
 
 # Clear all performance caches
 clear_performance_caches() {
-    CACHE_DATA["services"]=""
-    CACHE_DATA["services_time"]="0"
+    CACHED_SERVICES=()
+    SERVICES_CACHE_TIME=0
+    SERVICE_STATUS_CACHE=()
+    SERVICE_STATUS_CACHE_TIME=0
     log "DEBUG" "Performance caches cleared"
 }
 
@@ -2621,164 +2759,6 @@ manage_service_safely() {
             ;;
         *)
             log "ERROR" "Unknown action: $action"
-            return 1
-            ;;
-    esac
-}
-
-#==============================================================================
-# UNIFIED SERVICE MANAGEMENT FUNCTION
-#==============================================================================
-
-# Unified service management function
-manage_service() {
-    local action="$1"      # start|stop|restart|reload|status|enable|disable
-    local service="$2"     # service name
-    local options="$3"     # optional flags (e.g., "force", "validate")
-
-    # Validate inputs
-    if [[ -z "$action" || -z "$service" ]]; then
-        log "ERROR" "Missing required parameters: action and service name"
-        return 1
-    fi
-
-    # Check if service file exists
-    if [[ ! -f "$SERVICE_DIR/${service}.service" ]]; then
-        log "ERROR" "Service file not found: $SERVICE_DIR/${service}.service"
-        return 1
-    fi
-
-    # Handle different actions
-    case "$action" in
-        "start")
-            # Validate configuration before starting if requested
-            if [[ "$options" == *"validate"* ]]; then
-                local config_file=""
-                if [[ "$service" =~ moonfrps.*server ]]; then
-                    config_file=$(find "$CONFIG_DIR" -name "frps*.toml" -exec grep -l "$service\|server" {} \; | head -1)
-                elif [[ "$service" =~ moonfrpc.*client ]]; then
-                    local ip_suffix=$(echo "$service" | grep -o 'client-[0-9]\+' | cut -d'-' -f2)
-                    if [[ -n "$ip_suffix" ]]; then
-                        config_file="$CONFIG_DIR/frpc_${ip_suffix}.toml"
-                    fi
-                fi
-
-                if [[ -n "$config_file" && -f "$config_file" ]]; then
-                    if ! validate_frp_config "$config_file"; then
-                        log "ERROR" "Configuration validation failed for $service"
-                        return 1
-                    fi
-                fi
-            fi
-
-            # Start service
-            if systemctl start "$service"; then
-                log "INFO" "Started service: $service"
-                
-                # Enable service
-                if systemctl enable "$service"; then
-                    log "INFO" "Enabled service: $service"
-                else
-                    log "WARN" "Service started but failed to enable: $service"
-                fi
-                
-                clear_performance_caches
-                return 0
-            else
-                log "ERROR" "Failed to start service: $service"
-                return 1
-            fi
-            ;;
-            
-        "stop")
-            if systemctl stop "$service"; then
-                log "INFO" "Stopped service: $service"
-                
-                # Disable service
-                if systemctl disable "$service"; then
-                    log "INFO" "Disabled service: $service"
-                else
-                    log "WARN" "Service stopped but failed to disable: $service"
-                fi
-                
-                clear_performance_caches
-                return 0
-            else
-                log "ERROR" "Failed to stop service: $service"
-                return 1
-            fi
-            ;;
-            
-        "restart")
-            if systemctl restart "$service"; then
-                log "INFO" "Restarted service: $service"
-                clear_performance_caches
-                return 0
-            else
-                log "ERROR" "Failed to restart service: $service"
-                return 1
-            fi
-            ;;
-            
-        "reload")
-            if systemctl reload "$service"; then
-                log "INFO" "Reloaded service: $service"
-                return 0
-            else
-                log "ERROR" "Failed to reload service: $service"
-                return 1
-            fi
-            ;;
-            
-        "status")
-            local status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
-            local enabled=$(systemctl is-enabled "$service" 2>/dev/null || echo "disabled")
-            
-            echo -e "${CYAN}Service: ${YELLOW}$service${NC}"
-            echo -e "  Status: $([ "$status" == "active" ] && echo "${GREEN}🟢 Active${NC}" || echo "${RED}🔴 Inactive${NC}")"
-            echo -e "  Enabled: $([ "$enabled" == "enabled" ] && echo "${GREEN}✅ Enabled${NC}" || echo "${YELLOW}⚠️  Disabled${NC}")"
-            
-            # Show additional info if active
-            if [[ "$status" == "active" ]]; then
-                local uptime=$(systemctl show "$service" -p ActiveEnterTimestamp --value 2>/dev/null)
-                if [[ -n "$uptime" ]]; then
-                    local uptime_formatted=$(date -d "$uptime" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "Unknown")
-                    echo -e "  Started: ${GREEN}$uptime_formatted${NC}"
-                fi
-                
-                local memory_usage=$(systemctl show "$service" -p MemoryCurrent --value 2>/dev/null)
-                if [[ -n "$memory_usage" && "$memory_usage" != "18446744073709551615" ]]; then
-                    local memory_mb=$((memory_usage / 1024 / 1024))
-                    echo -e "  Memory: ${YELLOW}${memory_mb}MB${NC}"
-                fi
-            fi
-            
-            return 0
-            ;;
-            
-        "enable")
-            if systemctl enable "$service"; then
-                log "INFO" "Enabled service: $service"
-                return 0
-            else
-                log "ERROR" "Failed to enable service: $service"
-                return 1
-            fi
-            ;;
-            
-        "disable")
-            if systemctl disable "$service"; then
-                log "INFO" "Disabled service: $service"
-                return 0
-            else
-                log "ERROR" "Failed to disable service: $service"
-                return 1
-            fi
-            ;;
-            
-        *)
-            log "ERROR" "Unknown action: $action"
-            echo -e "${CYAN}Available actions:${NC} start, stop, restart, reload, status, enable, disable"
             return 1
             ;;
     esac
@@ -2928,7 +2908,7 @@ download_and_install_frp() {
     rm -f "$temp_file"
 
     # Invalidate cache
-    CACHE_DATA["frp_installation"]="installed"
+    FRP_INSTALLATION_STATUS="installed"
 
     log "INFO" "FRP v$FRP_VERSION installed successfully"
 }
@@ -2974,7 +2954,7 @@ install_from_local() {
     rm -rf "$TEMP_DIR/frp_${FRP_VERSION}_${FRP_ARCH}"
 
     # Invalidate cache
-    CACHE_DATA["frp_installation"]="installed"
+    FRP_INSTALLATION_STATUS="installed"
 
     log "INFO" "FRP installed from local archive successfully"
 }
@@ -3202,6 +3182,10 @@ check_updates_at_startup() {
     fi
 }
 
+# Cache for service list
+CACHED_SERVICES=()
+SERVICES_CACHE_TIME=0
+
 # Fast loading spinner for operations
 show_spinner() {
     local pid=$1
@@ -3237,26 +3221,23 @@ list_frp_services() {
 
     # Improved caching with longer duration for better performance
     local current_time=$(date +%s)
-    if [[ -z "${CACHE_DATA["services"]}" ]] || [[ $((current_time - ${CACHE_DATA["services_time"]})) -gt 10 ]]; then
+    if [[ ${#CACHED_SERVICES[@]} -eq 0 ]] || [[ $((current_time - SERVICES_CACHE_TIME)) -gt 10 ]]; then
         # Much faster service detection with optimized grep
         local all_services
         all_services=$(systemctl list-units --type=service --no-legend --plain 2>/dev/null | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//')
 
         # Filter and cache results
-        CACHE_DATA["services"]=""
+        CACHED_SERVICES=()
         if [[ -n "$all_services" ]]; then
-            CACHE_DATA["services"]="$all_services"
+            while IFS= read -r service; do
+                [[ -n "$service" && "$service" != " " ]] && CACHED_SERVICES+=("$service")
+            done <<< "$all_services"
         fi
 
-        CACHE_DATA["services_time"]="$current_time"
+        SERVICES_CACHE_TIME=$current_time
     fi
 
-    local services=()
-    if [[ -n "${CACHE_DATA["services"]}" ]]; then
-        while IFS= read -r service; do
-            [[ -n "$service" && "$service" != " " ]] && services+=("$service")
-        done <<< "${CACHE_DATA["services"]}"
-    fi
+    local services=("${CACHED_SERVICES[@]}")
 
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No FRP services found${NC}"
@@ -3315,16 +3296,12 @@ list_frp_services() {
     done
 }
 
-#==============================================================================
-# SECTION 6: MENU SYSTEM
-#==============================================================================
-
 # Service management menu
 service_management_menu() {
     while true; do
         # Check for Ctrl+C signal
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return
         fi
 
@@ -3343,21 +3320,20 @@ service_management_menu() {
         echo "4. View Service Status"
         echo "5. View Service Logs"
         echo "6. Reload Service"
-        echo "7. Remove Single Service"
-        echo "8. Remove All Services"
-        echo "9. 🕐 Setup Cron Job (Auto-restart)"
-        echo "10. Real-time Status Monitor"
-        echo "11. Current Configuration Summary"
-        echo "12. 🔧 Modify Server Configuration"
-        echo "13. 🧹 Advanced Cleanup (Remove All FRP)"
+        echo "7. Remove Service"
+        echo "8. 🕐 Setup Cron Job (Auto-restart)"
+        echo "9. Real-time Status Monitor"
+        echo "10. Current Configuration Summary"
+        echo "11. 🔧 Modify Server Configuration"
+        echo "12. 🧹 Advanced Cleanup (Remove All FRP)"
         echo "0. Back to Main Menu"
 
-        echo -e "\n${YELLOW}Enter your choice [0-13]:${NC} "
+        echo -e "\n${YELLOW}Enter your choice [0-12]:${NC} "
         read -r choice
 
         # Check for Ctrl+C after read
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return
         fi
 
@@ -3368,13 +3344,12 @@ service_management_menu() {
             4) manage_service_action "status" ;;
             5) manage_service_action "logs" ;;
             6) manage_service_action "reload" ;;
-            7) remove_single_service ;;
-            8) remove_all_services ;;
-            9) setup_cron_job ;;
-            10) real_time_status_monitor ;;
-            11) show_current_config_summary ;;
-            12) modify_server_configuration ;;
-            13) cleanup_all_frp_services ;;
+            7) remove_service_menu ;;
+            8) setup_cron_job ;;
+            9) real_time_status_monitor ;;
+            10) show_current_config_summary ;;
+            11) modify_server_configuration ;;
+            12) cleanup_all_frp_services ;;
             0) return ;;
             *) log "WARN" "Invalid choice. Please try again." ;;
         esac
@@ -4371,21 +4346,11 @@ manage_service_action() {
     echo -e "\n${CYAN}Available services:${NC}"
 
     # Use cached services if available, otherwise get fresh list
-    local services=()
-    if [[ -n "${CACHE_DATA["services"]}" ]]; then
-        while IFS= read -r service; do
-            [[ -n "$service" && "$service" != " " ]] && services+=("$service")
-        done <<< "${CACHE_DATA["services"]}"
-    fi
-    
+    local services=("${CACHED_SERVICES[@]}")
     if [[ ${#services[@]} -eq 0 ]]; then
         # Force refresh if cache is empty
         list_frp_services >/dev/null 2>&1
-        if [[ -n "${CACHE_DATA["services"]}" ]]; then
-            while IFS= read -r service; do
-                [[ -n "$service" && "$service" != " " ]] && services+=("$service")
-            done <<< "${CACHE_DATA["services"]}"
-        fi
+        services=("${CACHED_SERVICES[@]}")
     fi
 
     if [[ ${#services[@]} -eq 0 ]]; then
@@ -4448,10 +4413,10 @@ manage_service_action() {
         for service in "${services[@]}"; do
             echo -e "${CYAN}Processing: $service${NC}"
             case "$action" in
-                "start") manage_service "start" "$service" ;;
-                "stop") manage_service "stop" "$service" ;;
-                "restart") manage_service "restart" "$service" ;;
-                "reload") manage_service "reload" "$service" ;;
+                "start") start_service "$service" ;;
+                "stop") stop_service "$service" ;;
+                "restart") restart_service "$service" ;;
+                "reload") systemctl reload "$service" 2>/dev/null || systemctl restart "$service" ;;
                 "status"|"logs")
                     echo -e "${YELLOW}Skipping '$action' for $service (not supported for bulk operations)${NC}"
                     ;;
@@ -4484,25 +4449,35 @@ manage_service_action() {
     case "$action" in
         "start")
             echo -e "\n${CYAN}Starting service: $selected_service${NC}"
-            manage_service "start" "$selected_service" "validate"
+            start_service "$selected_service"
             ;;
         "stop")
             echo -e "\n${CYAN}Stopping service: $selected_service${NC}"
-            manage_service "stop" "$selected_service"
+            stop_service "$selected_service"
             ;;
         "restart")
             echo -e "\n${CYAN}Restarting service: $selected_service${NC}"
-            manage_service "restart" "$selected_service"
+            restart_service "$selected_service"
             ;;
         "status")
-            manage_service "status" "$selected_service"
+            show_enhanced_service_status "$selected_service"
             ;;
         "logs")
-            view_logs "$selected_service" "enhanced"
+            show_enhanced_service_logs "$selected_service"
             ;;
         "reload")
             echo -e "\n${CYAN}Reloading service: $selected_service${NC}"
-            manage_service "reload" "$selected_service"
+            if systemctl reload "$selected_service" 2>/dev/null; then
+                echo -e "${GREEN}✅ Service reloaded successfully${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Reload failed, attempting restart...${NC}"
+                if systemctl restart "$selected_service" 2>/dev/null; then
+                    echo -e "${GREEN}✅ Service restarted successfully${NC}"
+                else
+                    echo -e "${RED}❌ Failed to restart service${NC}"
+                fi
+            fi
+            log "INFO" "Reloaded service: $selected_service"
             ;;
     esac
 
@@ -4776,8 +4751,8 @@ restart_server_services() {
 # Configuration creation menu (optimized)
 config_creation_menu() {
     while true; do
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return
         fi
 
@@ -4795,8 +4770,8 @@ config_creation_menu() {
         echo -e "\n${YELLOW}Choice [0-2]:${NC} "
         read -r choice
 
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return
         fi
 
@@ -4827,8 +4802,8 @@ create_iran_server_config() {
     echo -e "\n${YELLOW}Auto-generate secure token? (Y/n):${NC} "
     read -r auto_token
 
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         return
     fi
 
@@ -4836,8 +4811,8 @@ create_iran_server_config() {
         while true; do
             echo -e "${CYAN}Custom token (8+ chars):${NC} "
             read -r token
-            if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-                MENU_STATE["ctrl_c_pressed"]="false"
+            if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+                CTRL_C_PRESSED=false
                 return
             fi
             [[ ${#token} -ge 8 ]] && break
@@ -4851,8 +4826,8 @@ create_iran_server_config() {
     # Port setup
     echo -e "\n${CYAN}Server port (default 7000):${NC} "
     read -r user_bind_port
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         return
     fi
 
@@ -4864,8 +4839,8 @@ create_iran_server_config() {
     # Dashboard setup
     echo -e "\n${CYAN}Enable web dashboard? (Y/n):${NC} "
     read -r enable_dashboard
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         return
     fi
 
@@ -4903,8 +4878,8 @@ create_iran_server_config() {
     echo -e "\n${YELLOW}Create server? (Y/n):${NC} "
     read -r confirm
 
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
+    if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+        CTRL_C_PRESSED=false
         return
     fi
 
@@ -5115,8 +5090,8 @@ create_foreign_client_config() {
         read -r server_ips
 
         # Check for Ctrl+C
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return
         fi
 
@@ -5130,7 +5105,7 @@ create_foreign_client_config() {
             break
         else
             echo -e "${RED}❌ Invalid IP address format${NC}"
-            echo -e "${YELLOW}Example: 89.47.198.149 or 89.47.198.149,85.15.65.147${NC}"
+            echo -e "${YELLOW}Example: 89.47.198.149 or 89.47.198.149,85.15.63.147${NC}"
         fi
     done
 
@@ -5224,9 +5199,9 @@ create_foreign_client_config() {
             # Template configuration
             if get_config_template; then
                 if confirm_template_configuration; then
-                    ports="$TEMPLATE_CONFIG["ports"]"
-                    proxy_type="$TEMPLATE_CONFIG["proxy_type"]"
-                    echo -e "\n${GREEN}✅ Using template: $TEMPLATE_CONFIG["name"]${NC}"
+                    ports="$TEMPLATE_PORTS"
+                    proxy_type="$TEMPLATE_PROXY_TYPE"
+                    echo -e "\n${GREEN}✅ Using template: $TEMPLATE_NAME${NC}"
                     echo -e "${GREEN}✅ Ports configured: $ports${NC}"
                 else
                     log "INFO" "Template configuration cancelled"
@@ -5649,6 +5624,44 @@ service_removal_menu() {
 }
 
 # Remove service menu (includes both single and all)
+remove_service_menu() {
+    while true; do
+        # Check for Ctrl+C signal
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+
+        clear
+        echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
+        echo -e "${PURPLE}║         Remove Services              ║${NC}"
+        echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
+
+        list_frp_services
+
+        echo -e "\n${CYAN}Service Removal Options:${NC}"
+        echo "1. Remove Single Service"
+        echo "2. Remove All Services"
+        echo "0. Back to Service Management"
+
+        echo -e "\n${YELLOW}Enter your choice [0-2]:${NC} "
+        read -r choice
+
+        # Check for Ctrl+C after read
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
+            return
+        fi
+
+        case $choice in
+            1) remove_single_service ;;
+            2) remove_all_services ;;
+            0) return ;;
+            *) log "WARN" "Invalid choice. Please try again." ;;
+        esac
+    done
+}
 
 # Remove single service
 remove_single_service() {
@@ -5938,23 +5951,28 @@ remove_service() {
     log "INFO" "Successfully removed service: $service_name"
 }
 
+# Global cache variables for performance
+FRP_INSTALLATION_STATUS=""
+UPDATE_CHECK_DONE=false
+LAST_UPDATE_CHECK=""
+
 # Fast FRP installation check with caching
 check_frp_installation_cached() {
-    if [[ -z "${CACHE_DATA["frp_installation"]}" ]]; then
+    if [[ -z "$FRP_INSTALLATION_STATUS" ]]; then
         if [[ -f "$FRP_DIR/frps" ]] && [[ -f "$FRP_DIR/frpc" ]]; then
-            CACHE_DATA["frp_installation"]="installed"
+            FRP_INSTALLATION_STATUS="installed"
         else
-            CACHE_DATA["frp_installation"]="not_installed"
+            FRP_INSTALLATION_STATUS="not_installed"
         fi
     fi
 
-    [[ "${CACHE_DATA["frp_installation"]}" == "installed" ]]
+    [[ "$FRP_INSTALLATION_STATUS" == "installed" ]]
 }
 
 # Check updates only once per session
 check_updates_cached() {
-    if [[ "${CACHE_DATA["update_check_done"]}" == "false" ]]; then
-        CACHE_DATA["update_check_done"]="true"
+    if [[ "$UPDATE_CHECK_DONE" == "false" ]]; then
+        UPDATE_CHECK_DONE=true
 
         # Run update check in background to avoid blocking
         (
@@ -5963,9 +5981,9 @@ check_updates_cached() {
             update_status=$?
 
             if [[ $update_status -eq 0 ]]; then
-                CACHE_DATA["last_update_check"]="available"
+                LAST_UPDATE_CHECK="available"
             else
-                CACHE_DATA["last_update_check"]="none"
+                LAST_UPDATE_CHECK="none"
             fi
         ) &
 
@@ -5977,12 +5995,12 @@ check_updates_cached() {
 # Main menu
 main_menu() {
     # Initialize cached values on first run
-    [[ -z "${CACHE_DATA["frp_installation"]}" ]] && check_frp_installation_cached >/dev/null
-    [[ "${CACHE_DATA["update_check_done"]}" == "false" ]] && check_updates_cached
+    [[ -z "$FRP_INSTALLATION_STATUS" ]] && check_frp_installation_cached >/dev/null
+    [[ "$UPDATE_CHECK_DONE" == "false" ]] && check_updates_cached
 
     # Set main menu depth
-    MENU_STATE["depth"]="0"
-    MENU_STATE["stack"]=""
+    MENU_DEPTH=0
+    MENU_STACK=()
 
     # Add safety check to prevent infinite loops
     local menu_iterations=0
@@ -5990,7 +6008,7 @@ main_menu() {
 
     while true; do
         # Check for Ctrl+C in main menu
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
             echo -e "\n${GREEN}Thank you for using MoonFRP! 🚀${NC}"
             cleanup_and_exit
         fi
@@ -6017,7 +6035,7 @@ main_menu() {
         fi
 
         # Show update notification only if available (non-blocking)
-        if [[ "${CACHE_DATA["last_update_check"]}" == "available" ]]; then
+        if [[ "$LAST_UPDATE_CHECK" == "available" ]]; then
             echo -e "\n${YELLOW}🔔 Update Available!${NC} ${GREEN}A new version of MoonFRP is available${NC}"
             echo -e "${CYAN}   Use menu option 6 to update${NC}"
         fi
@@ -6035,11 +6053,7 @@ main_menu() {
 
         # Show performance info in debug mode
         if [[ "${DEBUG:-}" == "1" ]]; then
-            local service_count=0
-            if [[ -n "${CACHE_DATA["services"]}" ]]; then
-                service_count=$(echo "${CACHE_DATA["services"]}" | wc -l)
-            fi
-            echo -e "\n${GRAY}[Debug] Menu load time: $(date +%T) | Services cached: $service_count | FRP status: ${CACHE_DATA["frp_installation"]}${NC}"
+            echo -e "\n${GRAY}[Debug] Menu load time: $(date +%T) | Services cached: ${#CACHED_SERVICES[@]} | FRP status: $FRP_INSTALLATION_STATUS${NC}"
         fi
 
         echo -e "\n${YELLOW}Enter your choice [0-9]:${NC} "
@@ -6164,10 +6178,10 @@ init() {
     optimize_systemctl_calls >/dev/null 2>&1
 
     # Initialize caches and flags
-    CACHE_DATA["frp_installation"]=""
-    CACHE_DATA["update_check_done"]="false"
-    CACHE_DATA["services"]=""
-    MENU_STATE["ctrl_c_pressed"]="false"
+    FRP_INSTALLATION_STATUS=""
+    UPDATE_CHECK_DONE=false
+    CACHED_SERVICES=()
+    CTRL_C_PRESSED=false
 
     log "INFO" "MoonFRP script initialized successfully"
 }
@@ -6184,1802 +6198,12 @@ cleanup_and_exit() {
     exit 0
 }
 
-#==============================================================================
-# UNIFIED MENU SYSTEM FUNCTIONS
-#==============================================================================
-
-# Unified menu rendering function
-render_menu() {
-    local title="$1"
-    local subtitle="$2"
-    local options="$3"    # Array of menu options
-    local prompt="$4"     # Input prompt
-    local debug_info="$5" # Optional debug information
-
-    # Clear screen with optimized escape sequences
-    printf '\033[2J\033[H'
-    
-    # Render header
-    echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║            MoonFRP                   ║${NC}"
-    if [[ -n "$subtitle" ]]; then
-        echo -e "${PURPLE}║        $subtitle${NC}"
-    fi
-    echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
-
-    # Render menu options
-    if [[ -n "$options" ]]; then
-        echo -e "\n${CYAN}$title:${NC}"
-        echo "$options"
-    fi
-
-    # Show debug info if provided
-    if [[ -n "$debug_info" && "${DEBUG:-}" == "1" ]]; then
-        echo -e "\n${GRAY}[Debug] $debug_info${NC}"
-    fi
-
-    # Render prompt
-    if [[ -n "$prompt" ]]; then
-        echo -e "\n${YELLOW}$prompt${NC} "
-    fi
-}
-
-# Unified menu choice handling function
-handle_menu_choice() {
-    local menu_name="$1"
-    local choices="$2"    # Associative array of choices
-    local default_action="$3"  # Default action for unknown choices
-
-    # Read user input
-    read -r choice
-
-    # Check for Ctrl+C after read
-    if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-        MENU_STATE["ctrl_c_pressed"]="false"
-        return 1
-    fi
-
-    # Handle special cases
-    case "$choice" in
-        "0"|"q"|"quit"|"exit")
-            return 1  # Signal to go back
-            ;;
-        "h"|"help")
-            echo -e "${CYAN}Help: Use number keys to select options, 0/q to go back${NC}"
-            read -p "Press Enter to continue..."
-            return 2  # Signal to redraw menu
-            ;;
-        "")
-            echo -e "${YELLOW}Please enter a choice${NC}"
-            read -p "Press Enter to continue..."
-            return 2  # Signal to redraw menu
-            ;;
-    esac
-
-    # Execute the chosen action
-    if [[ -n "${choices[$choice]}" ]]; then
-        eval "${choices[$choice]}"
-        return 0
-    else
-        if [[ -n "$default_action" ]]; then
-            eval "$default_action"
-        else
-            echo -e "${RED}Invalid choice: $choice${NC}"
-            read -p "Press Enter to continue..."
-        fi
-        return 2  # Signal to redraw menu
-    fi
-}
-
-# Unified menu loop function
-run_menu() {
-    local menu_name="$1"
-    local title="$2"
-    local subtitle="$3"
-    local options="$4"
-    local choices="$5"     # Associative array of choices
-    local prompt="$6"
-    local debug_info="$7"
-
-    while true; do
-        # Check for Ctrl+C signal
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
-            return
-        fi
-
-        # Render menu
-        render_menu "$title" "$subtitle" "$options" "$prompt" "$debug_info"
-
-        # Handle choice
-        local result
-        handle_menu_choice "$menu_name" "$choices" "$default_action"
-        result=$?
-
-        case $result in
-            0) continue ;;  # Choice executed successfully
-            1) return ;;    # Go back
-            2) continue ;;  # Redraw menu
-        esac
-    done
-}
-
-#==============================================================================
-# UNIFIED ERROR HANDLING & SAFE EXECUTION
-#==============================================================================
-
-# Safe command execution wrapper with comprehensive error handling
-safe_execute() {
-    local command="$1"
-    local description="${2:-Executing command}"
-    local timeout="${3:-30}"
-    local retries="${4:-3}"
-    local critical="${5:-false}"  # If true, script exits on failure
-    
-    # Validate inputs
-    if [[ -z "$command" ]]; then
-        log "ERROR" "No command provided to safe_execute"
-        return 1
-    fi
-    
-    log "DEBUG" "Safe execute: $description"
-    log "DEBUG" "Command: $command"
-    
-    local attempt=1
-    local last_error=""
-    
-    while [[ $attempt -le $retries ]]; do
-        # Execute command with timeout
-        if timeout "$timeout" bash -c "$command" 2>/dev/null; then
-            log "DEBUG" "Command succeeded on attempt $attempt"
-            return 0
-        else
-            local exit_code=$?
-            last_error="Exit code: $exit_code"
-            
-            if [[ $attempt -lt $retries ]]; then
-                log "WARN" "Command failed (attempt $attempt/$retries): $description"
-                log "WARN" "Error: $last_error, retrying in 2 seconds..."
-                sleep 2
-            else
-                log "ERROR" "Command failed after $retries attempts: $description"
-                log "ERROR" "Final error: $last_error"
-                
-                if [[ "$critical" == "true" ]]; then
-                    log "ERROR" "Critical command failed, exiting..."
-                    cleanup_and_exit 1
-                fi
-                
-                return 1
-            fi
-        fi
-        
-        ((attempt++))
-    done
-}
-
-# Enhanced error handling with context
-handle_error() {
-    local error_code="$1"
-    local context="$2"
-    local suggestion="${3:-}"
-    
-    # Log the error with context
-    log "ERROR" "Error $error_code in context: $context"
-    
-    # Provide helpful suggestions based on error type
-    case $error_code in
-        1)
-            log "ERROR" "General error occurred"
-            ;;
-        2)
-            log "ERROR" "Misuse of shell builtins"
-            ;;
-        126)
-            log "ERROR" "Command invoked cannot execute (permission denied or not executable)"
-            ;;
-        127)
-            log "ERROR" "Command not found"
-            ;;
-        128)
-            log "ERROR" "Invalid argument to exit"
-            ;;
-        130)
-            log "ERROR" "Script terminated by Ctrl+C"
-            ;;
-        255)
-            log "ERROR" "Exit status out of range"
-            ;;
-        *)
-            log "ERROR" "Unknown error code: $error_code"
-            ;;
-    esac
-    
-    # Show suggestion if provided
-    if [[ -n "$suggestion" ]]; then
-        echo -e "${YELLOW}Suggestion: $suggestion${NC}"
-    fi
-    
-    # Return the error code for further handling
-    return $error_code
-}
-
-# Validate command dependencies
-validate_command() {
-    local command="$1"
-    local package="${2:-}"
-    
-    if ! command -v "$command" >/dev/null 2>&1; then
-        log "ERROR" "Required command '$command' not found"
-        if [[ -n "$package" ]]; then
-            log "ERROR" "Please install package: $package"
-        fi
-        return 1
-    fi
-    
-    return 0
-}
-
-# Validate file/directory permissions
-validate_permissions() {
-    local path="$1"
-    local required_perms="${2:-r}"
-    local description="${3:-File/directory}"
-    
-    if [[ ! -e "$path" ]]; then
-        log "ERROR" "$description does not exist: $path"
-        return 1
-    fi
-    
-    case "$required_perms" in
-        "r")
-            if [[ ! -r "$path" ]]; then
-                log "ERROR" "$description is not readable: $path"
-                return 1
-            fi
-            ;;
-        "w")
-            if [[ ! -w "$path" ]]; then
-                log "ERROR" "$description is not writable: $path"
-                return 1
-            fi
-            ;;
-        "x")
-            if [[ ! -x "$path" ]]; then
-                log "ERROR" "$description is not executable: $path"
-                return 1
-            fi
-            ;;
-        "rw")
-            if [[ ! -r "$path" || ! -w "$path" ]]; then
-                log "ERROR" "$description is not readable/writable: $path"
-                return 1
-            fi
-            ;;
-        "rwx")
-            if [[ ! -r "$path" || ! -w "$path" || ! -x "$path" ]]; then
-                log "ERROR" "$description is not readable/writable/executable: $path"
-                return 1
-            fi
-            ;;
-    esac
-    
-    return 0
-}
-
-#==============================================================================
-# UNIFIED VALIDATION & SANITIZATION
-#==============================================================================
-
-# Unified validation function for all input types
-validate() {
-    local type="$1"        # Type of validation: ip, port, domain, service_name, etc.
-    local value="$2"       # Value to validate
-    local options="${3:-}"  # Additional options (e.g., "required", "range:1-65535")
-    
-    # Validate inputs
-    if [[ -z "$type" || -z "$value" ]]; then
-        log "ERROR" "Missing validation parameters: type and value required"
-        return 1
-    fi
-    
-    # Check if value is required
-    if [[ "$options" == *"required"* && -z "$value" ]]; then
-        log "ERROR" "Value is required but empty"
-        return 1
-    fi
-    
-    # Skip validation if value is empty and not required
-    if [[ -z "$value" && "$options" != *"required"* ]]; then
-        return 0
-    fi
-    
-    case "$type" in
-        "ip")
-            validate_ip "$value"
-            ;;
-        "port")
-            validate_port "$value" "$options"
-            ;;
-        "domain")
-            validate_domain "$value"
-            ;;
-        "service_name")
-            validate_service_name "$value"
-            ;;
-        "proxy_name")
-            validate_proxy_name "$value"
-            ;;
-        "token")
-            validate_token "$value"
-            ;;
-        "path")
-            validate_path "$value" "$options"
-            ;;
-        "url")
-            validate_url "$value"
-            ;;
-        "email")
-            validate_email "$value"
-            ;;
-        "numeric")
-            validate_numeric "$value" "$options"
-            ;;
-        "alphanumeric")
-            validate_alphanumeric "$value" "$options"
-            ;;
-        *)
-            log "ERROR" "Unknown validation type: $type"
-            return 1
-            ;;
-    esac
-}
-
-# IP address validation
-validate_ip() {
-    local ip="$1"
-    
-    if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        IFS='.' read -ra ADDR <<< "$ip"
-        for i in "${ADDR[@]}"; do
-            if [[ $i -gt 255 ]]; then
-                log "ERROR" "Invalid IP address: $ip (octet $i > 255)"
-                return 1
-            fi
-        done
-        return 0
-    else
-        log "ERROR" "Invalid IP address format: $ip"
-        return 1
-    fi
-}
-
-# Port validation with range support
-validate_port() {
-    local port="$1"
-    local options="$2"
-    
-    # Check if it's a number
-    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
-        log "ERROR" "Port must be a number: $port"
-        return 1
-    fi
-    
-    # Check range if specified
-    if [[ "$options" =~ range:([0-9]+)-([0-9]+) ]]; then
-        local min_port="${BASH_REMATCH[1]}"
-        local max_port="${BASH_REMATCH[2]}"
-        
-        if [[ $port -lt $min_port || $port -gt $max_port ]]; then
-            log "ERROR" "Port $port is out of range ($min_port-$max_port)"
-            return 1
-        fi
-    else
-        # Default port range
-        if [[ $port -lt 1 || $port -gt 65535 ]]; then
-            log "ERROR" "Port $port is out of range (1-65535)"
-            return 1
-        fi
-    fi
-    
-    return 0
-}
-
-# Domain name validation
-validate_domain() {
-    local domain="$1"
-    
-    if [[ $domain =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-        # Check length
-        if [[ ${#domain} -gt 253 ]]; then
-            log "ERROR" "Domain name too long: $domain (max 253 characters)"
-            return 1
-        fi
-        return 0
-    else
-        log "ERROR" "Invalid domain name format: $domain"
-        return 1
-    fi
-}
-
-# Service name validation
-validate_service_name() {
-    local service="$1"
-    
-    # Check length
-    if [[ ${#service} -gt 256 ]]; then
-        log "ERROR" "Service name too long: $service (max 256 characters)"
-        return 1
-    fi
-    
-    # Check for valid characters (alphanumeric, hyphens, underscores)
-    if [[ ! $service =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        log "ERROR" "Service name contains invalid characters: $service (only alphanumeric, hyphens, underscores allowed)"
-        return 1
-    fi
-    
-    return 0
-}
-
-# Proxy name validation
-validate_proxy_name() {
-    local proxy="$1"
-    
-    # Check length
-    if [[ ${#proxy} -gt 64 ]]; then
-        log "ERROR" "Proxy name too long: $proxy (max 64 characters)"
-        return 1
-    fi
-    
-    # Check for valid characters
-    if [[ ! $proxy =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        log "ERROR" "Proxy name contains invalid characters: $proxy (only alphanumeric, hyphens, underscores allowed)"
-        return 1
-    fi
-    
-    return 0
-}
-
-# Token validation
-validate_token() {
-    local token="$1"
-    
-    # Check length
-    if [[ ${#token} -lt 8 ]]; then
-        log "ERROR" "Token too short: $token (min 8 characters)"
-        return 1
-    fi
-    
-    if [[ ${#token} -gt 128 ]]; then
-        log "ERROR" "Token too long: $token (max 128 characters)"
-        return 1
-    fi
-    
-    return 0
-}
-
-# Path validation
-validate_path() {
-    local path="$1"
-    local options="$2"
-    
-    # Check if path exists
-    if [[ "$options" == *"exists"* && ! -e "$path" ]]; then
-        log "ERROR" "Path does not exist: $path"
-        return 1
-    fi
-    
-    # Check if it's a directory
-    if [[ "$options" == *"directory"* && ! -d "$path" ]]; then
-        log "ERROR" "Path is not a directory: $path"
-        return 1
-    fi
-    
-    # Check if it's a file
-    if [[ "$options" == *"file"* && ! -f "$path" ]]; then
-        log "ERROR" "Path is not a file: $path"
-        return 1
-    fi
-    
-    return 0
-}
-
-# URL validation
-validate_url() {
-    local url="$1"
-    
-    if [[ $url =~ ^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/.*)?$ ]]; then
-        return 0
-    else
-        log "ERROR" "Invalid URL format: $url"
-        return 1
-    fi
-}
-
-# Email validation
-validate_email() {
-    local email="$1"
-    
-    if [[ $email =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        return 0
-    else
-        log "ERROR" "Invalid email format: $email"
-        return 1
-    fi
-}
-
-# Numeric validation
-validate_numeric() {
-    local value="$1"
-    local options="$2"
-    
-    if ! [[ "$value" =~ ^[0-9]+$ ]]; then
-        log "ERROR" "Value must be numeric: $value"
-        return 1
-    fi
-    
-    # Check range if specified
-    if [[ "$options" =~ range:([0-9]+)-([0-9]+) ]]; then
-        local min_val="${BASH_REMATCH[1]}"
-        local max_val="${BASH_REMATCH[2]}"
-        
-        if [[ $value -lt $min_val || $value -gt $max_val ]]; then
-            log "ERROR" "Value $value is out of range ($min_val-$max_val)"
-            return 1
-        fi
-    fi
-    
-    return 0
-}
-
-# Alphanumeric validation
-validate_alphanumeric() {
-    local value="$1"
-    local options="$2"
-    
-    # Check length if specified
-    if [[ "$options" =~ length:([0-9]+)-([0-9]+) ]]; then
-        local min_len="${BASH_REMATCH[1]}"
-        local max_len="${BASH_REMATCH[2]}"
-        
-        if [[ ${#value} -lt $min_len || ${#value} -gt $max_len ]]; then
-            log "ERROR" "Value length ${#value} is out of range ($min_len-$max_len)"
-            return 1
-        fi
-    fi
-    
-    # Check for valid characters
-    if [[ ! $value =~ ^[a-zA-Z0-9]+$ ]]; then
-        log "ERROR" "Value contains invalid characters: $value (only alphanumeric allowed)"
-        return 1
-    fi
-    
-    return 0
-}
-
-# Sanitize input to prevent injection attacks
-sanitize_input() {
-    local input="$1"
-    local type="${2:-general}"  # general, filename, url, etc.
-    
-    case "$type" in
-        "filename")
-            # Remove dangerous characters for filenames
-            echo "$input" | sed 's/[^a-zA-Z0-9._-]//g'
-            ;;
-        "url")
-            # Basic URL sanitization
-            echo "$input" | sed 's/[^a-zA-Z0-9:/?#\[\]@!$&'"'"'()*+,;=._~-]//g'
-            ;;
-        "general")
-            # Remove control characters and some special chars
-            echo "$input" | sed 's/[[:cntrl:]]//g' | sed 's/[<>|&;`$]//g'
-            ;;
-        *)
-            # Default sanitization
-            echo "$input" | sed 's/[[:cntrl:]]//g'
-            ;;
-    esac
-}
-
-#==============================================================================
-# CONFIG TEMPLATE SYSTEM WITH BACKUP & VALIDATION
-#==============================================================================
-
-# Apply configuration template with variable substitution
-apply_config_template() {
-    local template_file="$1"
-    local output_file="$2"
-    local variables="$3"    # Associative array of variables to substitute
-    
-    # Validate inputs
-    if [[ -z "$template_file" || -z "$output_file" ]]; then
-        log "ERROR" "Template file and output file are required"
-        return 1
-    fi
-    
-    # Check if template file exists
-    if [[ ! -f "$template_file" ]]; then
-        log "ERROR" "Template file not found: $template_file"
-        return 1
-    fi
-    
-    # Create output directory if it doesn't exist
-    local output_dir=$(dirname "$output_file")
-    if [[ ! -d "$output_dir" ]]; then
-        mkdir -p "$output_dir" || {
-            log "ERROR" "Failed to create output directory: $output_dir"
-            return 1
-        }
-    fi
-    
-    # Backup existing file if it exists
-    if [[ -f "$output_file" ]]; then
-        backup_config "$output_file" "auto_backup"
-    fi
-    
-    # Apply template with variable substitution
-    local temp_file=$(mktemp)
-    cp "$template_file" "$temp_file"
-    
-    # Substitute variables
-    for var_name in "${!variables[@]}"; do
-        local var_value="${variables[$var_name]}"
-        # Escape special characters for sed
-        local escaped_value=$(printf '%s\n' "$var_value" | sed 's/[[\.*^$()+?{|]/\\&/g')
-        sed -i "s/\${$var_name}/$escaped_value/g" "$temp_file"
-    done
-    
-    # Move temp file to output
-    mv "$temp_file" "$output_file" || {
-        log "ERROR" "Failed to write output file: $output_file"
-        return 1
-    }
-    
-    log "INFO" "Template applied successfully: $template_file -> $output_file"
-    return 0
-}
-
-# Backup configuration file with timestamp
-backup_config() {
-    local config_file="$1"
-    local backup_type="${2:-manual}"  # manual, auto_backup, update_backup
-    
-    if [[ ! -f "$config_file" ]]; then
-        log "WARN" "Config file not found for backup: $config_file"
-        return 1
-    fi
-    
-    local backup_dir="$BACKUP_DIR"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local filename=$(basename "$config_file")
-    local backup_file="$backup_dir/${filename}.${backup_type}.${timestamp}.bak"
-    
-    # Create backup directory if it doesn't exist
-    mkdir -p "$backup_dir" || {
-        log "ERROR" "Failed to create backup directory: $backup_dir"
-        return 1
-    }
-    
-    # Create backup
-    cp "$config_file" "$backup_file" || {
-        log "ERROR" "Failed to create backup: $backup_file"
-        return 1
-    }
-    
-    # Compress backup if it's large (>1MB)
-    local file_size=$(stat -f%z "$backup_file" 2>/dev/null || stat -c%s "$backup_file" 2>/dev/null)
-    if [[ $file_size -gt 1048576 ]]; then
-        gzip "$backup_file" && backup_file="${backup_file}.gz"
-        log "INFO" "Large backup compressed: $backup_file"
-    fi
-    
-    log "INFO" "Config backed up: $config_file -> $backup_file"
-    
-    # Clean up old backups (keep last 10)
-    cleanup_old_backups "$backup_dir" "$filename" 10
-    
-    return 0
-}
-
-# Clean up old backup files
-cleanup_old_backups() {
-    local backup_dir="$1"
-    local filename="$2"
-    local keep_count="${3:-10}"
-    
-    # Find and remove old backups, keeping the most recent ones
-    find "$backup_dir" -name "${filename}.*.bak*" -type f -printf '%T@ %p\n' | \
-        sort -rn | tail -n +$((keep_count + 1)) | cut -d' ' -f2- | \
-        while read -r old_backup; do
-            rm -f "$old_backup" && log "DEBUG" "Removed old backup: $old_backup"
-        done
-}
-
-# Validate configuration file syntax
-validate_config_syntax() {
-    local config_file="$1"
-    local config_type="${2:-auto}"  # auto, toml, json, yaml
-    
-    if [[ ! -f "$config_file" ]]; then
-        log "ERROR" "Config file not found: $config_file"
-        return 1
-    fi
-    
-    # Auto-detect config type if not specified
-    if [[ "$config_type" == "auto" ]]; then
-        case "$config_file" in
-            *.toml) config_type="toml" ;;
-            *.json) config_type="json" ;;
-            *.yaml|*.yml) config_type="yaml" ;;
-            *) config_type="toml" ;;  # Default to TOML for FRP configs
-        esac
-    fi
-    
-    case "$config_type" in
-        "toml")
-            validate_toml_syntax "$config_file"
-            ;;
-        "json")
-            validate_json_syntax "$config_file"
-            ;;
-        "yaml")
-            validate_yaml_syntax "$config_file"
-            ;;
-        *)
-            log "ERROR" "Unknown config type: $config_type"
-            return 1
-            ;;
-    esac
-}
-
-# Validate TOML syntax
-validate_toml_syntax() {
-    local toml_file="$1"
-    
-    # Basic TOML validation using Python if available
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c "
-import tomllib
-try:
-    with open('$toml_file', 'rb') as f:
-        tomllib.load(f)
-    print('TOML syntax is valid')
-except Exception as e:
-    print(f'TOML syntax error: {e}')
-    exit(1)
-" 2>/dev/null && return 0
-    fi
-    
-    # Fallback: basic syntax checking
-    local errors=0
-    
-    # Check for basic TOML structure
-    if ! grep -q "^\[" "$toml_file"; then
-        log "ERROR" "No section headers found in TOML file"
-        ((errors++))
-    fi
-    
-    # Check for unclosed brackets
-    local open_brackets=$(grep -o '\[' "$toml_file" | wc -l)
-    local close_brackets=$(grep -o '\]' "$toml_file" | wc -l)
-    if [[ $open_brackets -ne $close_brackets ]]; then
-        log "ERROR" "Mismatched brackets in TOML file"
-        ((errors++))
-    fi
-    
-    # Check for basic key-value format
-    if grep -q "=" "$toml_file" && ! grep -q "^[^#]*=.*$" "$toml_file"; then
-        log "WARN" "Some lines may not follow key=value format"
-    fi
-    
-    if [[ $errors -eq 0 ]]; then
-        log "INFO" "TOML syntax appears valid (basic check)"
-        return 0
-    else
-        log "ERROR" "TOML syntax validation failed with $errors errors"
-        return 1
-    fi
-}
-
-# Validate JSON syntax
-validate_json_syntax() {
-    local json_file="$1"
-    
-    if command -v jq >/dev/null 2>&1; then
-        jq empty "$json_file" 2>/dev/null && return 0
-    fi
-    
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c "
-import json
-try:
-    with open('$json_file', 'r') as f:
-        json.load(f)
-    print('JSON syntax is valid')
-except Exception as e:
-    print(f'JSON syntax error: {e}')
-    exit(1)
-" 2>/dev/null && return 0
-    fi
-    
-    log "ERROR" "No JSON validator available (install jq or python3)"
-    return 1
-}
-
-# Validate YAML syntax
-validate_yaml_syntax() {
-    local yaml_file="$1"
-    
-    if command -v yq >/dev/null 2>&1; then
-        yq eval '.' "$yaml_file" >/dev/null 2>&1 && return 0
-    fi
-    
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c "
-import yaml
-try:
-    with open('$yaml_file', 'r') as f:
-        yaml.safe_load(f)
-    print('YAML syntax is valid')
-except Exception as e:
-    print(f'YAML syntax error: {e}')
-    exit(1)
-" 2>/dev/null && return 0
-    fi
-    
-    log "ERROR" "No YAML validator available (install yq or python3 with PyYAML)"
-    return 1
-}
-
-# Create configuration template
-create_config_template() {
-    local template_name="$1"
-    local template_type="${2:-frpc}"  # frpc, frps, custom
-    local template_file="$TEMPLATE_DIR/${template_name}.template"
-    
-    # Create template directory if it doesn't exist
-    mkdir -p "$TEMPLATE_DIR" || {
-        log "ERROR" "Failed to create template directory: $TEMPLATE_DIR"
-        return 1
-    }
-    
-    case "$template_type" in
-        "frpc")
-            create_frpc_template "$template_file"
-            ;;
-        "frps")
-            create_frps_template "$template_file"
-            ;;
-        "custom")
-            create_custom_template "$template_file"
-            ;;
-        *)
-            log "ERROR" "Unknown template type: $template_type"
-            return 1
-            ;;
-    esac
-    
-    log "INFO" "Template created: $template_file"
-    return 0
-}
-
-# Create FRP client template
-create_frpc_template() {
-    local template_file="$1"
-    
-    cat > "$template_file" << 'EOF'
-# MoonFRP Client Configuration Template
-# Generated on ${TIMESTAMP}
-# Compatible with FRP v${FRP_VERSION}
-
-serverAddr = "${SERVER_IP}"
-serverPort = ${SERVER_PORT}
-
-auth.method = "token"
-auth.token = "${AUTH_TOKEN}"
-
-log.to = "${LOG_DIR}/frpc_${IP_SUFFIX}.log"
-log.level = "${LOG_LEVEL}"
-log.maxDays = ${LOG_MAX_DAYS}
-log.disablePrintColor = false
-
-transport.poolCount = ${TRANSPORT_POOL_COUNT}
-transport.protocol = "${TRANSPORT_PROTOCOL}"
-transport.heartbeatTimeout = ${HEARTBEAT_TIMEOUT}
-transport.heartbeatInterval = ${HEARTBEAT_INTERVAL}
-transport.dialServerTimeout = ${DIAL_SERVER_TIMEOUT}
-transport.dialServerKeepalive = ${DIAL_SERVER_KEEPALIVE}
-transport.tcpMux = ${TCP_MUX}
-transport.tcpMuxKeepaliveInterval = ${TCP_MUX_KEEPALIVE_INTERVAL}
-
-transport.tls.enable = ${TLS_ENABLE}
-
-loginFailExit = ${LOGIN_FAIL_EXIT}
-
-user = "${USER_NAME}"
-
-udpPacketSize = ${UDP_PACKET_SIZE}
-
-# Proxy configurations will be added here
-${PROXY_CONFIGS}
-EOF
-}
-
-# Create FRP server template
-create_frps_template() {
-    local template_file="$1"
-    
-    cat > "$template_file" << 'EOF'
-# MoonFRP Server Configuration Template
-# Generated on ${TIMESTAMP}
-# Compatible with FRP v${FRP_VERSION}
-
-bindAddr = "${BIND_ADDR}"
-bindPort = ${BIND_PORT}
-
-auth.method = "token"
-auth.token = "${AUTH_TOKEN}"
-
-log.to = "${LOG_DIR}/frps.log"
-log.level = "${LOG_LEVEL}"
-log.maxDays = ${LOG_MAX_DAYS}
-log.disablePrintColor = false
-
-transport.poolCount = ${TRANSPORT_POOL_COUNT}
-transport.protocol = "${TRANSPORT_PROTOCOL}"
-transport.heartbeatTimeout = ${HEARTBEAT_TIMEOUT}
-transport.heartbeatInterval = ${HEARTBEAT_INTERVAL}
-transport.tcpMux = ${TCP_MUX}
-transport.tcpMuxKeepaliveInterval = ${TCP_MUX_KEEPALIVE_INTERVAL}
-
-transport.tls.enable = ${TLS_ENABLE}
-
-maxPortsPerClient = ${MAX_PORTS_PER_CLIENT}
-userConnTimeout = ${USER_CONN_TIMEOUT}
-
-# Advanced settings
-${ADVANCED_SETTINGS}
-EOF
-}
-
-# Create custom template
-create_custom_template() {
-    local template_file="$1"
-    
-    cat > "$template_file" << 'EOF'
-# Custom Configuration Template
-# Generated on ${TIMESTAMP}
-
-# Add your custom configuration here
-# Use ${VARIABLE_NAME} for variable substitution
-
-# Example:
-# setting1 = "${VALUE1}"
-# setting2 = ${VALUE2}
-# setting3 = "${VALUE3}"
-
-EOF
-}
-
-#==============================================================================
-# UNIFIED CLEANUP SYSTEM
-#==============================================================================
-
-# Unified cleanup function for all cleanup operations
-cleanup() {
-    local operation="$1"    # Type of cleanup: services, configs, logs, temp, all, selective
-    local options="${2:-}"  # Additional options: force, backup, dry_run
-    local target="${3:-}"   # Specific target (service name, config file, etc.)
-    
-    # Validate inputs
-    if [[ -z "$operation" ]]; then
-        log "ERROR" "Cleanup operation is required"
-        return 1
-    fi
-    
-    log "INFO" "Starting cleanup operation: $operation"
-    
-    case "$operation" in
-        "services")
-            cleanup_services "$options" "$target"
-            ;;
-        "configs")
-            cleanup_configs "$options" "$target"
-            ;;
-        "logs")
-            cleanup_logs "$options" "$target"
-            ;;
-        "temp")
-            cleanup_temp_files "$options"
-            ;;
-        "backups")
-            cleanup_backups "$options" "$target"
-            ;;
-        "all")
-            cleanup_all "$options"
-            ;;
-        "selective")
-            cleanup_selective "$options" "$target"
-            ;;
-        *)
-            log "ERROR" "Unknown cleanup operation: $operation"
-            echo -e "${CYAN}Available operations:${NC} services, configs, logs, temp, backups, all, selective"
-            return 1
-            ;;
-    esac
-}
-
-# Cleanup services (stop, disable, remove)
-cleanup_services() {
-    local options="$1"
-    local target="$2"
-    
-    if [[ "$options" == *"dry_run"* ]]; then
-        log "INFO" "DRY RUN: Would cleanup services"
-        return 0
-    fi
-    
-    # Get list of FRP services
-    local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
-    
-    if [[ ${#services[@]} -eq 0 ]]; then
-        log "INFO" "No FRP services found to cleanup"
-        return 0
-    fi
-    
-    # Handle specific target
-    if [[ -n "$target" ]]; then
-        if [[ " ${services[@]} " =~ " ${target} " ]]; then
-            cleanup_single_service "$target" "$options"
-        else
-            log "ERROR" "Service not found: $target"
-            return 1
-        fi
-        return 0
-    fi
-    
-    # Cleanup all services
-    log "INFO" "Cleaning up ${#services[@]} FRP services..."
-    
-    for service in "${services[@]}"; do
-        cleanup_single_service "$service" "$options"
-    done
-    
-    # Reload systemd daemon
-    systemctl daemon-reload
-    
-    log "INFO" "Service cleanup completed"
-    return 0
-}
-
-# Cleanup single service
-cleanup_single_service() {
-    local service="$1"
-    local options="$2"
-    
-    log "INFO" "Cleaning up service: $service"
-    
-    # Stop service
-    if systemctl is-active "$service" >/dev/null 2>&1; then
-        systemctl stop "$service" || log "WARN" "Failed to stop service: $service"
-    fi
-    
-    # Disable service
-    if systemctl is-enabled "$service" >/dev/null 2>&1; then
-        systemctl disable "$service" || log "WARN" "Failed to disable service: $service"
-    fi
-    
-    # Remove service file
-    local service_file="$SERVICE_DIR/${service}.service"
-    if [[ -f "$service_file" ]]; then
-        if [[ "$options" == *"backup"* ]]; then
-            backup_config "$service_file" "cleanup_backup"
-        fi
-        rm -f "$service_file" && log "INFO" "Removed service file: $service_file"
-    fi
-    
-    # Clear performance caches
-    clear_performance_caches
-}
-
-# Cleanup configuration files
-cleanup_configs() {
-    local options="$1"
-    local target="$2"
-    
-    if [[ "$options" == *"dry_run"* ]]; then
-        log "INFO" "DRY RUN: Would cleanup configs"
-        return 0
-    fi
-    
-    # Handle specific target
-    if [[ -n "$target" ]]; then
-        if [[ -f "$target" ]]; then
-            cleanup_single_config "$target" "$options"
-        else
-            log "ERROR" "Config file not found: $target"
-            return 1
-        fi
-        return 0
-    fi
-    
-    # Cleanup all FRP configs
-    local config_files=($(find "$CONFIG_DIR" -name "*.toml" -type f 2>/dev/null))
-    
-    if [[ ${#config_files[@]} -eq 0 ]]; then
-        log "INFO" "No FRP config files found to cleanup"
-        return 0
-    fi
-    
-    log "INFO" "Cleaning up ${#config_files[@]} config files..."
-    
-    for config_file in "${config_files[@]}"; do
-        cleanup_single_config "$config_file" "$options"
-    done
-    
-    log "INFO" "Config cleanup completed"
-    return 0
-}
-
-# Cleanup single config file
-cleanup_single_config() {
-    local config_file="$1"
-    local options="$2"
-    
-    log "INFO" "Cleaning up config: $config_file"
-    
-    if [[ "$options" == *"backup"* ]]; then
-        backup_config "$config_file" "cleanup_backup"
-    fi
-    
-    rm -f "$config_file" && log "INFO" "Removed config file: $config_file"
-}
-
-# Cleanup log files
-cleanup_logs() {
-    local options="$1"
-    local target="$2"
-    
-    if [[ "$options" == *"dry_run"* ]]; then
-        log "INFO" "DRY RUN: Would cleanup logs"
-        return 0
-    fi
-    
-    # Handle specific target
-    if [[ -n "$target" ]]; then
-        if [[ -f "$target" ]]; then
-            cleanup_single_log "$target" "$options"
-        else
-            log "ERROR" "Log file not found: $target"
-            return 1
-        fi
-        return 0
-    fi
-    
-    # Cleanup all FRP logs
-    local log_files=($(find "$LOG_DIR" -name "*.log" -type f 2>/dev/null))
-    
-    if [[ ${#log_files[@]} -eq 0 ]]; then
-        log "INFO" "No FRP log files found to cleanup"
-        return 0
-    fi
-    
-    log "INFO" "Cleaning up ${#log_files[@]} log files..."
-    
-    for log_file in "${log_files[@]}"; do
-        cleanup_single_log "$log_file" "$options"
-    done
-    
-    log "INFO" "Log cleanup completed"
-    return 0
-}
-
-# Cleanup single log file
-cleanup_single_log() {
-    local log_file="$1"
-    local options="$2"
-    
-    log "INFO" "Cleaning up log: $log_file"
-    
-    if [[ "$options" == *"backup"* ]]; then
-        backup_config "$log_file" "log_backup"
-    fi
-    
-    rm -f "$log_file" && log "INFO" "Removed log file: $log_file"
-}
-
-# Cleanup temporary files
-cleanup_temp_files() {
-    local options="$1"
-    
-    if [[ "$options" == *"dry_run"* ]]; then
-        log "INFO" "DRY RUN: Would cleanup temp files"
-        return 0
-    fi
-    
-    log "INFO" "Cleaning up temporary files..."
-    
-    # Clean up temp files in /tmp
-    find /tmp -name "moonfrp_*" -type f -mtime +1 -delete 2>/dev/null || true
-    
-    # Clean up temp files in script directory
-    find "$SCRIPT_DIR" -name "*.tmp" -type f -delete 2>/dev/null || true
-    
-    # Clean up old lock files
-    find "$SCRIPT_DIR" -name "*.lock" -type f -mtime +1 -delete 2>/dev/null || true
-    
-    log "INFO" "Temporary files cleanup completed"
-    return 0
-}
-
-# Cleanup backup files
-cleanup_backups() {
-    local options="$1"
-    local target="$2"
-    
-    if [[ "$options" == *"dry_run"* ]]; then
-        log "INFO" "DRY RUN: Would cleanup backups"
-        return 0
-    fi
-    
-    # Handle specific target
-    if [[ -n "$target" ]]; then
-        if [[ -f "$target" ]]; then
-            rm -f "$target" && log "INFO" "Removed backup: $target"
-        else
-            log "ERROR" "Backup file not found: $target"
-            return 1
-        fi
-        return 0
-    fi
-    
-    # Cleanup old backups
-    local backup_dir="$BACKUP_DIR"
-    if [[ -d "$backup_dir" ]]; then
-        local backup_files=($(find "$backup_dir" -name "*.bak*" -type f -mtime +30 2>/dev/null))
-        
-        if [[ ${#backup_files[@]} -eq 0 ]]; then
-            log "INFO" "No old backup files found to cleanup"
-            return 0
-        fi
-        
-        log "INFO" "Cleaning up ${#backup_files[@]} old backup files..."
-        
-        for backup_file in "${backup_files[@]}"; do
-            rm -f "$backup_file" && log "DEBUG" "Removed old backup: $backup_file"
-        done
-        
-        log "INFO" "Backup cleanup completed"
-    else
-        log "INFO" "No backup directory found"
-    fi
-    
-    return 0
-}
-
-# Cleanup everything
-cleanup_all() {
-    local options="$1"
-    
-    if [[ "$options" == *"dry_run"* ]]; then
-        log "INFO" "DRY RUN: Would cleanup everything"
-        return 0
-    fi
-    
-    log "WARN" "Starting complete cleanup of all FRP components..."
-    
-    # Confirm unless force option is used
-    if [[ "$options" != *"force"* ]]; then
-        echo -e "${RED}⚠️  WARNING: This will remove ALL FRP services, configs, and logs!${NC}"
-        echo -e "${YELLOW}Are you sure you want to continue? (yes/no):${NC} "
-        read -r confirmation
-        
-        if [[ "$confirmation" != "yes" ]]; then
-            log "INFO" "Cleanup cancelled by user"
-            return 0
-        fi
-    fi
-    
-    # Cleanup in order
-    cleanup_services "$options"
-    cleanup_configs "$options"
-    cleanup_logs "$options"
-    cleanup_temp_files "$options"
-    
-    # Clear all caches
-    clear_performance_caches
-    CACHE_DATA=()  # Clear all cache data
-    
-    log "INFO" "Complete cleanup finished"
-    return 0
-}
-
-# Selective cleanup based on criteria
-cleanup_selective() {
-    local options="$1"
-    local criteria="$2"
-    
-    if [[ "$options" == *"dry_run"* ]]; then
-        log "INFO" "DRY RUN: Would perform selective cleanup"
-        return 0
-    fi
-    
-    case "$criteria" in
-        "inactive_services")
-            cleanup_inactive_services "$options"
-            ;;
-        "old_logs")
-            cleanup_old_logs "$options"
-            ;;
-        "unused_configs")
-            cleanup_unused_configs "$options"
-            ;;
-        *)
-            log "ERROR" "Unknown selective cleanup criteria: $criteria"
-            echo -e "${CYAN}Available criteria:${NC} inactive_services, old_logs, unused_configs"
-            return 1
-            ;;
-    esac
-}
-
-# Cleanup inactive services
-cleanup_inactive_services() {
-    local options="$1"
-    
-    local inactive_services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | grep "inactive" | awk '{print $1}' | sed 's/\.service//'))
-    
-    if [[ ${#inactive_services[@]} -eq 0 ]]; then
-        log "INFO" "No inactive FRP services found"
-        return 0
-    fi
-    
-    log "INFO" "Found ${#inactive_services[@]} inactive services to cleanup..."
-    
-    for service in "${inactive_services[@]}"; do
-        cleanup_single_service "$service" "$options"
-    done
-    
-    log "INFO" "Inactive services cleanup completed"
-    return 0
-}
-
-# Cleanup old log files
-cleanup_old_logs() {
-    local options="$1"
-    local days="${2:-7}"
-    
-    local old_logs=($(find "$LOG_DIR" -name "*.log" -type f -mtime +$days 2>/dev/null))
-    
-    if [[ ${#old_logs[@]} -eq 0 ]]; then
-        log "INFO" "No old log files found (older than $days days)"
-        return 0
-    fi
-    
-    log "INFO" "Found ${#old_logs[@]} old log files to cleanup..."
-    
-    for log_file in "${old_logs[@]}"; do
-        cleanup_single_log "$log_file" "$options"
-    done
-    
-    log "INFO" "Old logs cleanup completed"
-    return 0
-}
-
-# Cleanup unused config files
-cleanup_unused_configs() {
-    local options="$1"
-    
-    # Find config files that don't have corresponding active services
-    local config_files=($(find "$CONFIG_DIR" -name "*.toml" -type f 2>/dev/null))
-    local active_services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | grep "active" | awk '{print $1}' | sed 's/\.service//'))
-    
-    local unused_configs=()
-    
-    for config_file in "${config_files[@]}"; do
-        local config_name=$(basename "$config_file" .toml)
-        local is_used=false
-        
-        for service in "${active_services[@]}"; do
-            if [[ "$service" == *"$config_name"* ]]; then
-                is_used=true
-                break
-            fi
-        done
-        
-        if [[ "$is_used" == "false" ]]; then
-            unused_configs+=("$config_file")
-        fi
-    done
-    
-    if [[ ${#unused_configs[@]} -eq 0 ]]; then
-        log "INFO" "No unused config files found"
-        return 0
-    fi
-    
-    log "INFO" "Found ${#unused_configs[@]} unused config files to cleanup..."
-    
-    for config_file in "${unused_configs[@]}"; do
-        cleanup_single_config "$config_file" "$options"
-    done
-    
-    log "INFO" "Unused configs cleanup completed"
-    return 0
-}
-
-#==============================================================================
-# PERFORMANCE OPTIMIZATION & CACHE MANAGEMENT
-#==============================================================================
-
-# Enhanced cache management with TTL
-manage_cache() {
-    local operation="$1"    # get, set, clear, invalidate, stats
-    local key="$2"          # Cache key
-    local value="${3:-}"    # Value to cache (for set operation)
-    local ttl="${4:-300}"   # Time to live in seconds (default 5 minutes)
-    
-    case "$operation" in
-        "get")
-            get_cached_value "$key" "$ttl"
-            ;;
-        "set")
-            set_cached_value "$key" "$value" "$ttl"
-            ;;
-        "clear")
-            clear_cache_entry "$key"
-            ;;
-        "invalidate")
-            invalidate_cache_entry "$key"
-            ;;
-        "stats")
-            show_cache_stats
-            ;;
-        *)
-            log "ERROR" "Unknown cache operation: $operation"
-            return 1
-            ;;
-    esac
-}
-
-# Get cached value with TTL check
-get_cached_value() {
-    local key="$1"
-    local ttl="${2:-300}"
-    
-    # Check if cache entry exists and is not expired
-    if [[ -n "${CACHE_DATA["${key}_value"]:-}" ]]; then
-        local timestamp="${CACHE_DATA["${key}_timestamp"]:-0}"
-        local current_time=$(date +%s)
-        
-        if [[ $((current_time - timestamp)) -lt $ttl ]]; then
-            echo "${CACHE_DATA["${key}_value"]}"
-            return 0
-        else
-            # Cache expired, remove it
-            unset CACHE_DATA["${key}_value"]
-            unset CACHE_DATA["${key}_timestamp"]
-        fi
-    fi
-    
-    return 1
-}
-
-# Set cached value with timestamp
-set_cached_value() {
-    local key="$1"
-    local value="$2"
-    local ttl="${3:-300}"
-    local timestamp=$(date +%s)
-    
-    CACHE_DATA["${key}_value"]="$value"
-    CACHE_DATA["${key}_timestamp"]="$timestamp"
-    
-    log "DEBUG" "Cached value for key '$key' (TTL: ${ttl}s)"
-}
-
-# Clear specific cache entry
-clear_cache_entry() {
-    local key="$1"
-    
-    unset CACHE_DATA["${key}_value"]
-    unset CACHE_DATA["${key}_timestamp"]
-    
-    log "DEBUG" "Cleared cache entry: $key"
-}
-
-# Invalidate cache entry (mark as expired)
-invalidate_cache_entry() {
-    local key="$1"
-    
-    if [[ -n "${CACHE_DATA["${key}_timestamp"]}" ]]; then
-        CACHE_DATA["${key}_timestamp"]="0"  # Mark as expired
-        log "DEBUG" "Invalidated cache entry: $key"
-    fi
-}
-
-# Show cache statistics
-show_cache_stats() {
-    local total_entries=0
-    local expired_entries=0
-    local current_time=$(date +%s)
-    
-    echo -e "${CYAN}Cache Statistics:${NC}"
-    echo "=================="
-    
-    for key in "${!CACHE_DATA[@]}"; do
-        if [[ "$key" == *"_timestamp" ]]; then
-            local base_key="${key%_timestamp}"
-            local timestamp="${CACHE_DATA[$key]}"
-            local value_key="${base_key}_value"
-            
-            if [[ -n "${CACHE_DATA[$value_key]}" ]]; then
-                ((total_entries++))
-                
-                if [[ $timestamp -eq 0 ]] || [[ $((current_time - timestamp)) -gt 300 ]]; then
-                    ((expired_entries++))
-                fi
-            fi
-        fi
-    done
-    
-    echo "Total entries: $total_entries"
-    echo "Expired entries: $expired_entries"
-    echo "Active entries: $((total_entries - expired_entries))"
-    echo "Cache hit ratio: $(calculate_cache_hit_ratio)"
-}
-
-# Calculate cache hit ratio
-calculate_cache_hit_ratio() {
-    local hits="${CACHE_DATA["cache_hits"]:-0}"
-    local misses="${CACHE_DATA["cache_misses"]:-0}"
-    local total=$((hits + misses))
-    
-    if [[ $total -eq 0 ]]; then
-        echo "0%"
-    else
-        local ratio=$((hits * 100 / total))
-        echo "${ratio}%"
-    fi
-}
-
-# Batch systemctl operations for better performance
-batch_systemctl_operation() {
-    local operation="$1"    # start, stop, restart, status, enable, disable
-    local services="$2"     # Space-separated list of services
-    local options="$3"      # Additional options
-    
-    # Validate inputs
-    if [[ -z "$operation" || -z "$services" ]]; then
-        log "ERROR" "Operation and services list are required"
-        return 1
-    fi
-    
-    # Convert services string to array
-    local service_array=($services)
-    local failed_services=()
-    local success_count=0
-    
-    log "INFO" "Performing batch $operation on ${#service_array[@]} services..."
-    
-    # Execute operation on all services
-    case "$operation" in
-        "start"|"stop"|"restart"|"reload")
-            for service in "${service_array[@]}"; do
-                if systemctl "$operation" "$service" >/dev/null 2>&1; then
-                    ((success_count++))
-                    log "DEBUG" "Successfully $operation $service"
-                else
-                    failed_services+=("$service")
-                    log "WARN" "Failed to $operation $service"
-                fi
-            done
-            ;;
-        "enable"|"disable")
-            for service in "${service_array[@]}"; do
-                if systemctl "$operation" "$service" >/dev/null 2>&1; then
-                    ((success_count++))
-                    log "DEBUG" "Successfully $operation $service"
-                else
-                    failed_services+=("$service")
-                    log "WARN" "Failed to $operation $service"
-                fi
-            done
-            ;;
-        "status")
-            # Batch status check
-            local status_output
-            status_output=$(systemctl is-active "${service_array[@]}" 2>/dev/null || true)
-            
-            local status_array=()
-            while IFS= read -r status; do
-                status_array+=("$status")
-            done <<< "$status_output"
-            
-            # Display results
-            printf "%-4s %-30s %-12s\n" "No." "Service" "Status"
-            printf "%-4s %-30s %-12s\n" "---" "-------" "------"
-            
-            local i=1
-            for idx in "${!service_array[@]}"; do
-                local service="${service_array[$idx]}"
-                local status="${status_array[$idx]:-unknown}"
-                
-                local status_color="$RED"
-                case "$status" in
-                    "active") status_color="$GREEN" ;;
-                    "inactive") status_color="$RED" ;;
-                    "activating") status_color="$YELLOW" ;;
-                    "deactivating") status_color="$YELLOW" ;;
-                    "failed") status_color="$RED" ;;
-                    *) status_color="$GRAY" ;;
-                esac
-                
-                printf "%-4s %-30s ${status_color}%-12s${NC}\n" "$i." "$service" "$status"
-                ((i++))
-            done
-            
-            return 0
-            ;;
-        *)
-            log "ERROR" "Unsupported batch operation: $operation"
-            return 1
-            ;;
-    esac
-    
-    # Report results
-    log "INFO" "Batch operation completed: $success_count/${#service_array[@]} services succeeded"
-    
-    if [[ ${#failed_services[@]} -gt 0 ]]; then
-        log "WARN" "Failed services: ${failed_services[*]}"
-        return 1
-    fi
-    
-    return 0
-}
-
-# Optimized service listing with caching
-get_services_optimized() {
-    local force_refresh="${1:-false}"
-    local cache_key="services_list"
-    local cache_ttl=60  # 1 minute cache
-    
-    # Check cache first
-    if [[ "$force_refresh" != "true" ]]; then
-        local cached_services
-        if cached_services=$(get_cached_value "$cache_key" "$cache_ttl"); then
-            echo "$cached_services"
-            return 0
-        fi
-    fi
-    
-    # Get fresh service list
-    local services
-    services=$(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//' | tr '\n' ' ')
-    
-    # Cache the result
-    set_cached_value "$cache_key" "$services" "$cache_ttl"
-    
-    echo "$services"
-    return 0
-}
-
-# Optimized service status checking
-get_service_status_optimized() {
-    local service="$1"
-    local cache_key="status_${service}"
-    local cache_ttl=30  # 30 seconds cache
-    
-    # Check cache first
-    local cached_status
-    if cached_status=$(get_cached_value "$cache_key" "$cache_ttl"); then
-        echo "$cached_status"
-        return 0
-    fi
-    
-    # Get fresh status
-    local status
-    status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
-    
-    # Cache the result
-    set_cached_value "$cache_key" "$status" "$cache_ttl"
-    
-    echo "$status"
-    return 0
-}
-
-# Performance monitoring and optimization
-monitor_performance() {
-    local duration="${1:-60}"  # Monitor for 60 seconds by default
-    
-    log "INFO" "Starting performance monitoring for ${duration}s..."
-    
-    local start_time=$(date +%s)
-    local end_time=$((start_time + duration))
-    local sample_count=0
-    local total_response_time=0
-    
-    while [[ $(date +%s) -lt $end_time ]]; do
-        local sample_start=$(date +%s%3N)
-        
-        # Sample operation (get service list)
-        get_services_optimized "true" >/dev/null
-        
-        local sample_end=$(date +%s%3N)
-        local response_time=$((sample_end - sample_start))
-        
-        total_response_time=$((total_response_time + response_time))
-        ((sample_count++))
-        
-        # Log every 10 samples
-        if [[ $((sample_count % 10)) -eq 0 ]]; then
-            local avg_response_time=$((total_response_time / sample_count))
-            log "DEBUG" "Performance sample $sample_count: avg response time ${avg_response_time}ms"
-        fi
-        
-        sleep 1
-    done
-    
-    local avg_response_time=$((total_response_time / sample_count))
-    log "INFO" "Performance monitoring completed:"
-    log "INFO" "  Samples: $sample_count"
-    log "INFO" "  Average response time: ${avg_response_time}ms"
-    log "INFO" "  Cache hit ratio: $(calculate_cache_hit_ratio)"
-}
-
-# Clear all performance caches
-clear_performance_caches() {
-    # Clear service-related caches
-    clear_cache_entry "services_list"
-    clear_cache_entry "frp_installation"
-    
-    # Clear all status caches
-    for key in "${!CACHE_DATA[@]}"; do
-        if [[ "$key" == status_* ]]; then
-            clear_cache_entry "${key%_value}"
-        fi
-    done
-    
-    log "DEBUG" "Performance caches cleared"
-}
-
-# Optimize systemctl daemon operations
-optimize_systemctl() {
-    local operation="$1"
-    
-    case "$operation" in
-        "reload")
-            # Reload systemd daemon
-            systemctl daemon-reload
-            log "INFO" "Systemd daemon reloaded"
-            ;;
-        "reset-failed")
-            # Reset failed services
-            systemctl reset-failed
-            log "INFO" "Failed services reset"
-            ;;
-        "status")
-            # Show systemd status
-            systemctl status --no-pager -l
-            ;;
-        *)
-            log "ERROR" "Unknown systemctl optimization: $operation"
-            return 1
-            ;;
-    esac
-    
-    return 0
-}
-
-#==============================================================================
-# SECTION 7: DIAGNOSTICS & TROUBLESHOOTING
-#==============================================================================
-
 # Troubleshooting and diagnostics menu
 troubleshooting_menu() {
     while true; do
         # Check for Ctrl+C signal
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return
         fi
 
@@ -8005,8 +6229,8 @@ troubleshooting_menu() {
         read -r choice
 
         # Check for Ctrl+C after read
-        if [[ "${MENU_STATE["ctrl_c_pressed"]}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
+        if [[ "$CTRL_C_PRESSED" == "true" ]]; then
+            CTRL_C_PRESSED=false
             return
         fi
 
@@ -8153,188 +6377,6 @@ validate_all_connections() {
     else
         echo -e "  No servers found to test"
     fi
-}
-
-#==============================================================================
-# UNIFIED LOG VIEWING SYSTEM
-#==============================================================================
-
-# Unified log viewing function
-view_logs() {
-    local service="$1"
-    local mode="$2"        # recent|realtime|search|filter|enhanced|menu
-    local filter="$3"      # time|level|keyword
-    local options="$4"    # additional parameters
-
-    # Validate inputs
-    if [[ -z "$service" ]]; then
-        log "ERROR" "Service name is required"
-        return 1
-    fi
-
-    # Check if service exists
-    if ! systemctl list-units --type=service --all --no-legend --plain | grep -q "^${service}\.service"; then
-        log "ERROR" "Service '$service' not found"
-        return 1
-    fi
-
-    case "$mode" in
-        "recent")
-            echo -e "${YELLOW}Recent logs functionality moved to view_logs_enhanced${NC}"
-            ;;
-        "realtime")
-            echo -e "${YELLOW}Realtime logs functionality moved to view_logs_enhanced${NC}"
-            ;;
-        "search")
-            view_logs_search "$service" "$filter"
-            ;;
-        "filter")
-            view_logs_filter "$service" "$filter" "$options"
-            ;;
-        "enhanced")
-            view_logs_enhanced "$service"
-            ;;
-        "menu")
-            view_logs_menu "$service"
-            ;;
-        *)
-            log "ERROR" "Unknown log mode: $mode"
-            echo -e "${CYAN}Available modes:${NC} recent, realtime, search, filter, enhanced, menu"
-            return 1
-            ;;
-    esac
-}
-
-
-# Filter logs by time
-view_logs_filter_by_time() {
-    local service="$1"
-    local time_filter="${2:-1 hour ago}"
-
-    echo -e "\n${YELLOW}Filtering logs since: $time_filter${NC}"
-    echo -e "${GRAY}Press any key to continue...${NC}"
-    
-    # Color-coded time-filtered logs
-    journalctl -u "$service" --since "$time_filter" --no-pager --output=short-precise | \
-        sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
-        sed -E 's/(WARN|WARNING)/\o033[33m&\o033[0m/g' | \
-        sed -E 's/(INFO|SUCCESS)/\o033[32m&\o033[0m/g' | \
-        sed -E 's/(DEBUG|TRACE)/\o033[36m&\o033[0m/g'
-    
-    read -n 1 -s
-}
-
-# Filter logs by level
-view_logs_filter_by_level() {
-    local service="$1"
-    local level="${2:-ERROR}"
-
-    echo -e "\n${YELLOW}Filtering logs by level: $level${NC}"
-    echo -e "${GRAY}Press any key to continue...${NC}"
-    
-    # Color-coded level-filtered logs
-    journalctl -u "$service" --no-pager --output=short-precise | grep -i "$level" | \
-        sed -E 's/(ERROR|FAILED|FAIL)/\o033[31m&\o033[0m/g' | \
-        sed -E 's/(WARN|WARNING)/\o033[33m&\o033[0m/g' | \
-        sed -E 's/(INFO|SUCCESS)/\o033[32m&\o033[0m/g' | \
-        sed -E 's/(DEBUG|TRACE)/\o033[36m&\o033[0m/g'
-    
-    read -n 1 -s
-}
-
-# Enhanced logs viewer with statistics
-view_logs_enhanced() {
-    local service="$1"
-
-    while true; do
-        clear
-        echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${PURPLE}║                            📋 Enhanced Service Logs                                 ║${NC}"
-        echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════════════════════════════╝${NC}"
-
-        echo -e "\n${CYAN}📋 Service: ${YELLOW}$service${NC}"
-        echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-        # Log statistics
-        local total_logs=$(journalctl -u "$service" --no-pager -q | wc -l)
-        local today_logs=$(journalctl -u "$service" --since today --no-pager -q | wc -l)
-        local hour_logs=$(journalctl -u "$service" --since "1 hour ago" --no-pager -q | wc -l)
-        local error_logs=$(journalctl -u "$service" --since "24 hours ago" --no-pager -q | grep -i error | wc -l)
-        local warn_logs=$(journalctl -u "$service" --since "24 hours ago" --no-pager -q | grep -i warn | wc -l)
-
-        echo -e "\n${CYAN}📊 Log Statistics:${NC}"
-        echo -e "  Total logs: ${GREEN}$total_logs${NC}"
-        echo -e "  Today: ${GREEN}$today_logs${NC}"
-        echo -e "  Last hour: ${GREEN}$hour_logs${NC}"
-        echo -e "  Errors (24h): ${RED}$error_logs${NC}"
-        echo -e "  Warnings (24h): ${YELLOW}$warn_logs${NC}"
-
-        echo -e "\n${CYAN}Log Viewing Options:${NC}"
-        echo "1. Recent Logs (50 lines)"
-        echo "2. Real-time Logs"
-        echo "3. Search Logs"
-        echo "4. Filter by Time"
-        echo "5. Filter by Level"
-        echo "6. Export Logs"
-        echo "0. Back"
-
-        echo -e "\n${YELLOW}Enter your choice [0-6]:${NC} "
-        read -r choice
-
-        case $choice in
-            1) echo -e "${YELLOW}Recent logs functionality moved to view_logs_enhanced${NC}" ;;
-            2) echo -e "${YELLOW}Realtime logs functionality moved to view_logs_enhanced${NC}" ;;
-            3) view_logs_search "$service" ;;
-            4) 
-                echo -e "${YELLOW}Enter time filter (e.g., '1 hour ago', 'today', 'yesterday'):${NC} "
-                read -r time_filter
-                view_logs_filter_by_time "$service" "$time_filter"
-                ;;
-            5)
-                echo -e "${YELLOW}Enter log level (ERROR, WARN, INFO, DEBUG):${NC} "
-                read -r level
-                view_logs_filter_by_level "$service" "$level"
-                ;;
-            6) export_logs "$service" ;;
-            0) return ;;
-            *) log "WARN" "Invalid choice. Please try again." ;;
-        esac
-    done
-}
-
-# Log viewing menu
-view_logs_menu() {
-    local service="$1"
-    
-    if [[ -z "$service" ]]; then
-        clear
-        echo -e "${CYAN}📋 Service Logs Viewer${NC}"
-
-        local services=($(systemctl list-units --type=service --all --no-legend --plain | grep -E "(moonfrp|frp)" | awk '{print $1}' | sed 's/\.service//'))
-
-        if [[ ${#services[@]} -eq 0 ]]; then
-            echo -e "\n${YELLOW}No FRP services found${NC}"
-            read -p "Press Enter to continue..."
-            return
-        fi
-
-        echo -e "\n${CYAN}Available services:${NC}"
-        for i in "${!services[@]}"; do
-            echo "$((i+1)). ${services[$i]}"
-        done
-
-        echo -e "\n${YELLOW}Select service number:${NC} "
-        read -r service_num
-
-        if [[ ! "$service_num" =~ ^[0-9]+$ ]] || [[ $service_num -lt 1 ]] || [[ $service_num -gt ${#services[@]} ]]; then
-            log "ERROR" "Invalid service number"
-            return 1
-        fi
-
-        service="${services[$((service_num-1))]}"
-    fi
-
-    view_logs_enhanced "$service"
 }
 
 # View service logs
@@ -9321,10 +7363,6 @@ fix_web_panel_issues() {
             ;;
     esac
 }
-
-#==============================================================================
-# SECTION 8: MAIN EXECUTION
-#==============================================================================
 
 # Main execution function
 main() {
