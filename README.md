@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="MoonFRP Logo" width="160" height="160" />
+  <img src="assets/logo.png" alt="MoonFRP Logo" width="320" height="320" />
 </p>
 
 # MoonFRP 🌙 v2.0.0
@@ -8,10 +8,11 @@
 
 <p align="center">
   <a href="https://github.com/k4lantar4/moonfrp/actions">
-    <img alt="CI" src="https://img.shields.io/badge/CI-passing-4caf50?style=for-the-badge" />
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/k4lantar4/moonfrp/ci.yml?label=CI&style=for-the-badge&logo=github" />
   </a>
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-2f80ed?style=for-the-badge" />
-  <img alt="Shell" src="https://img.shields.io/badge/Shell-bash-333?style=for-the-badge" />
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-2f80ed?style=for-the-badge&logo=opensourceinitiative&logoColor=white" />
+  <img alt="Shell" src="https://img.shields.io/badge/Shell-Bash-333?style=for-the-badge&logo=gnubash&logoColor=white" />
+  <img alt="Version" src="https://img.shields.io/badge/Version-2.0.0-6c5ce7?style=for-the-badge" />
 </p>
 
 ## ✨ Key Features
@@ -34,7 +35,8 @@
 ```bash
 # Basic installation
 curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh | bash
-
+```
+```bash
 # With environment variables
 curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh | \
   MOONFRP_SERVER_BIND_PORT="7000" \
