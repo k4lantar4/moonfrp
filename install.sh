@@ -149,7 +149,7 @@ install_moonfrp() {
     mkdir -p "$TEMP_DIR"
     
     # Download all required files
-    local files=("moonfrp-core.sh" "moonfrp-config.sh" "moonfrp-services.sh" "moonfrp-ui.sh" "moonfrp-new.sh")
+    local files=("moonfrp-core.sh" "moonfrp-config.sh" "moonfrp-services.sh" "moonfrp-ui.sh" "moonfrp.sh")
     
     for file in "${files[@]}"; do
         local url="$REPO_URL/$file"
@@ -168,7 +168,7 @@ install_moonfrp() {
 #!/bin/bash
 # MoonFRP Main Script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/moonfrp-new.sh" "$@"
+exec "$SCRIPT_DIR/moonfrp.sh" "$@"
 EOF
     
     chmod +x "$TEMP_DIR/$SCRIPT_NAME"

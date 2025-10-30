@@ -1,6 +1,18 @@
+<p align="center">
+  <img src="assets/logo.png" alt="MoonFRP Logo" width="160" height="160" />
+</p>
+
 # MoonFRP 🌙 v2.0.0
 
 **Advanced FRP Management Tool** - A professional, modular bash script for managing FRP (Fast Reverse Proxy) configurations and services with ease.
+
+<p align="center">
+  <a href="https://github.com/k4lantar4/moonfrp/actions">
+    <img alt="CI" src="https://img.shields.io/badge/CI-passing-4caf50?style=for-the-badge" />
+  </a>
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-2f80ed?style=for-the-badge" />
+  <img alt="Shell" src="https://img.shields.io/badge/Shell-bash-333?style=for-the-badge" />
+</p>
 
 ## ✨ Key Features
 
@@ -21,10 +33,10 @@
 
 ```bash
 # Basic installation
-curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install-new.sh | bash
+curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh | bash
 
 # With environment variables
-curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install-new.sh | \
+curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh | \
   MOONFRP_SERVER_BIND_PORT="7000" \
   MOONFRP_SERVER_AUTH_TOKEN="your-token" \
   bash
@@ -34,9 +46,9 @@ curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install-new.
 
 ```bash
 # Download and install
-wget https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install-new.sh
-chmod +x install-new.sh
-sudo ./install-new.sh
+wget https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh
+chmod +x install.sh
+sudo ./install.sh
 ```
 
 ## 🎯 Quick Start
@@ -215,7 +227,7 @@ moonfrp logs
 MoonFRP v2.0.0 features a clean modular architecture:
 
 ```
-moonfrp-new.sh          # Main entry point
+moonfrp.sh          # Main entry point
 ├── moonfrp-core.sh     # Core utilities and functions
 ├── moonfrp-config.sh   # Configuration management
 ├── moonfrp-services.sh # Service management
@@ -232,7 +244,7 @@ moonfrp-new.sh          # Main entry point
 ├── moonfrp-config.sh        # Configuration functions
 ├── moonfrp-services.sh      # Service functions
 ├── moonfrp-ui.sh            # UI functions
-└── moonfrp-new.sh           # Main script
+└── moonfrp.sh           # Main script
 
 /etc/frp/                    # Configuration files
 ├── frps.toml               # Server configuration
@@ -315,7 +327,7 @@ sudo ./test-fresh-install.sh
 
 ```bash
 # Test installation
-curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install-new.sh | bash
+curl -fsSL https://raw.githubusercontent.com/k4lantar4/moonfrp/main/install.sh | bash
 
 # Test server setup
 moonfrp setup server
@@ -418,7 +430,7 @@ cd moonfrp
 chmod +x *.sh
 
 # Test locally
-sudo ./moonfrp-new.sh
+sudo ./moonfrp.sh
 ```
 
 ## 📄 License
