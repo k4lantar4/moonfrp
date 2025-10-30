@@ -1482,8 +1482,8 @@ tcpmuxHTTPConnectPort = 5002
 tcpmuxPassthrough = false
 
 transport.maxPoolCount = 50
-transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 5
+transport.tcpMux = false
+transport.tcpMuxKeepaliveInterval = 10
 transport.heartbeatTimeout = 90
 transport.tcpKeepalive = 300
 
@@ -1537,7 +1537,7 @@ quicBindPort = $quic_port
 # QUIC Protocol advanced options
 transport.quic.keepalivePeriod = 10
 transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 100
+transport.quic.maxIncomingStreams = 100000
 
 EOF
     fi
@@ -1612,14 +1612,14 @@ log.level = "warn"
 log.maxDays = 2
 log.disablePrintColor = false
 
-transport.poolCount = 10
+transport.poolCount = 20
 transport.protocol = "$transport_protocol"
 transport.heartbeatTimeout = 90
-transport.heartbeatInterval = 5
-transport.dialServerTimeout = 5
-transport.dialServerKeepalive = 300
-transport.tcpMux = true
-transport.tcpMuxKeepaliveInterval = 5
+transport.heartbeatInterval = 30
+transport.dialServerTimeout = 10
+transport.dialServerKeepalive = 120
+transport.tcpMux = false
+transport.tcpMuxKeepaliveInterval = 10
 
 transport.tls.enable = false
 
@@ -1666,7 +1666,7 @@ EOF
 # Note: Server must have QUIC enabled (quicBindPort configured)
 transport.quic.keepalivePeriod = 10
 transport.quic.maxIdleTimeout = 30
-transport.quic.maxIncomingStreams = 100
+transport.quic.maxIncomingStreams = 100000
 
 EOF
             ;;

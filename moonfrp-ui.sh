@@ -286,6 +286,7 @@ main_menu() {
         echo "3. Configuration Management"
         echo "4. System Status"
         echo "5. Advanced Tools"
+        echo "6. Download & Install FRP v$FRP_VERSION"
         echo "0. Exit"
         echo
         
@@ -307,6 +308,11 @@ main_menu() {
                 ;;
             5)
                 advanced_tools_menu
+                ;;
+            6)
+                show_header "Install FRP" "Download & Install FRP v$FRP_VERSION"
+                install_frp
+                read -p "Press Enter to continue..."
                 ;;
             0)
                 echo -e "${GREEN}Goodbye!${NC}"

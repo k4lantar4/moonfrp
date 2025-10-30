@@ -60,7 +60,7 @@ transport.tls.enable = $DEFAULT_TLS_ENABLE
 transport.tls.force = $DEFAULT_TLS_FORCE
 transport.maxPoolCount = $DEFAULT_MAX_POOL_COUNT
 transport.tcpMux = $DEFAULT_TCP_MUX
-transport.tcpMuxKeepaliveInterval = 30
+transport.tcpMuxKeepaliveInterval = $DEFAULT_TCP_MUX_KEEPALIVE_INTERVAL
 transport.heartbeatInterval = $DEFAULT_HEARTBEAT_INTERVAL
 transport.heartbeatTimeout = $DEFAULT_HEARTBEAT_TIMEOUT
 
@@ -121,13 +121,15 @@ log.maxDays = $DEFAULT_LOG_MAX_DAYS
 log.disablePrintColor = $DEFAULT_LOG_DISABLE_COLOR
 
 # Transport
+transport.protocol = "tcp"
 transport.tls.enable = $DEFAULT_TLS_ENABLE
 transport.poolCount = $DEFAULT_POOL_COUNT
 transport.tcpMux = $DEFAULT_TCP_MUX
-transport.tcpMuxKeepaliveInterval = 30
+transport.tcpMuxKeepaliveInterval = $DEFAULT_TCP_MUX_KEEPALIVE_INTERVAL
 transport.heartbeatInterval = $DEFAULT_HEARTBEAT_INTERVAL
 transport.heartbeatTimeout = $DEFAULT_HEARTBEAT_TIMEOUT
-transport.dialServerKeepalive = 300
+transport.dialServerTimeout = $DEFAULT_DIAL_SERVER_TIMEOUT
+transport.dialServerKeepalive = $DEFAULT_DIAL_SERVER_KEEPALIVE
 
 # Performance
 loginFailExit = true
