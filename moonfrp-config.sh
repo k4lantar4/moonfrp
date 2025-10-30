@@ -37,6 +37,7 @@ generate_server_config() {
 
 bindAddr = "$DEFAULT_SERVER_BIND_ADDR"
 bindPort = $DEFAULT_SERVER_BIND_PORT
+quicBindPort = $DEFAULT_SERVER_BIND_PORT
 
 # Authentication
 auth.method = "$DEFAULT_AUTH_METHOD"
@@ -56,20 +57,25 @@ log.maxDays = $DEFAULT_LOG_MAX_DAYS
 log.disablePrintColor = $DEFAULT_LOG_DISABLE_COLOR
 
 # Transport
-transport.tls.enable = $DEFAULT_TLS_ENABLE
-transport.tls.force = $DEFAULT_TLS_FORCE
-transport.maxPoolCount = $DEFAULT_MAX_POOL_COUNT
-transport.tcpMux = $DEFAULT_TCP_MUX
-transport.tcpMuxKeepaliveInterval = $DEFAULT_TCP_MUX_KEEPALIVE_INTERVAL
-transport.heartbeatInterval = $DEFAULT_HEARTBEAT_INTERVAL
-transport.heartbeatTimeout = $DEFAULT_HEARTBEAT_TIMEOUT
+# transport.tls.enable = $DEFAULT_TLS_ENABLE
+# transport.tls.force = $DEFAULT_TLS_FORCE
+# sample override: maximize connection pool per client
+transport.maxPoolCount = 65535
+transport.tcpMux = false
+transport.tcpMuxKeepaliveInterval = 10
+transport.tcpKeepalive = 120
+# transport.heartbeatInterval = $DEFAULT_HEARTBEAT_INTERVAL
+transport.heartbeatTimeout = 90
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
 
 # Performance
 userConnTimeout = 10
-maxPortsPerClient = 0
+maxPortsPerClient = 100
 
 # Security
-detailedErrorsToClient = true
+# detailedErrorsToClient = true
 
 # HTTP/HTTPS
 vhostHTTPPort = 80
@@ -122,17 +128,20 @@ log.disablePrintColor = $DEFAULT_LOG_DISABLE_COLOR
 
 # Transport
 transport.protocol = "tcp"
-transport.tls.enable = $DEFAULT_TLS_ENABLE
-transport.poolCount = $DEFAULT_POOL_COUNT
-transport.tcpMux = $DEFAULT_TCP_MUX
-transport.tcpMuxKeepaliveInterval = $DEFAULT_TCP_MUX_KEEPALIVE_INTERVAL
-transport.heartbeatInterval = $DEFAULT_HEARTBEAT_INTERVAL
-transport.heartbeatTimeout = $DEFAULT_HEARTBEAT_TIMEOUT
-transport.dialServerTimeout = $DEFAULT_DIAL_SERVER_TIMEOUT
-transport.dialServerKeepalive = $DEFAULT_DIAL_SERVER_KEEPALIVE
+transport.tcpMux = false
+transport.tcpMuxKeepaliveInterval = 10
+transport.dialServerTimeout = 10
+transport.dialServerKeepalive = 120
+transport.poolCount = 20
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+transport.tls.enable = false
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
 
 # Performance
-loginFailExit = true
+loginFailExit = false
 udpPacketSize = 1500
 
 # Web server for control
