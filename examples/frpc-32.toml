@@ -1,0 +1,58 @@
+# MoonFRP Client Configuration
+# Generated on $(date)
+
+user = "moonfrp-32"
+serverAddr = "185.32.32.32"
+serverPort = 7000
+
+# Authentication
+auth.method = "token"
+auth.token = "your_secret_auth_token_here"
+
+# Logging
+log.to = "/var/log/frp/frpc-32.log"
+log.level = "info"
+log.maxDays = 7
+log.disablePrintColor = false
+
+# Transport
+transport.protocol = "tcp"
+transport.tcpMux = false
+transport.tcpMuxKeepaliveInterval = 10
+transport.dialServerTimeout = 10
+transport.dialServerKeepalive = 120
+transport.poolCount = 20
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+transport.tls.enable = false
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
+
+# Performance
+loginFailExit = false
+udpPacketSize = 1500
+
+# Web server for control
+webServer.addr = "127.0.0.1"
+webServer.port = 7432
+webServer.user = "admin"
+webServer.password = "random_password_here"
+webServer.pprofEnable = false
+
+[[proxies]]
+name = "tcp_8080-32"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8080
+remotePort = 8080
+
+[[proxies]]
+name = "tcp_8081-32"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8081
+remotePort = 8081
+
+
+

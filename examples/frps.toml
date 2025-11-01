@@ -1,0 +1,58 @@
+# MoonFRP Server Configuration
+# Generated on $(date)
+
+bindAddr = "0.0.0.0"
+bindPort = 7000
+quicBindPort = 7000
+
+# Authentication
+auth.method = "token"
+auth.token = "your_secret_auth_token_here"
+
+# Dashboard
+webServer.addr = "0.0.0.0"
+webServer.port = 7500
+webServer.user = "admin"
+webServer.password = "dashboard_password_here"
+webServer.pprofEnable = false
+
+# Logging
+log.to = "/var/log/frp/frps.log"
+log.level = "info"
+log.maxDays = 7
+log.disablePrintColor = false
+
+# Transport
+# transport.tls.enable = true
+# transport.tls.force = false
+# sample override: maximize connection pool per client
+transport.maxPoolCount = 65535
+transport.tcpMux = false
+transport.tcpMuxKeepaliveInterval = 10
+transport.tcpKeepalive = 120
+# transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIdleTimeout = 30
+transport.quic.maxIncomingStreams = 100000
+
+# Performance
+userConnTimeout = 10
+maxPortsPerClient = 100
+
+# Security
+# detailedErrorsToClient = true
+
+# HTTP/HTTPS
+vhostHTTPPort = 80
+vhostHTTPSPort = 443
+
+# UDP
+udpPacketSize = 1500
+
+# NAT hole punching
+# Retention time for NAT hole punching strategy data (in hours)
+# Used for XTCP proxy type to establish P2P connections
+# 168 hours = 7 days (data kept for analysis of NAT traversal attempts)
+natholeAnalysisDataReserveHours = 168
+

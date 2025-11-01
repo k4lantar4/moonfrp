@@ -146,6 +146,18 @@ generate_client_config() {
         client_user="moonfrp${config_suffix}"
     fi
     
+    # Calculate webServer port from suffix (extract numeric part)
+    local web_port_offset=0
+    if [[ -n "$config_suffix" ]]; then
+        local numeric_part=$(echo "$config_suffix" | sed 's/[^0-9]//g')
+        web_port_offset=${numeric_part:-0}
+        # Limit offset to prevent port conflicts (max 999)
+        if [[ $web_port_offset -gt 999 ]]; then
+            web_port_offset=$((web_port_offset % 1000))
+        fi
+    fi
+    local web_port=$((7400 + web_port_offset))
+    
     cat > "$config_file" << EOF
 # MoonFRP Client Configuration
 # Generated on $(date)
@@ -184,7 +196,7 @@ udpPacketSize = 1500
 
 # Web server for control
 webServer.addr = "127.0.0.1"
-webServer.port = $((7400 + ${config_suffix:-0}))
+webServer.port = $web_port
 webServer.user = "admin"
 webServer.password = "$(generate_token 16)"
 webServer.pprofEnable = false
@@ -250,8 +262,13 @@ generate_multi_ip_configs() {
         local client_port="${CLI_PORTS_ARRAY[i]:-8080}"
         
         if validate_ip "$ip" && validate_port "$server_port"; then
+            # Extract last octet from IP for filename (e.g., 185.177.177.177 -> 177)
+            local ip_last_octet=$(echo "$ip" | awk -F'.' '{print $4}')
+            local config_suffix="-${ip_last_octet}"
+            local client_user="moonfrp-${ip_last_octet}"
+            
             ((config_count++))
-            generate_client_config "$ip" "$server_port" "$auth_token" "moonfrp_$i" "_$i" "$client_port"
+            generate_client_config "$ip" "$server_port" "$auth_token" "$client_user" "$config_suffix" "$client_port"
         else
             log "WARN" "Skipping invalid IP/port: $ip:$server_port"
         fi
