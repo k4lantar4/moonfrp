@@ -228,7 +228,7 @@ setup_client_service() {
         return 1
     fi
     
-    create_systemd_service "client" "$service_name" "$config_file" "frpc" "$config_suffix}"
+    create_systemd_service "client" "$service_name" "$config_file" "frpc" "$config_suffix"
     enable_service "$service_name"
     
     log "INFO" "Client service setup complete: $service_name"

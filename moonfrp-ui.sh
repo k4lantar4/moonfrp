@@ -229,14 +229,17 @@ quick_multi_ip_setup() {
 install_frp() {
     log "INFO" "Installing FRP v$FRP_VERSION..."
     
-    # Detect architecture
-    local arch=$(uname -m)
-    case $arch in
-        x86_64) arch="linux_amd64" ;;
-        aarch64) arch="linux_arm64" ;;
-        armv7l) arch="linux_armv7" ;;
-        *) log "ERROR" "Unsupported architecture: $arch"; return 1 ;;
-    esac
+    # Determine architecture (prefer environment/CONFIG-provided FRP_ARCH)
+    local arch="${FRP_ARCH:-}"
+    if [[ -z "$arch" ]]; then
+        arch=$(uname -m)
+        case $arch in
+            x86_64) arch="linux_amd64" ;;
+            aarch64) arch="linux_arm64" ;;
+            armv7l) arch="linux_armv7" ;;
+            *) log "ERROR" "Unsupported architecture: $arch"; return 1 ;;
+        esac
+    fi
     
     # Download URL
     local download_url="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_${arch}.tar.gz"
@@ -277,7 +280,21 @@ main_menu() {
         
         show_header "MoonFRP" "Advanced FRP Management Tool"
         
-        show_system_status
+        # Lightweight status summary (2-state)
+        echo -e "${CYAN}Status:${NC}"
+        if check_frp_installation; then
+            echo -e "  FRP: ${GREEN}Active${NC} (v$(get_frp_version))"
+        else
+            echo -e "  FRP: ${RED}Inactive${NC}"
+        fi
+        # Server service simple state
+        if systemctl list-unit-files | grep -q "${SERVER_SERVICE}\.service"; then
+            if systemctl is-active --quiet "${SERVER_SERVICE}"; then
+                echo -e "  Server: ${GREEN}Active${NC}"
+            else
+                echo -e "  Server: ${RED}Inactive${NC}"
+            fi
+        fi
         echo
         
         echo -e "${CYAN}Main Menu:${NC}"

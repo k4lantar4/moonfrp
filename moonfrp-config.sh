@@ -12,6 +12,44 @@ source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-core.sh"
 #==============================================================================
 # CONFIGURATION FUNCTIONS
 #==============================================================================
+# Read a TOML key's value (supports dotted keys) from file
+get_toml_value() {
+    local file="$1"
+    local key="$2"
+    if [[ ! -f "$file" ]]; then
+        return 1
+    fi
+    # Exact key match at line start (allow spaces)
+    local pattern="^$(printf '%s' "$key" | sed 's/[].[^$*\\]/\\&/g')\\s*=\\s*"
+    local line
+    line=$(grep -E "$pattern" "$file" | head -1 || true)
+    if [[ -z "$line" ]]; then
+        return 1
+    fi
+    # Extract value after '=' and trim spaces
+    echo "$line" | sed -E 's/^[^=]+=\\s*//'
+}
+
+# Set or add a TOML key=value (preserves file, replaces first occurrence, adds if missing)
+set_toml_value() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+    local tmp_file
+    tmp_file="${file}.tmp.$$"
+    local escaped_key
+    escaped_key=$(printf '%s' "$key" | sed 's/[].[^$*\\]/\\&/g')
+    if grep -Eq "^${escaped_key}\\s*=" "$file"; then
+        # Replace existing line
+        sed -E "s|^(${escaped_key}\\s*=).*|\\1 ${value}|" "$file" > "$tmp_file"
+    else
+        # Append at end
+        cp "$file" "$tmp_file"
+        echo "${key} = ${value}" >> "$tmp_file"
+    fi
+    mv "$tmp_file" "$file"
+}
+
 
 # Generate server configuration
 generate_server_config() {
@@ -186,20 +224,30 @@ generate_multi_ip_configs() {
     fi
     
     IFS=',' read -ra IPS <<< "$server_ips"
-    IFS=',' read -ra SERVER_PORTS <<< "$server_ports"
+    IFS=',' read -ra SRV_PORTS_ARRAY <<< "$server_ports"
+    
+    # Validate array lengths
+    if [[ ${#IPS[@]} -ne ${#SRV_PORTS_ARRAY[@]} ]]; then
+        log "WARN" "Server IPs count (${#IPS[@]}) doesn't match server ports count (${#SRV_PORTS_ARRAY[@]})"
+    fi
     
     # Use server ports as client ports if not specified
     if [[ -z "$client_ports" ]]; then
         client_ports="$server_ports"
     fi
     
-    IFS=',' read -ra CLIENT_PORTS <<< "$client_ports"
+    IFS=',' read -ra CLI_PORTS_ARRAY <<< "$client_ports"
+    
+    # Validate client ports array length
+    if [[ ${#IPS[@]} -ne ${#CLI_PORTS_ARRAY[@]} ]]; then
+        log "WARN" "Server IPs count (${#IPS[@]}) doesn't match client ports count (${#CLI_PORTS_ARRAY[@]})"
+    fi
     
     local config_count=0
     for i in "${!IPS[@]}"; do
         local ip="${IPS[i]}"
-        local server_port="${SERVER_PORTS[i]:-7000}"
-        local client_port="${CLIENT_PORTS[i]:-8080}"
+        local server_port="${SRV_PORTS_ARRAY[i]:-7000}"
+        local client_port="${CLI_PORTS_ARRAY[i]:-8080}"
         
         if validate_ip "$ip" && validate_port "$server_port"; then
             ((config_count++))
@@ -419,40 +467,71 @@ config_server_wizard() {
     echo
     
     local bind_addr bind_port auth_token dashboard_port dashboard_user dashboard_password
+    local existing_file="$CONFIG_DIR/frps.toml"
     
-    safe_read "Server bind address" "bind_addr" "$DEFAULT_SERVER_BIND_ADDR"
+    # If existing config, read current values as defaults
+    local def_bind_addr="$DEFAULT_SERVER_BIND_ADDR"
+    local def_bind_port="$DEFAULT_SERVER_BIND_PORT"
+    local def_auth_token="$DEFAULT_SERVER_AUTH_TOKEN"
+    local def_dash_port="$DEFAULT_SERVER_DASHBOARD_PORT"
+    local def_dash_user="$DEFAULT_SERVER_DASHBOARD_USER"
+    if [[ -f "$existing_file" ]]; then
+        def_bind_addr=$(get_toml_value "$existing_file" "bindAddr" | sed 's/["\'']//g' || echo "$def_bind_addr")
+        def_bind_port=$(get_toml_value "$existing_file" "bindPort" | tr -d '"' || echo "$def_bind_port")
+        def_auth_token=$(get_toml_value "$existing_file" "auth.token" | sed 's/["\'']//g' || echo "$def_auth_token")
+        def_dash_port=$(get_toml_value "$existing_file" "webServer.port" | tr -d '"' || echo "$def_dash_port")
+        def_dash_user=$(get_toml_value "$existing_file" "webServer.user" | sed 's/["\'']//g' || echo "$def_dash_user")
+    fi
+    
+    safe_read "Server bind address" "bind_addr" "$def_bind_addr"
     while ! validate_ip "$bind_addr" && [[ "$bind_addr" != "0.0.0.0" ]]; do
         log "ERROR" "Invalid IP address"
         safe_read "Server bind address" "bind_addr" "$DEFAULT_SERVER_BIND_ADDR"
     done
     
-    safe_read "Server bind port" "bind_port" "$DEFAULT_SERVER_BIND_PORT"
+    safe_read "Server bind port" "bind_port" "$def_bind_port"
     while ! validate_port "$bind_port"; do
         log "ERROR" "Invalid port number"
         safe_read "Server bind port" "bind_port" "$DEFAULT_SERVER_BIND_PORT"
     done
     
-    safe_read "Auth token (leave empty to generate)" "auth_token" ""
+    safe_read "Auth token (leave empty to keep/generate)" "auth_token" "$def_auth_token"
     
-    safe_read "Dashboard port" "dashboard_port" "$DEFAULT_SERVER_DASHBOARD_PORT"
+    safe_read "Dashboard port" "dashboard_port" "$def_dash_port"
     while ! validate_port "$dashboard_port"; do
         log "ERROR" "Invalid port number"
         safe_read "Dashboard port" "dashboard_port" "$DEFAULT_SERVER_DASHBOARD_PORT"
     done
     
-    safe_read "Dashboard username" "dashboard_user" "$DEFAULT_SERVER_DASHBOARD_USER"
-    safe_read "Dashboard password (leave empty to generate)" "dashboard_password" ""
+    safe_read "Dashboard username" "dashboard_user" "$def_dash_user"
+    safe_read "Dashboard password (leave empty to keep/generate)" "dashboard_password" ""
     
-    # Generate configuration
-    local generated_token=$(generate_server_config "$auth_token" "$dashboard_password")
-    
-    echo
-    log "INFO" "Server configuration generated successfully!"
-    echo -e "${GREEN}Configuration file:${NC} $CONFIG_DIR/frps.toml"
-    echo -e "${GREEN}Auth token:${NC} $generated_token"
-    echo -e "${GREEN}Dashboard:${NC} http://$bind_addr:$dashboard_port"
-    echo -e "${GREEN}Username:${NC} $dashboard_user"
-    echo -e "${GREEN}Password:${NC} ${dashboard_password:-$(grep 'webServer.password' "$CONFIG_DIR/frps.toml" | cut -d'"' -f2)}"
+    # If no existing config, generate new; else update keys in place
+    if [[ ! -f "$existing_file" ]]; then
+        local generated_token=$(generate_server_config "$auth_token" "$dashboard_password")
+        echo
+        log "INFO" "Server configuration generated successfully!"
+        echo -e "${GREEN}Configuration file:${NC} $CONFIG_DIR/frps.toml"
+        echo -e "${GREEN}Auth token:${NC} $generated_token"
+        echo -e "${GREEN}Dashboard:${NC} http://$bind_addr:$dashboard_port"
+        echo -e "${GREEN}Username:${NC} $dashboard_user"
+        echo -e "${GREEN}Password:${NC} ${dashboard_password:-$(grep 'webServer.password' "$CONFIG_DIR/frps.toml" | cut -d'"' -f2)}"
+    else
+        backup_config "$existing_file"
+        set_toml_value "$existing_file" "bindAddr" "\"$bind_addr\""
+        set_toml_value "$existing_file" "bindPort" "$bind_port"
+        if [[ -n "$auth_token" ]]; then
+            set_toml_value "$existing_file" "auth.token" "\"$auth_token\""
+        fi
+        set_toml_value "$existing_file" "webServer.port" "$dashboard_port"
+        set_toml_value "$existing_file" "webServer.user" "\"$dashboard_user\""
+        if [[ -n "$dashboard_password" ]]; then
+            set_toml_value "$existing_file" "webServer.password" "\"$dashboard_password\""
+        fi
+        echo
+        log "INFO" "Server configuration updated in-place: $existing_file"
+        echo -e "${GREEN}Dashboard:${NC} http://$bind_addr:$dashboard_port"
+    fi
 }
 
 # Client configuration wizard
@@ -461,29 +540,54 @@ config_client_wizard() {
     echo
     
     local server_addr server_port auth_token client_user local_ports
+    local existing_file="$CONFIG_DIR/frpc.toml"
     
-    safe_read "Server address" "server_addr" "$DEFAULT_CLIENT_SERVER_ADDR"
+    # Read defaults from existing config if present
+    local def_server_addr="$DEFAULT_CLIENT_SERVER_ADDR"
+    local def_server_port="$DEFAULT_CLIENT_SERVER_PORT"
+    local def_auth_token="$DEFAULT_CLIENT_AUTH_TOKEN"
+    local def_client_user="$DEFAULT_CLIENT_USER"
+    if [[ -f "$existing_file" ]]; then
+        def_server_addr=$(get_toml_value "$existing_file" "serverAddr" | sed 's/["\'']//g' || echo "$def_server_addr")
+        def_server_port=$(get_toml_value "$existing_file" "serverPort" | tr -d '"' || echo "$def_server_port")
+        def_auth_token=$(get_toml_value "$existing_file" "auth.token" | sed 's/["\'']//g' || echo "$def_auth_token")
+        def_client_user=$(get_toml_value "$existing_file" "user" | sed 's/["\'']//g' || echo "$def_client_user")
+    fi
+    
+    safe_read "Server address" "server_addr" "$def_server_addr"
     while ! validate_ip "$server_addr"; do
         log "ERROR" "Invalid IP address"
         safe_read "Server address" "server_addr" "$DEFAULT_CLIENT_SERVER_ADDR"
     done
     
-    safe_read "Server port" "server_port" "$DEFAULT_CLIENT_SERVER_PORT"
+    safe_read "Server port" "server_port" "$def_server_port"
     while ! validate_port "$server_port"; do
         log "ERROR" "Invalid port number"
         safe_read "Server port" "server_port" "$DEFAULT_CLIENT_SERVER_PORT"
     done
     
-    safe_read "Auth token" "auth_token" "$DEFAULT_CLIENT_AUTH_TOKEN"
-    safe_read "Client username" "client_user" "$DEFAULT_CLIENT_USER"
+    safe_read "Auth token" "auth_token" "$def_auth_token"
+    safe_read "Client username" "client_user" "$def_client_user"
     safe_read "Local ports to proxy (comma-separated)" "local_ports" ""
     
-    # Generate configuration
-    generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports"
-    
-    echo
-    log "INFO" "Client configuration generated successfully!"
-    echo -e "${GREEN}Configuration file:${NC} $CONFIG_DIR/frpc.toml"
+    if [[ ! -f "$existing_file" ]]; then
+        # Generate configuration
+        generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports"
+        echo
+        log "INFO" "Client configuration generated successfully!"
+        echo -e "${GREEN}Configuration file:${NC} $CONFIG_DIR/frpc.toml"
+    else
+        backup_config "$existing_file"
+        set_toml_value "$existing_file" "serverAddr" "\"$server_addr\""
+        set_toml_value "$existing_file" "serverPort" "$server_port"
+        set_toml_value "$existing_file" "auth.token" "\"$auth_token\""
+        set_toml_value "$existing_file" "user" "\"$client_user\""
+        echo
+        log "INFO" "Client configuration updated in-place: $existing_file"
+        if [[ -n "$local_ports" ]]; then
+            echo -e "${YELLOW}Note:${NC} Local ports input provided; add/update proxies manually if needed."
+        fi
+    fi
 }
 
 # Multi-IP configuration wizard

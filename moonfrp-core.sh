@@ -38,7 +38,35 @@ fi
 # Global variables with defaults (only declare if not already set)
 [[ -z "${MOONFRP_VERSION:-}" ]] && readonly MOONFRP_VERSION="2.0.0"
 [[ -z "${FRP_VERSION:-}" ]] && readonly FRP_VERSION="${MOONFRP_FRP_VERSION:-0.65.0}"
-[[ -z "${FRP_ARCH:-}" ]] && readonly FRP_ARCH="${MOONFRP_FRP_ARCH:-linux_amd64}"
+
+# Normalize FRP architecture to expected download format (linux_amd64, linux_arm64, linux_armv7)
+if [[ -z "${FRP_ARCH:-}" ]]; then
+    __RAW_ARCH__="${MOONFRP_FRP_ARCH:-}"
+    if [[ -z "${__RAW_ARCH__}" ]]; then
+        # Fallback to uname mapping
+        case "$(uname -m)" in
+            x86_64) __NORM_ARCH__="linux_amd64" ;;
+            aarch64) __NORM_ARCH__="linux_arm64" ;;
+            armv7l) __NORM_ARCH__="linux_armv7" ;;
+            *) __NORM_ARCH__="linux_amd64" ;;
+        esac
+    else
+        # Accept already-normalized values
+        if [[ "${__RAW_ARCH__}" =~ ^linux_ ]]; then
+            __NORM_ARCH__="${__RAW_ARCH__}"
+        else
+            # Map common short forms to full linux_* forms
+            case "${__RAW_ARCH__}" in
+                amd64|x86_64) __NORM_ARCH__="linux_amd64" ;;
+                arm64|aarch64) __NORM_ARCH__="linux_arm64" ;;
+                armv7|armv7l) __NORM_ARCH__="linux_armv7" ;;
+                *) __NORM_ARCH__="linux_amd64" ;;
+            esac
+        fi
+    fi
+    readonly FRP_ARCH="${__NORM_ARCH__}"
+    unset __RAW_ARCH__ __NORM_ARCH__
+fi
 [[ -z "${FRP_DIR:-}" ]] && readonly FRP_DIR="${MOONFRP_INSTALL_DIR:-/opt/frp}"
 [[ -z "${CONFIG_DIR:-}" ]] && readonly CONFIG_DIR="${MOONFRP_CONFIG_DIR:-/etc/frp}"
 [[ -z "${LOG_DIR:-}" ]] && readonly LOG_DIR="${MOONFRP_LOG_DIR:-/var/log/frp}"
