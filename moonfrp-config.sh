@@ -712,7 +712,14 @@ else
     # Already set (e.g., by test), make it readonly if not already
     readonly BACKUP_DIR
 fi
-readonly MAX_BACKUPS_PER_FILE=10
+# Backup limit per file: 10
+# Allow override via environment variable (for testing)
+if [[ -z "${MAX_BACKUPS_PER_FILE:-}" ]]; then
+    readonly MAX_BACKUPS_PER_FILE=10
+else
+    # Already set (e.g., by test), make it readonly if not already
+    readonly MAX_BACKUPS_PER_FILE
+fi
 
 # Create timestamped backup of config file
 # Usage: backup_config_file <config_file>

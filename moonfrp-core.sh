@@ -37,7 +37,14 @@ fi
 
 # Global variables with defaults (only declare if not already set)
 [[ -z "${MOONFRP_VERSION:-}" ]] && readonly MOONFRP_VERSION="2.0.0"
-readonly FRP_VERSION="${FRP_VERSION:-0.65.0}"
+# FRP Version: allow override via environment variable (for testing)
+# Make readonly only if not already readonly (config file may have already set it)
+if [[ -z "${FRP_VERSION:-}" ]]; then
+    readonly FRP_VERSION="0.65.0"
+else
+    # Already set (e.g., by config file), make it readonly if not already
+    readonly FRP_VERSION 2>/dev/null || true
+fi
 
 # Normalize FRP architecture to expected download format (linux_amd64, linux_arm64, linux_armv7)
 # Support MOONFRP_FRP_ARCH (legacy) for backward compatibility, but prefer FRP_ARCH
@@ -403,8 +410,9 @@ create_default_config() {
 # Generated on $(date)
 
 # FRP Version
-FRP_VERSION="$FRP_VERSION"
-FRP_ARCH="$FRP_ARCH"
+# Only set if not already set (allows override from environment or if already readonly)
+[[ -z "\${FRP_VERSION:-}" ]] && FRP_VERSION="$FRP_VERSION" || true
+[[ -z "\${FRP_ARCH:-}" ]] && FRP_ARCH="$FRP_ARCH" || true
 
 # Installation Directories
 FRP_DIR="$FRP_DIR"
