@@ -61,6 +61,7 @@ COMMANDS:
     status                    Show system status
     logs [service]            View logs
     
+    restore <config> --backup=<timestamp>  Restore config from backup
     install                   Install FRP binaries
     uninstall                 Uninstall MoonFRP
     
@@ -88,6 +89,9 @@ EXAMPLES:
     
     # Health check
     moonfrp health check
+    
+    # Restore from backup
+    moonfrp restore /etc/frp/frpc.toml --backup=20250130-143025
 
 ENVIRONMENT VARIABLES:
     # Core Configuration
@@ -239,6 +243,77 @@ if [[ $# -gt 0 ]]; then
                 view_service_logs "${2}"
             else
                 view_logs_menu
+            fi
+            ;;
+        "restore")
+            # Parse restore command: moonfrp restore <config> --backup=<timestamp>
+            local config_file="${2:-}"
+            local backup_timestamp=""
+            
+            # Parse arguments
+            shift 2 2>/dev/null || true
+            while [[ $# -gt 0 ]]; do
+                if [[ "$1" =~ ^--backup=(.+)$ ]]; then
+                    backup_timestamp="${BASH_REMATCH[1]}"
+                elif [[ "$1" =~ ^--backup$ ]] && [[ -n "${2:-}" ]]; then
+                    backup_timestamp="$2"
+                    shift
+                else
+                    log "ERROR" "Unknown option: $1"
+                    log "INFO" "Usage: moonfrp restore <config> --backup=<timestamp>"
+                    exit 1
+                fi
+                shift
+            done
+            
+            if [[ -z "$config_file" ]]; then
+                log "ERROR" "Config file required"
+                log "INFO" "Usage: moonfrp restore <config> --backup=<timestamp>"
+                log "INFO" "Example: moonfrp restore /etc/frp/frpc.toml --backup=20250130-143025"
+                exit 1
+            fi
+            
+            if [[ -z "$backup_timestamp" ]]; then
+                # No timestamp provided - use interactive mode
+                if ! restore_config_interactive "$config_file"; then
+                    exit 1
+                fi
+                exit 0
+            fi
+            
+            # Find backup file matching timestamp
+            local filename=$(basename "$config_file")
+            local backup_dir="${BACKUP_DIR:-${HOME}/.moonfrp/backups}"
+            local backup_file="${backup_dir}/${filename}.${backup_timestamp}.bak"
+            
+            if [[ ! -f "$backup_file" ]]; then
+                log "ERROR" "Backup file not found: $backup_file"
+                log "INFO" "Available backups for $(basename "$config_file"):"
+                local backups=()
+                while IFS= read -r backup; do
+                    [[ -n "$backup" ]] && backups+=("$backup")
+                done < <(list_backups "$config_file" 2>/dev/null)
+                
+                if [[ ${#backups[@]} -eq 0 ]]; then
+                    log "WARN" "No backups found for this config file"
+                else
+                    log "INFO" "Use one of these timestamps:"
+                    for backup in "${backups[@]}"; do
+                        local backup_name=$(basename "$backup")
+                        local ts="${backup_name##*.}"
+                        ts="${ts%.bak}"
+                        log "INFO" "  - $ts"
+                    done
+                fi
+                exit 1
+            fi
+            
+            # Restore from backup
+            if restore_config_from_backup "$config_file" "$backup_file"; then
+                log "INFO" "Successfully restored $(basename "$config_file") from backup"
+            else
+                log "ERROR" "Failed to restore configuration"
+                exit 1
             fi
             ;;
         "install")
