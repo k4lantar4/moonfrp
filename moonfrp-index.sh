@@ -6,10 +6,6 @@
 # Description: SQLite-based index for fast config file metadata queries
 #==============================================================================
 
-# Source core functions
-source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-core.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-config.sh"
-
 # Prevent multiple sourcing
 if [[ "${MOONFRP_INDEX_LOADED:-}" == "true" ]]; then
     if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
@@ -18,6 +14,10 @@ if [[ "${MOONFRP_INDEX_LOADED:-}" == "true" ]]; then
     exit 0
 fi
 export MOONFRP_INDEX_LOADED="true"
+
+# Source core functions
+source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-core.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-config.sh"
 
 #==============================================================================
 # CONFIGURATION

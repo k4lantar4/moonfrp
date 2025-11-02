@@ -31,6 +31,7 @@ get_toml_value() {
 }
 
 # Set or add a TOML key=value (preserves file, replaces first occurrence, adds if missing)
+# Validates configuration before saving
 set_toml_value() {
     local file="$1"
     local key="$2"
@@ -39,6 +40,18 @@ set_toml_value() {
     tmp_file="${file}.tmp.$$"
     local escaped_key
     escaped_key=$(printf '%s' "$key" | sed 's/[].[^$*\\]/\\&/g')
+    
+    # Determine config type from filename for validation
+    local config_type=""
+    local basename_file
+    basename_file=$(basename "$file")
+    if [[ "$basename_file" == "frps.toml" ]] || [[ "$basename_file" =~ ^frps.*\.toml$ ]]; then
+        config_type="server"
+    elif [[ "$basename_file" == "frpc.toml" ]] || [[ "$basename_file" =~ ^frpc.*\.toml$ ]] || \
+         [[ "$basename_file" =~ ^frpc-.*\.toml$ ]]; then
+        config_type="client"
+    fi
+    
     if grep -Eq "^${escaped_key}\\s*=" "$file"; then
         # Replace existing line
         sed -E "s|^(${escaped_key}\\s*=).*|\\1 ${value}|" "$file" > "$tmp_file"
@@ -47,6 +60,21 @@ set_toml_value() {
         cp "$file" "$tmp_file"
         echo "${key} = ${value}" >> "$tmp_file"
     fi
+    
+    # Validate before saving if config type is known
+    if [[ -n "$config_type" ]] && [[ -f "$tmp_file" ]]; then
+        if ! validate_config_file "$tmp_file" "$config_type" 2>&1; then
+            log "ERROR" "Configuration validation failed after modification. Change not saved."
+            rm -f "$tmp_file"
+            return 1
+        fi
+    fi
+    
+    # Backup existing config before modification (Story 1.4: AC 1)
+    if [[ -f "$file" ]]; then
+        backup_config_file "$file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
+    fi
+    
     mv "$tmp_file" "$file"
 }
 
@@ -69,7 +97,10 @@ generate_server_config() {
         log "INFO" "Generated dashboard password: $dashboard_password"
     fi
     
-    cat > "$config_file" << EOF
+    local tmp_file
+    tmp_file="${config_file}.tmp.$$"
+    
+    cat > "$tmp_file" << EOF
 # MoonFRP Server Configuration
 # Generated on $(date)
 
@@ -126,6 +157,20 @@ udpPacketSize = 1500
 natholeAnalysisDataReserveHours = 168
 EOF
     
+    # Validate before saving
+    if ! validate_config_file "$tmp_file" "server" 2>&1; then
+        log "ERROR" "Server configuration validation failed. File not saved."
+        rm -f "$tmp_file"
+        return 1
+    fi
+    
+    # Backup existing config before modification (Story 1.4: AC 1)
+    if [[ -f "$config_file" ]]; then
+        backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
+    fi
+    
+    # Validation passed - move to final location
+    mv "$tmp_file" "$config_file"
     log "INFO" "Generated server configuration: $config_file"
     echo "$auth_token"
 }
@@ -157,8 +202,10 @@ generate_client_config() {
         fi
     fi
     local web_port=$((7400 + web_port_offset))
+    local tmp_file
+    tmp_file="${config_file}.tmp.$$"
     
-    cat > "$config_file" << EOF
+    cat > "$tmp_file" << EOF
 # MoonFRP Client Configuration
 # Generated on $(date)
 
@@ -207,7 +254,7 @@ EOF
         IFS=',' read -ra PORTS <<< "$local_ports"
         for port in "${PORTS[@]}"; do
             if validate_port "$port"; then
-                cat >> "$config_file" << EOF
+                cat >> "$tmp_file" << EOF
 
 [[proxies]]
 name = "tcp_${port}${config_suffix}"
@@ -220,6 +267,20 @@ EOF
         done
     fi
     
+    # Validate before saving
+    if ! validate_config_file "$tmp_file" "client" 2>&1; then
+        log "ERROR" "Client configuration validation failed. File not saved."
+        rm -f "$tmp_file"
+        return 1
+    fi
+    
+    # Backup existing config before modification (Story 1.4: AC 1)
+    if [[ -f "$config_file" ]]; then
+        backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
+    fi
+    
+    # Validation passed - move to final location
+    mv "$tmp_file" "$config_file"
     log "INFO" "Generated client configuration: $config_file"
 }
 
@@ -329,56 +390,432 @@ EOF
     echo "$secret_key"
 }
 
-# Validate configuration syntax
-validate_config_syntax() {
+# Validate TOML syntax
+# Returns 0 if valid, 1 if invalid. Errors printed to stderr.
+validate_toml_syntax() {
     local config_file="$1"
+    local line_num=0
+    local error_count=0
     
     if [[ ! -f "$config_file" ]]; then
-        log "ERROR" "Configuration file not found: $config_file"
+        echo "Error: Configuration file not found: $config_file" >&2
         return 1
     fi
     
-    # Check if it's a TOML file
-    if [[ "$config_file" == *.toml ]]; then
-        # Basic TOML syntax check
-        if grep -q "=" "$config_file" && ! grep -q "^\[\[.*\]\]" "$config_file" || grep -q "^\[.*\]" "$config_file"; then
-            log "DEBUG" "TOML syntax appears valid: $config_file"
+    # Try using toml-validator command if available
+    if command -v toml-validator &>/dev/null; then
+        if toml-validator "$config_file" 2>&1; then
             return 0
         else
-            log "ERROR" "Invalid TOML syntax in: $config_file"
+            echo "TOML syntax validation failed (via toml-validator)" >&2
+            return 1
+        fi
+    fi
+    
+    # Fallback: Basic TOML syntax check using get_toml_value parsing test
+    local test_key="__validation_test__"
+    local test_value="test"
+    
+    # Test basic parsing by trying to read a non-existent key (should not crash)
+    if ! get_toml_value "$config_file" "$test_key" &>/dev/null; then
+        # This is expected - the key doesn't exist, but parsing should work
+        # Now test if file has valid structure
+        if [[ ! -s "$config_file" ]]; then
+            echo "Error (line 1): Empty configuration file" >&2
+            return 1
+        fi
+        
+        # Check for basic TOML structure: key=value or [section] or [[array]]
+        local has_valid_structure=false
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            ((line_num++))
+            
+            # Skip comments and empty lines
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+            
+            # Check for valid TOML patterns
+            if [[ "$line" =~ ^[[:space:]]*[^=#\[]+[[:space:]]*=[[:space:]]*[^[:space:]]+ ]] || \
+               [[ "$line" =~ ^[[:space:]]*\[\[.*\]\] ]] || \
+               [[ "$line" =~ ^[[:space:]]*\[.*\] ]]; then
+                has_valid_structure=true
+            elif [[ "$line" =~ ^[[:space:]]*[^=#\[]+[[:space:]]*=[[:space:]]*$ ]]; then
+                # Empty value is valid
+                has_valid_structure=true
+            else
+                # Potentially invalid line - check if it's just whitespace
+                if [[ ! "$line" =~ ^[[:space:]]*$ ]]; then
+                    echo "Error (line $line_num): Invalid TOML syntax: ${line:0:50}" >&2
+                    ((error_count++))
+                fi
+            fi
+        done < "$config_file"
+        
+        if [[ $error_count -gt 0 ]]; then
+            return 1
+        fi
+        
+        if [[ "$has_valid_structure" == "true" ]]; then
+            return 0
+        else
+            echo "Error: No valid TOML structure found in file" >&2
             return 1
         fi
     else
-        log "WARN" "Unknown configuration file format: $config_file"
+        # Shouldn't happen with test key, but if it does, file might be malformed
+        echo "Error: Unexpected parsing result during syntax validation" >&2
         return 1
     fi
 }
 
-# Backup configuration
-backup_config() {
+# Validate server configuration fields
+# Returns 0 if valid, 1 if invalid. Errors printed to stderr.
+validate_server_config() {
     local config_file="$1"
-    local backup_dir="$CONFIG_DIR/backups"
+    local error_count=0
+    
+    if [[ ! -f "$config_file" ]]; then
+        echo "Error: Configuration file not found: $config_file" >&2
+        return 1
+    fi
+    
+    # Validate bindPort (required, must be 1-65535)
+    local bind_port
+    bind_port=$(get_toml_value "$config_file" "bindPort" 2>/dev/null | tr -d '"' | tr -d "'" || true)
+    if [[ -z "$bind_port" ]]; then
+        echo "Error: Required field 'bindPort' is missing" >&2
+        ((error_count++))
+    elif ! validate_port "$bind_port"; then
+        echo "Error: Invalid 'bindPort' value '$bind_port' - must be between 1 and 65535" >&2
+        ((error_count++))
+    fi
+    
+    # Validate auth.token (required, minimum 8 characters)
+    local auth_token
+    auth_token=$(get_toml_value "$config_file" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || true)
+    if [[ -z "$auth_token" ]]; then
+        echo "Error: Required field 'auth.token' is missing" >&2
+        ((error_count++))
+    elif [[ ${#auth_token} -lt 8 ]]; then
+        echo "Error: 'auth.token' must be at least 8 characters long (current: ${#auth_token})" >&2
+        ((error_count++))
+    fi
+    
+    if [[ $error_count -gt 0 ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Validate client configuration fields
+# Returns 0 if valid, 1 if invalid. Errors printed to stderr.
+validate_client_config() {
+    local config_file="$1"
+    local error_count=0
+    local warning_count=0
+    
+    if [[ ! -f "$config_file" ]]; then
+        echo "Error: Configuration file not found: $config_file" >&2
+        return 1
+    fi
+    
+    # Validate serverAddr (required, must be valid IP or domain)
+    local server_addr
+    server_addr=$(get_toml_value "$config_file" "serverAddr" 2>/dev/null | sed 's/["'\'']//g' || true)
+    if [[ -z "$server_addr" ]]; then
+        echo "Error: Required field 'serverAddr' is missing" >&2
+        ((error_count++))
+    else
+        # Check if it's a valid IP address
+        if ! validate_ip "$server_addr"; then
+            # If not an IP, check if it's a valid domain name (basic check)
+            if [[ ! "$server_addr" =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+                echo "Error: Invalid 'serverAddr' value '$server_addr' - must be a valid IP address or domain name" >&2
+                ((error_count++))
+            fi
+        fi
+    fi
+    
+    # Validate serverPort (required, must be 1-65535)
+    local server_port
+    server_port=$(get_toml_value "$config_file" "serverPort" 2>/dev/null | tr -d '"' | tr -d "'" || true)
+    if [[ -z "$server_port" ]]; then
+        echo "Error: Required field 'serverPort' is missing" >&2
+        ((error_count++))
+    elif ! validate_port "$server_port"; then
+        echo "Error: Invalid 'serverPort' value '$server_port' - must be between 1 and 65535" >&2
+        ((error_count++))
+    fi
+    
+    # Validate auth.token (required, but no minimum length for client)
+    local auth_token
+    auth_token=$(get_toml_value "$config_file" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || true)
+    if [[ -z "$auth_token" ]]; then
+        echo "Error: Required field 'auth.token' is missing" >&2
+        ((error_count++))
+    fi
+    
+    # Check for at least one proxy definition (warning, not error)
+    if ! grep -q "^\[\[proxies\]\]" "$config_file" 2>/dev/null; then
+        echo "Warning: No proxy definitions found in client configuration" >&2
+        ((warning_count++))
+    fi
+    
+    if [[ $error_count -gt 0 ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Main validation function with auto-detection
+# Returns 0 if valid, 1 if invalid. Errors printed to stderr.
+# Usage: validate_config_file <config_file> [config_type]
+#   config_type: "server" or "client" (optional, auto-detected if not provided)
+validate_config_file() {
+    local config_file="$1"
+    local config_type="${2:-}"
+    local start_time
+    start_time=$(date +%s%N)
+    local error_count=0
+    
+    if [[ ! -f "$config_file" ]]; then
+        echo "Error: Configuration file not found: $config_file" >&2
+        return 1
+    fi
+    
+    # Auto-detect config type from filename if not provided
+    if [[ -z "$config_type" ]]; then
+        local basename_file
+        basename_file=$(basename "$config_file")
+        if [[ "$basename_file" == "frps.toml" ]] || [[ "$basename_file" =~ ^frps.*\.toml$ ]]; then
+            config_type="server"
+        elif [[ "$basename_file" == "frpc.toml" ]] || [[ "$basename_file" =~ ^frpc.*\.toml$ ]] || \
+             [[ "$basename_file" =~ ^frpc-.*\.toml$ ]]; then
+            config_type="client"
+        else
+            echo "Error: Cannot auto-detect config type from filename. Please specify 'server' or 'client'" >&2
+            return 1
+        fi
+    fi
+    
+    # Step 1: Validate TOML syntax
+    if ! validate_toml_syntax "$config_file" 2>/dev/null; then
+        validate_toml_syntax "$config_file" 2>&1
+        ((error_count++))
+    fi
+    
+    # Step 2: Validate config-type-specific fields
+    if [[ "$config_type" == "server" ]]; then
+        if ! validate_server_config "$config_file" 2>/dev/null; then
+            validate_server_config "$config_file" 2>&1
+            ((error_count++))
+        fi
+    elif [[ "$config_type" == "client" ]]; then
+        if ! validate_client_config "$config_file" 2>/dev/null; then
+            validate_client_config "$config_file" 2>&1
+            ((error_count++))
+        fi
+    else
+        echo "Error: Invalid config type '$config_type'. Must be 'server' or 'client'" >&2
+        return 1
+    fi
+    
+    # Step 3: Optional FRP binary validation
+    if command -v frps &>/dev/null && [[ "$config_type" == "server" ]]; then
+        if frps verify -c "$config_file" &>/dev/null 2>&1 || \
+           frps --verify-config "$config_file" &>/dev/null 2>&1 || \
+           "$(dirname "$(which frps 2>/dev/null || echo /opt/frp/frps)")/frps" verify -c "$config_file" &>/dev/null 2>&1; then
+            : # Optional check passed - no output
+        else
+            : # Optional check failed - silently continue
+        fi
+    elif command -v frpc &>/dev/null && [[ "$config_type" == "client" ]]; then
+        if frpc verify -c "$config_file" &>/dev/null 2>&1 || \
+           frpc --verify-config "$config_file" &>/dev/null 2>&1 || \
+           "$(dirname "$(which frpc 2>/dev/null || echo /opt/frp/frpc)")/frpc" verify -c "$config_file" &>/dev/null 2>&1; then
+            : # Optional check passed - no output
+        else
+            : # Optional check failed - silently continue
+        fi
+    fi
+    
+    # Check performance requirement (<100ms)
+    local end_time
+    end_time=$(date +%s%N)
+    local elapsed_ms=$(( (end_time - start_time) / 1000000 ))
+    if [[ $elapsed_ms -gt 100 ]]; then
+        echo "Warning: Validation took ${elapsed_ms}ms (target: <100ms)" >&2
+    fi
+    
+    if [[ $error_count -gt 0 ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Legacy function name for backward compatibility
+validate_config_syntax() {
+    validate_toml_syntax "$@"
+}
+
+# Save config file with validation
+# Writes to temporary file, validates, then moves to final location
+# Returns 0 on success, 1 on validation failure
+# Usage: save_config_file_with_validation <config_file> <config_type> <content_generator>
+#   config_type: "server" or "client"
+#   content_generator: function that outputs config content to stdout
+save_config_file_with_validation() {
+    local config_file="$1"
+    local config_type="$2"
+    local content_generator="$3"
+    local tmp_file
+    tmp_file="${config_file}.tmp.$$"
+    
+    # Generate content to temporary file
+    if [[ -n "$content_generator" ]] && type "$content_generator" &>/dev/null; then
+        "$content_generator" > "$tmp_file"
+    else
+        # If no generator provided, assume content is piped or already in temp file
+        log "ERROR" "Content generator function required"
+        return 1
+    fi
+    
+    # Validate temporary file
+    if ! validate_config_file "$tmp_file" "$config_type" 2>&1; then
+        log "ERROR" "Configuration validation failed. File not saved."
+        rm -f "$tmp_file"
+        return 1
+    fi
+    
+    # Backup existing config before modification (Story 1.4: AC 1)
+    if [[ -f "$config_file" ]]; then
+        backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
+    fi
+    
+    # Validation passed - move to final location
+    mv "$tmp_file" "$config_file"
+    return 0
+}
+
+#==============================================================================
+# AUTOMATIC BACKUP SYSTEM (Story 1.4)
+#==============================================================================
+
+# Backup directory: ~/.moonfrp/backups/
+# Allow override via environment variable (for testing)
+if [[ -z "${BACKUP_DIR:-}" ]]; then
+    readonly BACKUP_DIR="${HOME}/.moonfrp/backups"
+else
+    # Already set (e.g., by test), make it readonly if not already
+    readonly BACKUP_DIR
+fi
+readonly MAX_BACKUPS_PER_FILE=10
+
+# Create timestamped backup of config file
+# Usage: backup_config_file <config_file>
+# Returns backup file path on success, 1 on failure
+backup_config_file() {
+    local config_file="$1"
     
     if [[ ! -f "$config_file" ]]; then
         log "WARN" "Configuration file not found: $config_file"
         return 1
     fi
     
-    mkdir -p "$backup_dir"
+    # Ensure backup directory exists
+    mkdir -p "$BACKUP_DIR"
+    if [[ ! -d "$BACKUP_DIR" ]] || [[ ! -w "$BACKUP_DIR" ]]; then
+        log "WARN" "Backup directory not accessible: $BACKUP_DIR"
+        return 1
+    fi
     
     local filename=$(basename "$config_file")
-    local timestamp=$(date '+%Y%m%d_%H%M%S')
-    local backup_file="$backup_dir/${filename}.backup.$timestamp"
+    local timestamp=$(date '+%Y%m%d-%H%M%S')
+    local backup_file="$BACKUP_DIR/${filename}.${timestamp}.bak"
     
-    cp "$config_file" "$backup_file"
-    log "INFO" "Backed up configuration: $backup_file"
-    
-    # Clean up old backups (keep last 10)
-    find "$backup_dir" -name "${filename}.backup.*" -type f | sort -r | tail -n +11 | xargs rm -f
+    # Copy config file to backup location
+    if cp "$config_file" "$backup_file" 2>/dev/null; then
+        log "INFO" "Backed up configuration: $backup_file"
+        cleanup_old_backups "$config_file"
+        echo "$backup_file"
+        return 0
+    else
+        log "WARN" "Failed to create backup: $backup_file"
+        return 1
+    fi
 }
 
-# Restore configuration from backup
-restore_config() {
+# Clean up old backups beyond limit (keep last MAX_BACKUPS_PER_FILE)
+# Usage: cleanup_old_backups <config_file>
+cleanup_old_backups() {
+    local config_file="$1"
+    local filename=$(basename "$config_file")
+    
+    # Find all backups for this config file
+    local backups=()
+    while IFS= read -r backup; do
+        [[ -n "$backup" ]] && [[ -f "$backup" ]] && backups+=("$backup")
+    done < <(find "$BACKUP_DIR" -name "${filename}.*.bak" -type f 2>/dev/null)
+    
+    # If we have fewer backups than the limit, no cleanup needed
+    if [[ ${#backups[@]} -le $MAX_BACKUPS_PER_FILE ]]; then
+        return 0
+    fi
+    
+    # Sort by filename (which contains timestamp YYYYMMDD-HHMMSS)
+    # Reverse alphabetical sort will put newest first (higher timestamps)
+    local sorted_backups=()
+    IFS=$'\n' sorted_backups=($(printf '%s\n' "${backups[@]}" | sort -r))
+    
+    # Remove backups beyond limit
+    local count=0
+    for backup in "${sorted_backups[@]}"; do
+        [[ ! -f "$backup" ]] && continue
+        ((count++))
+        if ((count > MAX_BACKUPS_PER_FILE)); then
+            rm -f "$backup" 2>/dev/null && log "DEBUG" "Removed old backup: $(basename "$backup")"
+        fi
+    done
+}
+
+# List available backups for a config file
+# Usage: list_backups [config_file]
+# If config_file is provided, lists backups for that file only
+# If omitted, lists all backups
+# Returns array of backup file paths (newest first)
+list_backups() {
+    local config_file="${1:-}"
+    local backups=()
+    local sorted_backups=()
+    
+    if [[ -n "$config_file" ]]; then
+        local filename=$(basename "$config_file")
+        # Find backups for specific config file
+        while IFS= read -r backup; do
+            [[ -n "$backup" ]] && backups+=("$backup")
+        done < <(find "$BACKUP_DIR" -name "${filename}.*.bak" -type f 2>/dev/null)
+    else
+        # Find all backups
+        while IFS= read -r backup; do
+            [[ -n "$backup" ]] && backups+=("$backup")
+        done < <(find "$BACKUP_DIR" -name "*.bak" -type f 2>/dev/null)
+    fi
+    
+    # Sort by filename (which contains timestamp YYYYMMDD-HHMMSS)
+    # Reverse alphabetical sort will put newest first (higher timestamps)
+    sorted_backups=("${backups[@]}")
+    IFS=$'\n' sorted_backups=($(printf '%s\n' "${sorted_backups[@]}" | sort -r))
+    
+    # Print backup paths (one per line)
+    printf '%s\n' "${sorted_backups[@]}"
+}
+
+# Restore config file from backup
+# Usage: restore_config_from_backup <config_file> <backup_file>
+restore_config_from_backup() {
     local config_file="$1"
     local backup_file="$2"
     
@@ -387,9 +824,137 @@ restore_config() {
         return 1
     fi
     
-    backup_config "$config_file"
-    cp "$backup_file" "$config_file"
-    log "INFO" "Restored configuration from: $backup_file"
+    # Backup current config before restore (nested backup)
+    if [[ -f "$config_file" ]]; then
+        backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Failed to backup current config before restore"
+    fi
+    
+    # Copy backup file to config location
+    if cp "$backup_file" "$config_file" 2>/dev/null; then
+        log "INFO" "Restored configuration from: $backup_file"
+        
+        # Revalidate restored config (if Story 1.3 validation available)
+        if type validate_config_file &>/dev/null; then
+            local config_type=""
+            local basename_file=$(basename "$config_file")
+            if [[ "$basename_file" == "frps.toml" ]] || [[ "$basename_file" =~ ^frps.*\.toml$ ]]; then
+                config_type="server"
+            elif [[ "$basename_file" == "frpc.toml" ]] || [[ "$basename_file" =~ ^frpc.*\.toml$ ]] || \
+                 [[ "$basename_file" =~ ^frpc-.*\.toml$ ]]; then
+                config_type="client"
+            fi
+            
+            if [[ -n "$config_type" ]]; then
+                if ! validate_config_file "$config_file" "$config_type" 2>&1; then
+                    log "WARN" "Restored config validation failed, but restore completed"
+                fi
+            fi
+        fi
+        
+        # Update index if available (Story 1.2)
+        if type index_config_file &>/dev/null; then
+            index_config_file "$config_file" >/dev/null 2>&1 || log "DEBUG" "Index update skipped (non-critical)"
+        fi
+        
+        return 0
+    else
+        log "ERROR" "Failed to restore configuration from: $backup_file"
+        return 1
+    fi
+}
+
+# Interactive restore menu
+# Usage: restore_config_interactive <config_file>
+restore_config_interactive() {
+    local config_file="$1"
+    local backups=()
+    local backup
+    
+    # Get list of backups
+    while IFS= read -r backup; do
+        [[ -n "$backup" ]] && backups+=("$backup")
+    done < <(list_backups "$config_file")
+    
+    if [[ ${#backups[@]} -eq 0 ]]; then
+        log "WARN" "No backups found for: $config_file"
+        return 1
+    fi
+    
+    # Display backups with formatted dates
+    echo -e "${CYAN}Available backups for $(basename "$config_file"):${NC}"
+    echo
+    
+    local idx=0
+    for backup in "${backups[@]}"; do
+        ((idx++))
+        local backup_basename=$(basename "$backup")
+        local timestamp_part="${backup_basename##*.}"
+        timestamp_part="${timestamp_part%.bak}"
+        
+        # Parse timestamp (YYYYMMDD-HHMMSS) and format it
+        if [[ "$timestamp_part" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})$ ]]; then
+            local year="${BASH_REMATCH[1]}"
+            local month="${BASH_REMATCH[2]}"
+            local day="${BASH_REMATCH[3]}"
+            local hour="${BASH_REMATCH[4]}"
+            local minute="${BASH_REMATCH[5]}"
+            local second="${BASH_REMATCH[6]}"
+            local formatted_date="${year}-${month}-${day} ${hour}:${minute}:${second}"
+        else
+            local formatted_date="$timestamp_part"
+        fi
+        
+        echo -e "  ${GREEN}$idx${NC}. ${formatted_date} - ${backup_basename}"
+    done
+    
+    echo
+    
+    # Get user selection
+    local selection
+    local selected_backup
+    
+    while true; do
+        safe_read "Select backup to restore (1-${#backups[@]}) or 'q' to cancel" selection ""
+        
+        if [[ "$selection" == "q" ]] || [[ "$selection" == "Q" ]]; then
+            log "INFO" "Restore cancelled by user"
+            return 1
+        fi
+        
+        if [[ "$selection" =~ ^[0-9]+$ ]] && ((selection >= 1 && selection <= ${#backups[@]})); then
+            selected_backup="${backups[$((selection - 1))]}"
+            break
+        else
+            log "WARN" "Invalid selection. Please enter a number between 1 and ${#backups[@]}"
+        fi
+    done
+    
+    # Confirm restore operation
+    local confirm
+    safe_read "Restore from backup $(basename "$selected_backup")? (yes/no)" confirm ""
+    
+    if [[ "$confirm" =~ ^[Yy][Ee][Ss]$ ]] || [[ "$confirm" =~ ^[Yy]$ ]]; then
+        restore_config_from_backup "$config_file" "$selected_backup"
+        return $?
+    else
+        log "INFO" "Restore cancelled by user"
+        return 1
+    fi
+}
+
+# Legacy function name for backward compatibility
+backup_config() {
+    backup_config_file "$@"
+}
+
+# Legacy restore function for backward compatibility
+restore_config() {
+    if [[ $# -eq 2 ]]; then
+        restore_config_from_backup "$1" "$2"
+    else
+        log "ERROR" "Usage: restore_config <config_file> <backup_file>"
+        return 1
+    fi
 }
 
 # List available configurations
@@ -686,5 +1251,7 @@ config_visitor_wizard() {
 # Export functions
 export -f generate_server_config generate_client_config generate_multi_ip_configs
 export -f generate_visitor_config validate_config_syntax backup_config restore_config
+export -f backup_config_file cleanup_old_backups list_backups restore_config_from_backup restore_config_interactive
 export -f list_configurations config_wizard config_server_wizard config_client_wizard
 export -f config_multi_ip_wizard config_visitor_wizard
+export -f validate_toml_syntax validate_server_config validate_client_config validate_config_file
