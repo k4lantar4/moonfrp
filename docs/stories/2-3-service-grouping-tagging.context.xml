@@ -1,0 +1,172 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>MOONFRP-E02</epicId>
+    <storyId>MOONFRP-E02-S03</storyId>
+    <title>Service Grouping &amp; Tagging</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T20:04:10Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/2-3-service-grouping-tagging.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a DevOps engineer managing 50+ tunnels</asA>
+    <iWant>I want to tag services with key-value pairs for logical organization</iWant>
+    <soThat>so that I can perform filtered operations by environment, region, customer, or service type</soThat>
+    <tasks>
+- [ ] Verify service_tags table exists in index database (AC: 3)
+  - [ ] Check if service_tags table exists (created in Epic 1)
+  - [ ] If missing, create table with schema from Epic 1
+  - [ ] Create indexes: idx_tag_key, idx_tag_value, idx_tag_key_value
+  - [ ] Verify foreign key constraint to config_index table
+- [ ] Implement tag management functions (AC: 1, 7)
+  - [ ] Create add_config_tag() function in moonfrp-index.sh
+  - [ ] Create remove_config_tag() function
+  - [ ] Create list_config_tags() function
+  - [ ] Verify config exists in index before tagging
+  - [ ] Handle SQL injection with proper escaping
+  - [ ] Return appropriate error codes
+- [ ] Implement tag query functions (AC: 3, 5)
+  - [ ] Create query_configs_by_tag() function in moonfrp-index.sh
+  - [ ] Support exact match: "key:value"
+  - [ ] Support key-only match: "key" (any value)
+  - [ ] Use JOIN with config_index for fast queries
+  - [ ] Return array of config file paths
+- [ ] Implement service-to-tag mapping (AC: 4)
+  - [ ] Create get_services_by_tag() function in moonfrp-services.sh
+  - [ ] Convert config paths to service names (moonfrp-{basename})
+  - [ ] Use query_configs_by_tag() for config lookup
+  - [ ] Return array of service names
+- [ ] Implement bulk tagging (AC: 1, 7)
+  - [ ] Create bulk_tag_configs() function
+  - [ ] Use get_configs_by_filter() from Story 2.2
+  - [ ] Apply tag to all matching configs
+  - [ ] Support filter types: all, type, tag, name
+- [ ] Create interactive tag management menu (AC: 7)
+  - [ ] Create tag_management_menu() function
+  - [ ] Add tag to config (interactive)
+  - [ ] Remove tag from config (interactive)
+  - [ ] List tags for config (interactive)
+  - [ ] Bulk tag configs (interactive)
+  - [ ] List all tags (show all key-value pairs in use)
+  - [ ] Operations by tag menu (integration with Story 2.1)
+- [ ] CLI integration (AC: 1, 4, 5, 7)
+  - [ ] Add `moonfrp tag add &lt;config&gt; &lt;key&gt; &lt;value&gt;` command
+  - [ ] Add `moonfrp tag remove &lt;config&gt; &lt;key&gt;` command
+  - [ ] Add `moonfrp tag list &lt;config&gt;` command
+  - [ ] Add `moonfrp tag bulk --key=X --value=Y --filter=all` command
+  - [ ] Update service commands to support `--tag=key:value` option
+- [ ] Integrate with Story 2.1 filtered operations (AC: 4)
+  - [ ] Update bulk_operation_filtered() to use get_services_by_tag()
+  - [ ] Support `--tag=env:prod` filter in service bulk operations
+  - [ ] Support `--tag=region:us` filter in service bulk operations
+- [ ] Integrate with Story 2.2 config filtering (AC: 5)
+  - [ ] Update get_configs_by_filter() to support `tag:X` filter
+  - [ ] Use query_configs_by_tag() for tag-based filtering
+- [ ] Integrate with Story 2.4 templates (AC: 6)
+  - [ ] Support tag inheritance from template metadata
+  - [ ] Apply tags from template "# Tags:" comment during instantiation
+  - [ ] Parse template tags and apply via add_config_tag()
+- [ ] Testing (AC: 1, 2, 3, 4, 5, 7)
+  - [ ] test_add_tag_to_config()
+  - [ ] test_remove_tag_from_config()
+  - [ ] test_query_configs_by_tag()
+  - [ ] test_bulk_tag_assignment()
+  - [ ] test_filtered_operations_by_tag()
+  - [ ] test_multiple_tags_per_config()
+  - [ ] test_tag_persistence_in_index()
+  - [ ] test_service_name_conversion()
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Tag services with key-value pairs: env:prod, region:eu, customer:acme
+2. Multiple tags per service
+3. Tags stored in config index (fast queries)
+4. Operations by tag: restart --tag=env:prod
+5. List/filter services by tags
+6. Tag inheritance from config templates
+7. Tag management: add, remove, list
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact path="docs/epics/epic-02-bulk-operations.md" title="Epic 2: Bulk Operations" section="Story 2.3: Service Grouping &amp; Tagging" snippet="Tagging system with key-value pairs stored in config index database. Database schema includes service_tags table with foreign key to config_index. Supports tag queries, bulk tagging, and integration with Stories 2.1, 2.2, and 2.4."/>
+      <artifact path="docs/stories/2-3-service-grouping-tagging.md" title="Story 2.3: Service Grouping &amp; Tagging" section="Dev Notes" snippet="Database schema verification required. service_tags table may need creation during index initialization. Tag query patterns: exact match (key:value) and key-only match (key). Service name mapping: config file to moonfrp-{basename} service name."/>
+      <artifact path="docs/stories/1-2-implement-config-index.md" title="Story 1.2: Implement Config Index" section="Dev Notes" snippet="Index module pattern: moonfrp-index.sh. Database initialization: init_config_index() function. SQL injection prevention: proper string escaping. Error handling: graceful fallback patterns. Index file location: ~/.moonfrp/index.db."/>
+      <artifact path="docs/stories/2-1-parallel-service-management.md" title="Story 2.1: Parallel Service Management" section="Dev Notes" snippet="Service discovery pattern: get_moonfrp_services() function. Service naming convention: moonfrp-{basename}. Filtered operations pattern: bulk_operation_filtered() function. Integration: get_services_by_tag() will be used by Story 2.1."/>
+      <artifact path="docs/stories/2-2-bulk-configuration-operations.md" title="Story 2.2: Bulk Configuration Operations" section="Dev Notes" snippet="Config filtering pattern: get_configs_by_filter() function. Filter support: tag:X filter type. Integration: use query_configs_by_tag() for tag-based filtering."/>
+      <artifact path="docs/stories/2-4-configuration-templates.md" title="Story 2.4: Configuration Templates" section="Dev Notes" snippet="Tag inheritance: extract tags from template metadata. Template metadata format: # Tags: env:prod, type:client. Apply tags during template instantiation."/>
+    </docs>
+    <code>
+      <artifact path="moonfrp-index.sh" kind="index" symbol="init_config_index" lines="42-89" reason="Database initialization function. Will be extended to verify/create service_tags table if missing."/>
+      <artifact path="moonfrp-index.sh" kind="index" symbol="index_config_file" lines="92-150" reason="Config indexing function. Configs must be indexed before tagging (foreign key constraint requires config_id)."/>
+      <artifact path="moonfrp-index.sh" kind="database" symbol="check_sqlite3" lines="33-40" reason="SQLite availability check. Tag functions require SQLite for database operations."/>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="get_moonfrp_services" reason="Service discovery function (to be implemented in Story 2.1). get_services_by_tag() will convert config paths to service names using similar pattern."/>
+      <artifact path="moonfrp-config.sh" kind="config-filter" symbol="get_configs_by_filter" reason="Config filtering function (to be implemented in Story 2.2). Will be used by bulk_tag_configs() and updated to support tag:X filter using query_configs_by_tag()."/>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="bulk_operation_filtered" reason="Filtered bulk operations function (to be implemented in Story 2.1). Will be updated to use get_services_by_tag() for tag-based filtering."/>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash" version="4.0+"/>
+        <package name="sqlite3" version="3.0+"/>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>File Location: moonfrp-index.sh (tag management) and moonfrp-services.sh (service-to-tag mapping)</constraint>
+    <constraint>Database Schema: service_tags table must be created if missing during index initialization</constraint>
+    <constraint>SQL Injection: Must use proper string escaping for all SQL queries</constraint>
+    <constraint>Performance: Tag queries must be fast (&lt;50ms) via indexed database</constraint>
+    <constraint>Config Requirement: Config must exist in index (have config_id) before tagging</constraint>
+    <constraint>Tag Format: Tags must follow key:value format (e.g., "env:prod")</constraint>
+    <constraint>Service Name Mapping: Convert config file path to service name: moonfrp-{basename}</constraint>
+    <constraint>Integration: Story must work independently but integrates with Stories 2.1, 2.2, and 2.4</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="sqlite3" kind="system-command" signature="sqlite3 {database_file} {sql_command}" path="sqlite3">
+      SQLite3 database command. Used for all tag database operations including INSERT, SELECT, DELETE, and JOIN queries.
+    </interface>
+    <interface name="init_config_index" kind="bash-function" signature="init_config_index() - Initialize config index database" path="moonfrp-index.sh:42-89">
+      Database initialization function. Will be extended to verify/create service_tags table if missing.
+    </interface>
+    <interface name="index_config_file" kind="bash-function" signature="index_config_file(config_file) - Index config file" path="moonfrp-index.sh:92-150">
+      Config indexing function. Configs must be indexed before tagging (foreign key constraint requires config_id).
+    </interface>
+    <interface name="query_configs_by_tag" kind="bash-function" signature="query_configs_by_tag(tag) - Query configs by tag" path="moonfrp-index.sh (to be implemented)">
+      Tag query function. Returns array of config file paths matching tag (exact match "key:value" or key-only match "key").
+    </interface>
+    <interface name="get_configs_by_filter" kind="bash-function" signature="get_configs_by_filter(filter) - Get configs by filter (Story 2.2)" path="moonfrp-config.sh (to be implemented in Story 2.2)">
+      Config filtering function from Story 2.2. Will be used by bulk_tag_configs() and updated to support tag:X filter.
+    </interface>
+    <interface name="bulk_operation_filtered" kind="bash-function" signature="bulk_operation_filtered(operation, filter_type, filter_value) - Filtered bulk operations (Story 2.1)" path="moonfrp-services.sh (to be implemented in Story 2.1)">
+      Filtered bulk operations function from Story 2.1. Will be updated to use get_services_by_tag() for tag-based filtering.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows bash unit testing patterns from existing test suite. Functional tests must cover tag management (add, remove, list), tag queries (exact and key-only), bulk tagging, multiple tags per config, tag persistence, and service name conversion. Integration tests verify tag-based filtering in Stories 2.1 and 2.2. Edge cases: config not in index, duplicate tag key, invalid tag format, SQL injection prevention.
+    </standards>
+    <locations>
+      Test files: tests/test_tagging_system.sh (to be created). Follow patterns from tests/test_config_index.sh.
+    </locations>
+    <ideas>
+      <test ac="1,7">test_add_tag_to_config - Verify tag can be added to config in index</test>
+      <test ac="1,7">test_remove_tag_from_config - Verify tag can be removed from config</test>
+      <test ac="3,5">test_query_configs_by_tag_exact_match - Verify exact match "key:value" query works</test>
+      <test ac="3,5">test_query_configs_by_tag_key_only - Verify key-only match "key" query works</test>
+      <test ac="1,7">test_bulk_tag_assignment - Verify bulk tagging assigns tag to all matching configs</test>
+      <test ac="4">test_filtered_operations_by_tag - Integration test: verify tag-based service operations work (Story 2.1)</test>
+      <test ac="2">test_multiple_tags_per_config - Verify config can have multiple tags (different keys)</test>
+      <test ac="3">test_tag_persistence_in_index - Verify tags survive index rebuild and persist in database</test>
+      <test ac="4">test_service_name_conversion - Verify config paths correctly convert to service names (moonfrp-{basename})</test>
+      <test ac="1">test_tag_config_not_in_index - Edge case: verify error handling when config not in index</test>
+      <test ac="1">test_duplicate_tag_key - Edge case: verify duplicate tag key updates existing tag (UNIQUE constraint)</test>
+      <test ac="1">test_sql_injection_prevention - Security test: verify SQL injection prevention in tag queries</test>
+    </ideas>
+  </tests>
+</story-context>
+

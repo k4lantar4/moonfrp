@@ -1,6 +1,6 @@
 # Story 2.1: Parallel Service Management
 
-Status: drafted
+Status: ready-for-dev
 
 ## Story
 
@@ -243,7 +243,7 @@ bulk_service_operation() {
 
 ### Context Reference
 
-<!-- Path(s) to story context XML will be added here by context workflow -->
+- docs/stories/2-1-parallel-service-management.context.xml
 
 ### Agent Model Used
 

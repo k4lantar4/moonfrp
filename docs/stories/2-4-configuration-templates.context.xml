@@ -1,0 +1,186 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>MOONFRP-E02</epicId>
+    <storyId>MOONFRP-E02-S04</storyId>
+    <title>Configuration Templates</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T20:04:10Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/2-4-configuration-templates.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a DevOps engineer deploying 50+ similar tunnels</asA>
+    <iWant>I want to create config templates with variables and instantiate them in bulk</iWant>
+    <soThat>so that I can rapidly deploy consistent tunnel configurations without manual editing</soThat>
+    <tasks>
+- [ ] Create new module file moonfrp-templates.sh (AC: 1, 4)
+  - [ ] Define TEMPLATE_DIR constant: $HOME/.moonfrp/templates
+  - [ ] Create template directory if it doesn't exist
+  - [ ] Define template file extension: .toml.tmpl
+- [ ] Implement template creation (AC: 1, 7)
+  - [ ] Create create_template() function
+  - [ ] Save template content to TEMPLATE_DIR/{name}.toml.tmpl
+  - [ ] Support template metadata comments: # Template:, # Variables:, # Tags:
+  - [ ] Template versioning support (store version in metadata or filename)
+- [ ] Implement template listing (AC: 4)
+  - [ ] Create list_templates() function
+  - [ ] List all .toml.tmpl files in template directory
+  - [ ] Return template names (without extension)
+- [ ] Implement template instantiation (AC: 1, 2, 5, 6)
+  - [ ] Create instantiate_template() function
+  - [ ] Read template file from TEMPLATE_DIR
+  - [ ] Extract template metadata (tags, description) from comments
+  - [ ] Substitute variables: ${VAR_NAME} → value
+  - [ ] Check for unsubstituted variables (warn or error)
+  - [ ] Write instantiated config to output file
+  - [ ] Validate generated config (use Story 1.3 validation)
+  - [ ] Index generated config (use Story 1.2 indexing)
+  - [ ] Apply tags from template metadata (use Story 2.3 tagging)
+- [ ] Implement variable substitution (AC: 1, 2)
+  - [ ] Parse variable format: ${VAR_NAME}
+  - [ ] Accept variables as key=value pairs
+  - [ ] Substitute all occurrences of variable in template
+  - [ ] Handle variable values with special characters
+  - [ ] Support both string and numeric variables
+- [ ] Implement bulk instantiation from CSV (AC: 3)
+  - [ ] Create bulk_instantiate_template() function
+  - [ ] Parse CSV file: first row is header with variable names
+  - [ ] First column is output_file name
+  - [ ] Subsequent columns are variable values
+  - [ ] Instantiate template for each data row
+  - [ ] Handle errors per row (continue on error)
+- [ ] Integrate with validation system (AC: 5)
+  - [ ] Use Story 1.3 validate_config_file() after instantiation
+  - [ ] Abort if validation fails
+  - [ ] Clean up invalid generated configs
+- [ ] Integrate with indexing system (AC: 2)
+  - [ ] Use Story 1.2 index_config_file() after successful instantiation
+  - [ ] Index only if validation passes
+- [ ] Integrate with tagging system (AC: 6)
+  - [ ] Parse # Tags: comment from template
+  - [ ] Extract tags: env:prod, type:client
+  - [ ] Apply tags using Story 2.3 add_config_tag()
+  - [ ] Support tag inheritance from templates
+- [ ] Create interactive template menu (AC: 1, 2, 3)
+  - [ ] Create template_management_menu() function
+  - [ ] List existing templates
+  - [ ] Create template (interactive)
+  - [ ] Instantiate template (interactive with variable prompts)
+  - [ ] Bulk instantiate from CSV (interactive)
+  - [ ] View template content
+  - [ ] Delete template
+- [ ] CLI integration (AC: 1, 2, 3)
+  - [ ] Add `moonfrp template create &lt;name&gt; &lt;file&gt;` command
+  - [ ] Add `moonfrp template list` command
+  - [ ] Add `moonfrp template instantiate &lt;name&gt; &lt;output&gt; --var=X=Y` command
+  - [ ] Add `moonfrp template bulk-instantiate &lt;name&gt; &lt;csv-file&gt;` command
+  - [ ] Add `moonfrp template view &lt;name&gt;` command
+  - [ ] Add `moonfrp template delete &lt;name&gt;` command
+- [ ] Template versioning support (AC: 7)
+  - [ ] Store version in template metadata: # Version: 1.0
+  - [ ] Support version query: moonfrp template version &lt;name&gt;
+  - [ ] Optional: Support version in filename: template-v1.0.toml.tmpl
+- [ ] Testing (AC: 1, 2, 3, 5, 6)
+  - [ ] test_create_template()
+  - [ ] test_instantiate_template_with_variables()
+  - [ ] test_instantiate_template_missing_variable_warning()
+  - [ ] test_bulk_instantiate_from_csv()
+  - [ ] test_template_validation()
+  - [ ] test_template_auto_tagging()
+  - [ ] test_template_list()
+  - [ ] test_template_versioning()
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Create template with variables: ${SERVER_IP}, ${REGION}, ${PORT}
+2. Instantiate template with variable values
+3. Bulk instantiation: CSV with variable values
+4. Templates stored in ~/.moonfrp/templates/
+5. Validate template before instantiation
+6. Auto-tag from template metadata
+7. Template versioning
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact path="docs/epics/epic-02-bulk-operations.md" title="Epic 2: Bulk Operations" section="Story 2.4: Configuration Templates" snippet="Template system with variable substitution, bulk instantiation from CSV, validation integration, and tag inheritance. Template format includes metadata comments: # Template:, # Variables:, # Tags:, # Version:. Instantiation workflow: substitute variables, validate, index, apply tags."/>
+      <artifact path="docs/stories/2-4-configuration-templates.md" title="Story 2.4: Configuration Templates" section="Dev Notes" snippet="New module pattern: create moonfrp-templates.sh following index module pattern. Template format: metadata comments at top, TOML content with ${VAR_NAME} placeholders. Variable substitution: replace all occurrences. CSV format: first row headers, first column output_file, subsequent columns variable values."/>
+      <artifact path="docs/stories/1-3-config-validation-framework.md" title="Story 1.3: Config Validation Framework" section="Dev Notes" snippet="Validation pattern: validate before finalizing using validate_config_file(). Validation should happen before indexing. Clean up invalid generated files."/>
+      <artifact path="docs/stories/1-2-implement-config-index.md" title="Story 1.2: Implement Config Index" section="Dev Notes" snippet="Index pattern: index after successful validation using index_config_file(). Index only valid configs."/>
+      <artifact path="docs/stories/2-3-service-grouping-tagging.md" title="Story 2.3: Service Grouping &amp; Tagging" section="Dev Notes" snippet="Tagging pattern: apply tags after instantiation using add_config_tag(). Tag format: key:value. Parse tags from template metadata comments: # Tags: env:prod, type:client."/>
+      <artifact path="docs/stories/1-4-automatic-backup-system.md" title="Story 1.4: Automatic Backup System" section="Dev Notes" snippet="File creation pattern: create output file directly (no backup needed for new files). Backup only applies to existing files being modified."/>
+    </docs>
+    <code>
+      <artifact path="moonfrp-config.sh" kind="config-generation" symbol="generate_client_config" reason="Existing client config generation function. Can be used as reference for config file creation pattern."/>
+      <artifact path="moonfrp-config.sh" kind="config-generation" symbol="generate_server_config" reason="Existing server config generation function. Can be used as reference for config file creation pattern."/>
+      <artifact path="moonfrp-config.sh" kind="validation" symbol="validate_config_file" lines="572-657" reason="Story 1.3 validation function. Must be called after instantiation before finalizing generated config."/>
+      <artifact path="moonfrp-index.sh" kind="index" symbol="index_config_file" lines="92-150" reason="Story 1.2 indexing function. Must be called after successful validation for each generated config."/>
+      <artifact path="moonfrp-index.sh" kind="tagging" symbol="add_config_tag" reason="Story 2.3 tagging function (to be implemented). Must be called after successful instantiation to apply tags from template metadata."/>
+      <artifact path="moonfrp-index.sh" kind="module-pattern" reason="Index module pattern: moonfrp-index.sh. Template module should follow similar pattern: moonfrp-templates.sh with module structure and sourcing in main script."/>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash" version="4.0+"/>
+        <package name="sed" version="any (for variable substitution)"/>
+        <package name="grep" version="any (for metadata extraction)"/>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>File Location: New file moonfrp-templates.sh - New module for template management</constraint>
+    <constraint>Template Directory: Templates stored in ~/.moonfrp/templates/ - Created automatically</constraint>
+    <constraint>Template Extension: .toml.tmpl for template files</constraint>
+    <constraint>Variable Format: ${VAR_NAME} pattern for variable placeholders</constraint>
+    <constraint>Validation: Must validate generated config using Story 1.3 validate_config_file() after instantiation</constraint>
+    <constraint>Indexing: Must index generated config using Story 1.2 index_config_file() after successful validation</constraint>
+    <constraint>Tagging: Must apply tags from template metadata using Story 2.3 add_config_tag() after successful instantiation</constraint>
+    <constraint>Error Handling: Validate before committing, clean up invalid generated files on failure</constraint>
+    <constraint>CSV Format: First row headers, first column output_file, subsequent columns variable values</constraint>
+    <constraint>Continue on Error: Bulk instantiation should continue processing remaining rows on individual failures</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="validate_config_file" kind="bash-function" signature="validate_config_file(config_file, config_type) - Validate config file" path="moonfrp-config.sh:572-657">
+      Story 1.3 validation function. Must be called after instantiation before finalizing generated config.
+    </interface>
+    <interface name="index_config_file" kind="bash-function" signature="index_config_file(config_file) - Index config file" path="moonfrp-index.sh:92-150">
+      Story 1.2 indexing function. Must be called after successful validation for each generated config.
+    </interface>
+    <interface name="add_config_tag" kind="bash-function" signature="add_config_tag(config_file, tag_key, tag_value) - Add tag to config (Story 2.3)" path="moonfrp-index.sh (to be implemented in Story 2.3)">
+      Story 2.3 tagging function. Must be called after successful instantiation to apply tags from template metadata.
+    </interface>
+    <interface name="generate_client_config" kind="bash-function" signature="generate_client_config(...) - Generate client config" path="moonfrp-config.sh">
+      Existing client config generation function. Can be used as reference for config file creation pattern.
+    </interface>
+    <interface name="generate_server_config" kind="bash-function" signature="generate_server_config(...) - Generate server config" path="moonfrp-config.sh">
+      Existing server config generation function. Can be used as reference for config file creation pattern.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows bash unit testing patterns from existing test suite. Functional tests must cover template creation, variable substitution, bulk instantiation from CSV, validation integration, auto-tagging, template listing, and versioning. Edge cases: missing variables, invalid template syntax, CSV parsing errors, validation failure after instantiation, template not found, invalid tag format in metadata.
+    </standards>
+    <locations>
+      Test files: tests/test_template_system.sh (to be created). Follow patterns from tests/test_config_index.sh and tests/test_config_validation.sh.
+    </locations>
+    <ideas>
+      <test ac="1">test_create_template - Verify template can be created and saved to template directory</test>
+      <test ac="1,2">test_instantiate_template_with_variables - Verify template instantiation with variable substitution works</test>
+      <test ac="2">test_instantiate_template_missing_variable_warning - Verify warning when template has unsubstituted variables</test>
+      <test ac="3">test_bulk_instantiate_from_csv - Verify bulk instantiation from CSV file creates multiple configs</test>
+      <test ac="5">test_template_validation - Verify generated configs are validated after instantiation</test>
+      <test ac="6">test_template_auto_tagging - Verify tags from template metadata are applied to generated configs (when Story 2.3 available)</test>
+      <test ac="4">test_template_list - Verify list_templates() returns all available templates</test>
+      <test ac="7">test_template_versioning - Verify template versioning works (version in metadata or filename)</test>
+      <test ac="2">test_variable_substitution_special_characters - Edge case: verify variable values with special characters are handled correctly</test>
+      <test ac="2">test_variable_substitution_multiple_occurrences - Verify all occurrences of variable are substituted</test>
+      <test ac="3">test_bulk_instantiate_continue_on_error - Verify bulk instantiation continues processing remaining rows on individual failures</test>
+      <test ac="5">test_template_validation_failure_cleanup - Edge case: verify invalid generated configs are cleaned up on validation failure</test>
+    </ideas>
+  </tests>
+</story-context>
+

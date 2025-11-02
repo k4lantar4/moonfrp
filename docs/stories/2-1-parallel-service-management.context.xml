@@ -1,0 +1,153 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>MOONFRP-E02</epicId>
+    <storyId>MOONFRP-E02-S01</storyId>
+    <title>Parallel Service Management</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T20:04:10Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/2-1-parallel-service-management.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a DevOps engineer managing 50+ tunnels</asA>
+    <iWant>I want to perform bulk start/stop/restart operations on services in parallel</iWant>
+    <soThat>so that I can manage all services in &lt;10 seconds instead of minutes of serial operations</soThat>
+    <tasks>
+- [ ] Implement parallel service operation framework (AC: 1, 2, 6)
+  - [ ] Create bulk_service_operation() function in moonfrp-services.sh
+  - [ ] Implement parallel execution with configurable max_parallel (default 10)
+  - [ ] Use background processes with PID tracking
+  - [ ] Implement job queue management (wait when max_parallel reached)
+  - [ ] Monitor process completion and track success/failure counts
+  - [ ] Return appropriate exit code based on failure count
+- [ ] Implement progress indicator (AC: 3)
+  - [ ] Display real-time progress: "Progress: X/Y services..."
+  - [ ] Update progress during operation execution
+  - [ ] Clear progress line after completion
+- [ ] Implement continue-on-error handling (AC: 4, 5)
+  - [ ] Continue processing remaining services on individual failures
+  - [ ] Track failed services with reasons
+  - [ ] Collect error logs from failed operations
+  - [ ] Generate final summary report
+  - [ ] Display failed services list with error messages
+- [ ] Create user-facing bulk operation functions (AC: 1, 2)
+  - [ ] Create bulk_start_services() function
+  - [ ] Create bulk_stop_services() function
+  - [ ] Create bulk_restart_services() function
+  - [ ] Create bulk_reload_services() function
+  - [ ] Use get_moonfrp_services() to discover all services
+- [ ] Implement filtered bulk operations (AC: 1, 2)
+  - [ ] Create bulk_operation_filtered() function
+  - [ ] Support filter types: tag, status, name
+  - [ ] Integrate with Story 2.3 tagging system (when available)
+  - [ ] Provide clear error messages for invalid filters
+- [ ] CLI integration (AC: 1, 2)
+  - [ ] Add `moonfrp service bulk --operation=restart` command
+  - [ ] Add `--filter=tag:prod` option support
+  - [ ] Add `--dry-run` option to preview operations
+  - [ ] Add `--max-parallel=N` option for custom parallelism
+- [ ] Performance testing (AC: 2)
+  - [ ] Create test_bulk_restart_50_services_under_10s() test
+  - [ ] Create test_bulk_start_parallel_execution() test
+  - [ ] Create test_max_parallelism_respected() test
+  - [ ] Benchmark with various service counts (10, 25, 50, 100)
+- [ ] Functional testing (AC: 3, 4, 5)
+  - [ ] Create test_bulk_operation_continue_on_error() test
+  - [ ] Create test_bulk_operation_failure_reporting() test
+  - [ ] Create test_bulk_operation_progress_indicator() test
+  - [ ] Create test_bulk_operation_empty_service_list() test
+- [ ] Load testing (AC: 2)
+  - [ ] Test with 50 services: measure restart time
+  - [ ] Test with 10 failed services: verify error handling
+  - [ ] Test concurrent bulk operations: verify no race conditions
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Parallel execution of systemctl operations across all services
+2. Complete 50 service restarts in &lt;10 seconds
+3. Progress indicator during bulk operations
+4. Continue-on-error: report failures, don't abort
+5. Final summary: X succeeded, Y failed with reasons
+6. Configurable parallelism: default max 10 concurrent operations
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact path="docs/epics/epic-02-bulk-operations.md" title="Epic 2: Bulk Operations" section="Story 2.1: Parallel Service Management" snippet="Enables parallel start/stop/restart operations that complete in seconds. Includes technical specification with implementation patterns for bulk_service_operation() function, progress indicators, error handling, and CLI integration."/>
+      <artifact path="docs/stories/2-1-parallel-service-management.md" title="Story 2.1: Parallel Service Management" section="Dev Notes" snippet="Current implementation uses serial operations in moonfrp-services.sh. Required implementation creates parallel execution framework with configurable parallelism, progress indicators, and continue-on-error handling. Integration with Story 2.3 for filtered operations."/>
+      <artifact path="docs/stories/1-4-automatic-backup-system.md" title="Story 1.4: Automatic Backup System" section="Dev Notes" snippet="Learnings: Simple sequential operations pattern, helper function composition, graceful degradation error handling pattern, performance consideration for fast operations."/>
+      <artifact path="docs/stories/1-2-implement-config-index.md" title="Story 1.2: Implement Config Index" section="Dev Notes" snippet="New module pattern for complex functionality, integration pattern for sourcing modules in main script, performance optimization patterns."/>
+      <artifact path="docs/stories/1-3-config-validation-framework.md" title="Story 1.3: Config Validation Framework" section="Dev Notes" snippet="Function composition pattern, error aggregation pattern, integration patterns for validation before save."/>
+    </docs>
+    <code>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="start_service" lines="64-80" reason="Existing serial service start function. Will be used as operation handler within parallel framework."/>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="stop_service" lines="82-98" reason="Existing serial service stop function. Will be used as operation handler within parallel framework."/>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="restart_service" lines="100-111" reason="Existing serial service restart function. Will be used as operation handler within parallel framework."/>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="start_all_services" lines="270-305" reason="Existing serial bulk start implementation. Will be replaced by parallel bulk_start_services() function."/>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="stop_all_services" lines="307-342" reason="Existing serial bulk stop implementation. Will be replaced by parallel bulk_stop_services() function."/>
+      <artifact path="moonfrp-services.sh" kind="service-management" symbol="restart_all_services" lines="344-350" reason="Existing serial bulk restart implementation. Will be replaced by parallel bulk_restart_services() function."/>
+      <artifact path="moonfrp-core.sh" kind="core" symbol="log" lines="100-150" reason="Existing logging function. Will be used for progress updates and error reporting in bulk operations."/>
+      <artifact path="moonfrp.sh" kind="cli" symbol="service command handler" lines="164-207" reason="CLI command handler for service operations. Will be extended with bulk operation commands."/>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="systemctl" version="systemd"/>
+        <package name="bash" version="4.0+"/>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>File Location: moonfrp-services.sh - New bulk operation functions must be added to this module</constraint>
+    <constraint>Integration: Must use existing start_service(), stop_service(), restart_service() functions as operation handlers - do not recreate them</constraint>
+    <constraint>Performance: 50 service restarts must complete in &lt;10 seconds (vs several minutes serial)</constraint>
+    <constraint>Error Handling: Follow graceful degradation pattern from backup system - continue on individual failures, log warnings but continue</constraint>
+    <constraint>Parallelism: Configurable max_parallel with default of 10 concurrent operations</constraint>
+    <constraint>Progress: Real-time updates without blocking execution, use carriage return (\r) for progress display</constraint>
+    <constraint>Story 2.3 Dependency: bulk_operation_filtered() should integrate with get_services_by_tag() from Story 2.3 when available, but story must work independently</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="systemctl" kind="system-command" signature="systemctl {start|stop|restart|reload} {service_name}" path="systemd">
+      Systemd service control command. Used by existing service functions and will be called in parallel within background processes.
+    </interface>
+    <interface name="start_service" kind="bash-function" signature="start_service(service_name) - Start single service" path="moonfrp-services.sh:64-80">
+      Existing function to start a service. Will be used as operation handler within parallel execution framework.
+    </interface>
+    <interface name="stop_service" kind="bash-function" signature="stop_service(service_name) - Stop single service" path="moonfrp-services.sh:82-98">
+      Existing function to stop a service. Will be used as operation handler within parallel execution framework.
+    </interface>
+    <interface name="restart_service" kind="bash-function" signature="restart_service(service_name) - Restart single service" path="moonfrp-services.sh:100-111">
+      Existing function to restart a service. Will be used as operation handler within parallel execution framework.
+    </interface>
+    <interface name="log" kind="bash-function" signature="log(level, message) - Logging function" path="moonfrp-core.sh">
+      Existing logging function for progress updates and error reporting.
+    </interface>
+    <interface name="get_services_by_tag" kind="bash-function" signature="get_services_by_tag(tag) - Get services by tag (Story 2.3)" path="moonfrp-services.sh (to be implemented in Story 2.3)">
+      Future interface from Story 2.3 for tag-based service filtering. bulk_operation_filtered() should use this when available.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows bash unit testing patterns from existing test suite. Performance testing is critical - must verify 50 service restarts complete in &lt;10 seconds. Functional tests must cover parallel execution, progress indicators, continue-on-error behavior, failure reporting, and empty service list handling. Load tests verify no race conditions with concurrent operations. Test framework location: tests/test_*.sh files following existing patterns.
+    </standards>
+    <locations>
+      Test files: tests/test_bulk_service_operations.sh (to be created). Follow patterns from tests/test_config_index.sh and tests/test_config_validation.sh.
+    </locations>
+    <ideas>
+      <test ac="1,2">test_bulk_restart_50_services_under_10s - Performance test: verify 50 service restarts complete in &lt;10 seconds</test>
+      <test ac="1,2">test_bulk_start_parallel_execution - Verify multiple services start concurrently, not sequentially</test>
+      <test ac="6">test_max_parallelism_respected - Verify max_parallel limit is respected during execution</test>
+      <test ac="3">test_bulk_operation_progress_indicator - Verify progress updates displayed during execution</test>
+      <test ac="4,5">test_bulk_operation_continue_on_error - Verify processing continues after individual service failures</test>
+      <test ac="4,5">test_bulk_operation_failure_reporting - Verify failed services are tracked and reported with error messages</test>
+      <test ac="1">test_bulk_operation_empty_service_list - Verify graceful handling of empty service list</test>
+      <test ac="2">test_concurrent_bulk_operations - Load test: verify no race conditions with concurrent bulk operations</test>
+      <test ac="1">test_filtered_bulk_operations - Integration test: verify filtered operations work (when Story 2.3 available)</test>
+    </ideas>
+  </tests>
+</story-context>
+

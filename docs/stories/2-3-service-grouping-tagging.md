@@ -270,7 +270,7 @@ WHERE st.tag_key='env' AND st.tag_value='prod';
 
 ### Context Reference
 
-<!-- Path(s) to story context XML will be added here by context workflow -->
+- docs/stories/2-3-service-grouping-tagging.context.xml
 
 ### Agent Model Used
 

@@ -1,6 +1,6 @@
 # Story 2.4: Configuration Templates
 
-Status: drafted
+Status: ready-for-dev
 
 ## Story
 
@@ -317,7 +317,7 @@ frpc-us-1.toml,10.0.1.50,7000,us,web-us-1,8080,30003
 
 ### Context Reference
 
-<!-- Path(s) to story context XML will be added here by context workflow -->
+- docs/stories/2-4-configuration-templates.context.xml
 
 ### Agent Model Used
 

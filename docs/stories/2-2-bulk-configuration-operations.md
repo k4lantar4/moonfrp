@@ -1,6 +1,6 @@
 # Story 2.2: Bulk Configuration Operations
 
-Status: drafted
+Status: ready-for-dev
 
 ## Story
 
@@ -262,7 +262,7 @@ When Stories 1.2, 1.3, 1.4, and 2.2 are all implemented:
 
 ### Context Reference
 
-<!-- Path(s) to story context XML will be added here by context workflow -->
+- docs/stories/2-2-bulk-configuration-operations.context.xml
 
 ### Agent Model Used
 

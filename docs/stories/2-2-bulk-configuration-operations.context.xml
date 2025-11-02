@@ -1,0 +1,167 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>MOONFRP-E02</epicId>
+    <storyId>MOONFRP-E02-S02</storyId>
+    <title>Bulk Configuration Operations</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T20:04:10Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/2-2-bulk-configuration-operations.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a DevOps engineer managing 50+ configs</asA>
+    <iWant>I want to update multiple configuration files in bulk with validation and rollback</iWant>
+    <soThat>so that I can quickly change auth tokens, server IPs, or ports across all configs without manual editing</soThat>
+    <tasks>
+- [ ] Implement bulk config field update (AC: 1, 3, 4, 5)
+  - [ ] Create bulk_update_config_field() function in moonfrp-config.sh
+  - [ ] Implement filter system: all|tag:X|type:client|server|name:pattern
+  - [ ] Implement dry-run mode to preview changes
+  - [ ] Use temp files for atomic transaction behavior
+  - [ ] Validate each temp file before commit (use Story 1.3 validation)
+  - [ ] Rollback on any validation failure
+  - [ ] Commit all changes atomically if all validations pass
+- [ ] Implement TOML field update helper (AC: 1)
+  - [ ] Create update_toml_field() helper function
+  - [ ] Support nested fields (e.g., "auth.token")
+  - [ ] Parse field path: section.key format
+  - [ ] Use awk/sed to update field value
+  - [ ] Preserve TOML formatting and comments
+- [ ] Implement config filtering (AC: 1)
+  - [ ] Create get_configs_by_filter() function
+  - [ ] Support filter types: all, type:server, type:client, tag:X, name:pattern
+  - [ ] Integrate with Story 2.3 tagging (when available)
+  - [ ] Return array of matching config file paths
+- [ ] Implement bulk update from file (AC: 2)
+  - [ ] Create bulk_update_from_file() function
+  - [ ] Parse JSON/YAML update file
+  - [ ] Extract field, value, and filter from update file
+  - [ ] Call bulk_update_config_field() with extracted values
+  - [ ] Support dry-run mode from file
+- [ ] Integrate with backup system (AC: 6)
+  - [ ] Call backup_config_file() before each config update
+  - [ ] Use Story 1.4 backup system (when available)
+  - [ ] Backup all configs before bulk update starts
+  - [ ] Handle backup failures gracefully
+- [ ] Integrate with validation system (AC: 4, 5)
+  - [ ] Validate each temp file using Story 1.3 validate_config_file()
+  - [ ] Abort transaction if any validation fails
+  - [ ] Only commit if all validations pass
+- [ ] Integrate with index system (AC: 7)
+  - [ ] Update index after successful bulk update
+  - [ ] Use Story 1.2 index_config_file() for each updated config
+  - [ ] Don't update index until commit phase
+- [ ] CLI integration (AC: 1, 2, 3)
+  - [ ] Add `moonfrp config bulk-update --field=X --value=Y --filter=all` command
+  - [ ] Add `--dry-run` option support
+  - [ ] Add `--file=updates.json` option for file-based updates
+  - [ ] Display changes preview in dry-run mode
+- [ ] Performance optimization (AC: 7)
+  - [ ] Minimize file I/O operations
+  - [ ] Batch validation operations
+  - [ ] Optimize temp file operations
+  - [ ] Benchmark with 50 configs (target &lt;5s)
+- [ ] Testing (AC: 1, 2, 3, 4, 5, 6, 7)
+  - [ ] test_bulk_update_single_field_dry_run()
+  - [ ] test_bulk_update_single_field_apply()
+  - [ ] test_bulk_update_validation_failure_rollback()
+  - [ ] test_bulk_update_atomic_transaction()
+  - [ ] test_bulk_update_50_configs_under_5s()
+  - [ ] test_bulk_update_backup_before_change()
+  - [ ] test_bulk_update_filter_by_type()
+  - [ ] test_bulk_update_filter_by_tag()
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Update single field across multiple configs: bulk-update --field=auth.token --value=NEW_TOKEN --filter=all
+2. Update multiple fields with JSON/YAML input
+3. Dry-run mode shows changes without applying
+4. Validates each config before saving
+5. Atomic operation: all succeed or all rollback
+6. Backup before bulk changes
+7. Performance: &lt;5s for 50 configs
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact path="docs/epics/epic-02-bulk-operations.md" title="Epic 2: Bulk Operations" section="Story 2.2: Bulk Configuration Operations" snippet="Bulk config updates with atomic transaction behavior. Two-phase commit pattern: prepare (update temp files, validate) then commit or rollback. Includes filter system, dry-run mode, and integration with validation/backup/index systems."/>
+      <artifact path="docs/stories/2-2-bulk-configuration-operations.md" title="Story 2.2: Bulk Configuration Operations" section="Dev Notes" snippet="Atomic transaction design using temp files. Integration with Stories 1.2 (index), 1.3 (validation), 1.4 (backup), and 2.3 (tagging). Filter system supports all, type:server, type:client, tag:X, name:pattern."/>
+      <artifact path="docs/stories/1-3-config-validation-framework.md" title="Story 1.3: Config Validation Framework" section="Dev Notes" snippet="Validation pattern: validate before save using validate_config_file(). Validation should happen on temp files before commit. Error aggregation pattern."/>
+      <artifact path="docs/stories/1-4-automatic-backup-system.md" title="Story 1.4: Automatic Backup System" section="Dev Notes" snippet="Backup pattern: call backup_config_file() before any modification. Backup should happen before validation. Graceful error handling: log warnings but continue if backup fails."/>
+      <artifact path="docs/stories/1-2-implement-config-index.md" title="Story 1.2: Implement Config Index" section="Dev Notes" snippet="Index update pattern: call index_config_file() after successful save. Index update should happen in commit phase, not prepare phase. Fast queries via index for filter operations."/>
+      <artifact path="docs/stories/2-1-parallel-service-management.md" title="Story 2.1: Parallel Service Management" section="Dev Notes" snippet="Comparison: Story 2.1 uses continue-on-error, Story 2.2 uses atomic transaction (all-or-nothing). Error collection and reporting patterns."/>
+    </docs>
+    <code>
+      <artifact path="moonfrp-config.sh" kind="config-management" symbol="get_toml_value" lines="16-31" reason="Existing TOML parsing function. Will be used to read current field values for dry-run preview."/>
+      <artifact path="moonfrp-config.sh" kind="config-management" symbol="validate_config_file" lines="572-657" reason="Story 1.3 validation function. Will be used to validate temp files before commit in atomic transaction."/>
+      <artifact path="moonfrp-config.sh" kind="config-management" symbol="set_toml_value" lines="33-79" reason="Existing TOML field update function. Can be used as reference, but bulk_update_config_field() needs more control over temp files for atomic transaction."/>
+      <artifact path="moonfrp-config.sh" kind="backup" symbol="backup_config_file" reason="Story 1.4 backup function (location to be verified). Will be called before each config update in commit phase."/>
+      <artifact path="moonfrp-index.sh" kind="index" symbol="index_config_file" lines="92-150" reason="Story 1.2 indexing function. Will be called after successful commit for each updated config."/>
+      <artifact path="moonfrp-index.sh" kind="index" symbol="query_configs_by_tag" reason="Story 2.3 tagging query function (to be implemented). Will be used by get_configs_by_filter() for tag-based filtering."/>
+      <artifact path="moonfrp.sh" kind="cli" symbol="config command handler" reason="CLI command handler for config operations. Will be extended with bulk-update command."/>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash" version="4.0+"/>
+        <package name="awk" version="any"/>
+        <package name="sed" version="any"/>
+        <package name="jq" version="any (optional, for JSON parsing)"/>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>File Location: moonfrp-config.sh - Bulk configuration functions must be added to this module</constraint>
+    <constraint>Atomic Transaction: Two-phase commit pattern required - all updates must succeed or all rollback</constraint>
+    <constraint>Performance: 50 config updates must complete in &lt;5 seconds</constraint>
+    <constraint>Validation: Must validate each temp file before commit using Story 1.3 validate_config_file()</constraint>
+    <constraint>Backup: Must call backup_config_file() before each config update in commit phase</constraint>
+    <constraint>Index: Must call index_config_file() after successful commit for each updated config</constraint>
+    <constraint>Filter System: Must support all, type:server, type:client, tag:X (Story 2.3), name:pattern</constraint>
+    <constraint>TOML Preservation: Field update must preserve TOML formatting and comments</constraint>
+    <constraint>Story Dependencies: Story must work without Story 2.3 tagging but will be enhanced by it</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="validate_config_file" kind="bash-function" signature="validate_config_file(config_file, config_type) - Validate config file" path="moonfrp-config.sh:572-657">
+      Story 1.3 validation function. Must be called on temp files before commit in atomic transaction.
+    </interface>
+    <interface name="backup_config_file" kind="bash-function" signature="backup_config_file(config_file) - Backup config file" path="moonfrp-config.sh (Story 1.4)">
+      Story 1.4 backup function. Must be called before each config update in commit phase.
+    </interface>
+    <interface name="index_config_file" kind="bash-function" signature="index_config_file(config_file) - Index config file" path="moonfrp-index.sh:92-150">
+      Story 1.2 indexing function. Must be called after successful commit for each updated config.
+    </interface>
+    <interface name="get_toml_value" kind="bash-function" signature="get_toml_value(file, key) - Read TOML value" path="moonfrp-config.sh:16-31">
+      Existing TOML parsing function. Used to read current field values for dry-run preview.
+    </interface>
+    <interface name="query_configs_by_tag" kind="bash-function" signature="query_configs_by_tag(tag) - Query configs by tag (Story 2.3)" path="moonfrp-index.sh (to be implemented in Story 2.3)">
+      Future interface from Story 2.3 for tag-based config filtering. get_configs_by_filter() should use this when available.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows bash unit testing patterns from existing test suite. Performance testing is critical - must verify 50 config updates complete in &lt;5 seconds. Functional tests must cover atomic transaction behavior, validation failure rollback, dry-run mode, filter system, and backup integration. Edge cases: empty filter results, invalid field paths, corrupted configs, validation failure mid-transaction.
+    </standards>
+    <locations>
+      Test files: tests/test_bulk_config_operations.sh (to be created). Follow patterns from tests/test_config_validation.sh and tests/test_config_index.sh.
+    </locations>
+    <ideas>
+      <test ac="1,3">test_bulk_update_single_field_dry_run - Verify dry-run mode shows changes without applying</test>
+      <test ac="1">test_bulk_update_single_field_apply - Verify single field update across multiple configs</test>
+      <test ac="4,5">test_bulk_update_validation_failure_rollback - Verify validation failure triggers rollback, no changes committed</test>
+      <test ac="5">test_bulk_update_atomic_transaction - Verify all updates succeed or all rollback (no partial commits)</test>
+      <test ac="7">test_bulk_update_50_configs_under_5s - Performance test: verify 50 config updates complete in &lt;5 seconds</test>
+      <test ac="6">test_bulk_update_backup_before_change - Verify backup created before each config update</test>
+      <test ac="1">test_bulk_update_filter_by_type - Verify filter by type:server and type:client works</test>
+      <test ac="1">test_bulk_update_filter_by_tag - Integration test: verify filter by tag:X works (when Story 2.3 available)</test>
+      <test ac="2">test_bulk_update_from_file - Verify JSON/YAML file-based bulk updates work</test>
+      <test ac="1">test_bulk_update_empty_filter_results - Edge case: verify graceful handling when no configs match filter</test>
+      <test ac="1">test_bulk_update_invalid_field_path - Edge case: verify error handling for invalid field paths</test>
+    </ideas>
+  </tests>
+</story-context>
+
