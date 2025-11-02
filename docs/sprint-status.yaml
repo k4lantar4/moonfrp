@@ -63,7 +63,7 @@ development_status:
     effort: 2 days
   
   2-2-bulk-configuration-operations:
-    status: review
+    status: done
     story_id: MOONFRP-E02-S02
     epic: 2
     title: Bulk Configuration Operations
@@ -71,7 +71,7 @@ development_status:
     effort: 1.5 days
   
   2-3-service-grouping-tagging:
-    status: review
+    status: done
     story_id: MOONFRP-E02-S03
     epic: 2
     title: Service Grouping & Tagging

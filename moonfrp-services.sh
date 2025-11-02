@@ -381,8 +381,8 @@ bulk_service_operation() {
     local completed=0
     declare -a failed_services
     declare -a failed_reasons
-    declare -a pids
-    declare -a service_names
+    declare -a pids=()
+    declare -a service_names=()
     local tmp_dir=$(mktemp -d)
     trap "rm -rf '$tmp_dir'" EXIT
     
