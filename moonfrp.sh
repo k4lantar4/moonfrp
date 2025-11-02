@@ -90,9 +90,9 @@ EXAMPLES:
 
 ENVIRONMENT VARIABLES:
     # Core Configuration
-    MOONFRP_FRP_VERSION       FRP version to install (default: $FRP_VERSION)
-    MOONFRP_FRP_ARCH          FRP architecture (default: $FRP_ARCH)
-    MOONFRP_INSTALL_DIR       Installation directory (default: $FRP_DIR)
+    FRP_VERSION               FRP version to install (default: $FRP_VERSION)
+    FRP_ARCH                  FRP architecture (default: $FRP_ARCH)
+    FRP_DIR                   FRP installation directory (default: $FRP_DIR)
     MOONFRP_CONFIG_DIR        Configuration directory (default: $CONFIG_DIR)
     MOONFRP_LOG_DIR           Log directory (default: $LOG_DIR)
     

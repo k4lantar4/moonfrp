@@ -1,0 +1,64 @@
+حالا یک موضوع دیگر هم به این پلن خوب اضافه کن و سند پیاده سازی مناسب برای دستیار dev ایجاد کن.
+مواردی که برای من مهمه:
+1. فایل کانفیگ frps به درستی ایجاد بشه
+2. فایل کانفیگ برای تک ای پی و مولتی ای پی برای frpc به درستی ایجاد بشن
+3. لاگ مناسب از طریق قابلیت های خود frp cli که دقیقا لاگی که کاربردیه رو ببینم
+4. وضعیت کانکشن ها رو بدون کندی در عملکرد منوی moonfrp نشون بده:
+- هدر کوتاهی برای نوشتن تیتر moonfrp و یه جمله توضیح ساده که moonfrp رو یه wrapper برای frp تانل معرفی کنه
+- گزینه ها رو بهتر و حرفه ای تر اما در عین حال سریع و مینیمال بچین
+- یک گزینه برای مشاهده فوری چیزی مشابه پایین که تمام چیزی که از frps میخوام رو در چندخط آماده کپی و پیست برای ایجاد frpc در سرور کلاینت نیاز دارم رو بهم بده:
+در سرور کلاینت frpc:
+📋 Current MoonFRP Configuration:
+
+🏠 Server Configurations (Iran):
+  No server configuration found
+
+🌍 Client Configurations (Foreign):
+  Total Configs: 3
+  Server IPs: 45.94.214.142,45.94.214.189,45.94.213.89
+  Server Ports: 7000
+  Auth Token: 942d8633...
+  Total Proxies: 12
+
+  🔗 Quick Connection Test:
+    45.94.214.142:7000   ✅ OK
+    45.94.214.189:7000   ✅ OK
+    45.94.213.89:7000    ✅ OK
+
+🖥️  System Information:
+  FRP Version: v0.63.0
+  MoonFRP Version: v1.1.1
+  Config Directory: /etc/frp
+  Log Directory: /var/log/frp
+  Services: 3 active / 3 total
+
+در سرور frps:
+📋 Current MoonFRP Configuration:
+
+🏠 Server Configurations (Iran):
+  Server Port: 7000
+  Auth Token: 942d8633...
+  Dashboard: http://SERVER-IP:7500
+
+  3. Share with clients:
+     • Server IPs: 45.94.214.189,45.94.213.89,45.94.214.142
+     • Server Port: 7000
+     • Token: 942d8633a3ae
+  Status: ✅ Active (1 service(s))
+
+🌍 Client Configurations (Foreign):
+  No client configurations found
+
+🖥️  System Information:
+  FRP Version: v0.63.0
+  MoonFRP Version: v1.1.1
+  Config Directory: /etc/frp
+  Log Directory: /var/log/frp
+  Services: 1 active / 1 total
+
+
+
+این به عنوان نمونه هست و تمام چیزی که از frps میخوام رو در چندخط آماده کپی و پیست برای ایجاد frpc در سرور کلاینت نیاز دارم رو بهم بده.
+
+
+این مشکل داره: 

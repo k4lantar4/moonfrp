@@ -37,10 +37,12 @@ fi
 
 # Global variables with defaults (only declare if not already set)
 [[ -z "${MOONFRP_VERSION:-}" ]] && readonly MOONFRP_VERSION="2.0.0"
-[[ -z "${FRP_VERSION:-}" ]] && readonly FRP_VERSION="${MOONFRP_FRP_VERSION:-0.65.0}"
+readonly FRP_VERSION="${FRP_VERSION:-0.65.0}"
 
 # Normalize FRP architecture to expected download format (linux_amd64, linux_arm64, linux_armv7)
+# Support MOONFRP_FRP_ARCH (legacy) for backward compatibility, but prefer FRP_ARCH
 if [[ -z "${FRP_ARCH:-}" ]]; then
+    # Check legacy variable if FRP_ARCH not set
     __RAW_ARCH__="${MOONFRP_FRP_ARCH:-}"
     if [[ -z "${__RAW_ARCH__}" ]]; then
         # Fallback to uname mapping
@@ -67,6 +69,7 @@ if [[ -z "${FRP_ARCH:-}" ]]; then
     readonly FRP_ARCH="${__NORM_ARCH__}"
     unset __RAW_ARCH__ __NORM_ARCH__
 fi
+# Support MOONFRP_INSTALL_DIR (legacy) for backward compatibility, but prefer FRP_DIR
 [[ -z "${FRP_DIR:-}" ]] && readonly FRP_DIR="${MOONFRP_INSTALL_DIR:-/opt/frp}"
 [[ -z "${CONFIG_DIR:-}" ]] && readonly CONFIG_DIR="${MOONFRP_CONFIG_DIR:-/etc/frp}"
 [[ -z "${LOG_DIR:-}" ]] && readonly LOG_DIR="${MOONFRP_LOG_DIR:-/var/log/frp}"
@@ -354,11 +357,11 @@ create_default_config() {
 # Generated on $(date)
 
 # FRP Version
-MOONFRP_FRP_VERSION="$FRP_VERSION"
-MOONFRP_FRP_ARCH="$FRP_ARCH"
+FRP_VERSION="$FRP_VERSION"
+FRP_ARCH="$FRP_ARCH"
 
 # Installation Directories
-MOONFRP_INSTALL_DIR="$FRP_DIR"
+FRP_DIR="$FRP_DIR"
 MOONFRP_CONFIG_DIR="$CONFIG_DIR"
 MOONFRP_LOG_DIR="$LOG_DIR"
 

@@ -90,9 +90,9 @@ All settings can be configured via environment variables:
 
 ```bash
 # Core Configuration
-export MOONFRP_FRP_VERSION="0.65.0"
-export MOONFRP_FRP_ARCH="linux_amd64"
-export MOONFRP_INSTALL_DIR="/opt/frp"
+export FRP_VERSION="0.65.0"
+export FRP_ARCH="linux_amd64"
+export FRP_DIR="/opt/frp"
 export MOONFRP_CONFIG_DIR="/etc/frp"
 export MOONFRP_LOG_DIR="/var/log/frp"
 

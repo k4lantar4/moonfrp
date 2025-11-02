@@ -206,11 +206,11 @@ create_config_file() {
 # Generated on $(date)
 
 # FRP Version
-MOONFRP_FRP_VERSION="${MOONFRP_FRP_VERSION:-0.65.0}"
-MOONFRP_FRP_ARCH="${MOONFRP_FRP_ARCH:-$frp_arch}"
+FRP_VERSION="${FRP_VERSION:-0.65.0}"
+FRP_ARCH="${FRP_ARCH:-$frp_arch}"
 
 # Installation Directories
-MOONFRP_INSTALL_DIR="/opt/frp"
+FRP_DIR="${FRP_DIR:-/opt/frp}"
 MOONFRP_CONFIG_DIR="/etc/frp"
 MOONFRP_LOG_DIR="/var/log/frp"
 
@@ -256,16 +256,16 @@ EOF
 
 # Install FRP binaries
 install_frp_binaries() {
-    # Source config to get FRP_VERSION and FRP_ARCH
+    # Source config to get FRP_VERSION, FRP_ARCH, and FRP_DIR
     local config_file="/etc/moonfrp/config"
     if [[ -f "$config_file" ]]; then
         source "$config_file"
     fi
     
-    local frp_version="${MOONFRP_FRP_VERSION:-0.65.0}"
+    local frp_version="${FRP_VERSION:-0.65.0}"
     
     # Determine architecture (use normalized value from config or detect)
-    local frp_arch="${MOONFRP_FRP_ARCH:-}"
+    local frp_arch="${FRP_ARCH:-${MOONFRP_FRP_ARCH:-}}"
     if [[ -z "$frp_arch" ]]; then
         case "$ARCH" in
             amd64) frp_arch="linux_amd64" ;;
@@ -275,7 +275,8 @@ install_frp_binaries() {
         esac
     fi
     
-    local frp_dir="/opt/frp"
+    # Use FRP_DIR from config, or fallback to default
+    local frp_dir="${FRP_DIR:-/opt/frp}"
     
     log "INFO" "Installing FRP v$frp_version ($frp_arch)..."
     
