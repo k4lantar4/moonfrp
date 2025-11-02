@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/moonfrp-core.sh"
 
 # Source other modules
 source "$SCRIPT_DIR/moonfrp-config.sh"
+source "$SCRIPT_DIR/moonfrp-index.sh"
 source "$SCRIPT_DIR/moonfrp-services.sh"
 source "$SCRIPT_DIR/moonfrp-ui.sh"
 

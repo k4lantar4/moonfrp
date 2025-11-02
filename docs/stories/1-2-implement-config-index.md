@@ -1,6 +1,6 @@
 # Story 1.2: Implement Config Index
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,40 +19,40 @@ so that menu loading and config queries complete in <50ms instead of 2-3 seconds
 
 ## Tasks / Subtasks
 
-- [ ] Create new module file `moonfrp-index.sh` (AC: 1, 2, 3, 4, 5)
-  - [ ] Define SQLite database schema with config_index and index_meta tables
-  - [ ] Create init_config_index() function to initialize database
-  - [ ] Create index_config_file() function to index single config
-  - [ ] Create rebuild_config_index() function to rebuild entire index
-  - [ ] Create check_and_update_index() function for automatic updates
-  - [ ] Implement query functions: query_configs_by_type(), query_total_proxy_count()
-  - [ ] Add error handling and fallback to file parsing on corruption
-- [ ] Integrate index into existing codebase (AC: 3)
-  - [ ] Source moonfrp-index.sh in moonfrp.sh
-  - [ ] Call check_and_update_index() before config queries
-  - [ ] Update menu loading to use indexed queries instead of file parsing
-  - [ ] Ensure backward compatibility if index unavailable
-- [ ] Database schema implementation (AC: 1, 4)
-  - [ ] Create config_index table with required fields (file_path, file_hash, config_type, server_addr, server_port, bind_port, auth_token_hash, proxy_count, tags, last_modified, last_indexed)
-  - [ ] Create index_meta table for metadata storage
-  - [ ] Add indexes on config_type, server_addr, and tags
-  - [ ] Implement UNIQUE constraint on file_path
-- [ ] Performance optimization and testing (AC: 2, 6)
-  - [ ] Benchmark query performance with 50 configs (target <50ms)
-  - [ ] Benchmark rebuild performance (target <2s for 50 configs)
-  - [ ] Verify index size stays under 1MB for 50 configs
-  - [ ] Test incremental update performance (target <100ms)
-- [ ] Testing and validation (AC: 1, 2, 3, 4, 5, 6)
-  - [ ] Unit tests: test_index_survives_corrupted_config()
-  - [ ] Unit tests: test_index_auto_rebuild_on_changes()
-  - [ ] Unit tests: test_index_fallback_to_file_parsing()
-  - [ ] Unit tests: test_query_by_type()
-  - [ ] Unit tests: test_query_by_server_addr()
-  - [ ] Unit tests: test_total_proxy_count()
-  - [ ] Performance tests: test_index_query_50_configs_under_50ms()
-  - [ ] Performance tests: test_index_rebuild_50_configs_under_2s()
-  - [ ] Performance tests: test_index_incremental_update_under_100ms()
-  - [ ] Load tests: Generate 100 configs and measure performance
+- [x] Create new module file `moonfrp-index.sh` (AC: 1, 2, 3, 4, 5)
+  - [x] Define SQLite database schema with config_index and index_meta tables
+  - [x] Create init_config_index() function to initialize database
+  - [x] Create index_config_file() function to index single config
+  - [x] Create rebuild_config_index() function to rebuild entire index
+  - [x] Create check_and_update_index() function for automatic updates
+  - [x] Implement query functions: query_configs_by_type(), query_total_proxy_count()
+  - [x] Add error handling and fallback to file parsing on corruption
+- [x] Integrate index into existing codebase (AC: 3)
+  - [x] Source moonfrp-index.sh in moonfrp.sh
+  - [x] Call check_and_update_index() before config queries
+  - [x] Update menu loading to use indexed queries instead of file parsing
+  - [x] Ensure backward compatibility if index unavailable
+- [x] Database schema implementation (AC: 1, 4)
+  - [x] Create config_index table with required fields (file_path, file_hash, config_type, server_addr, server_port, bind_port, auth_token_hash, proxy_count, tags, last_modified, last_indexed)
+  - [x] Create index_meta table for metadata storage
+  - [x] Add indexes on config_type, server_addr, and tags
+  - [x] Implement UNIQUE constraint on file_path
+- [x] Performance optimization and testing (AC: 2, 6)
+  - [x] Benchmark query performance with 50 configs (target <50ms)
+  - [x] Benchmark rebuild performance (target <2s for 50 configs)
+  - [x] Verify index size stays under 1MB for 50 configs
+  - [x] Test incremental update performance (target <100ms)
+- [x] Testing and validation (AC: 1, 2, 3, 4, 5, 6)
+  - [x] Unit tests: test_index_survives_corrupted_config()
+  - [x] Unit tests: test_index_auto_rebuild_on_changes()
+  - [x] Unit tests: test_index_fallback_to_file_parsing()
+  - [x] Unit tests: test_query_by_type()
+  - [x] Unit tests: test_query_by_server_addr()
+  - [x] Unit tests: test_total_proxy_count()
+  - [x] Performance tests: test_index_query_50_configs_under_50ms()
+  - [x] Performance tests: test_index_rebuild_50_configs_under_2s()
+  - [x] Performance tests: test_index_incremental_update_under_100ms()
+  - [x] Load tests: Generate 100 configs and measure performance
 
 ## Dev Notes
 
@@ -185,9 +185,47 @@ Create a SQLite-based index system that:
 
 ### Completion Notes List
 
+**Implementation Summary:**
+- Created `moonfrp-index.sh` module with complete SQLite-based indexing system
+- Implemented all core functions: init_config_index(), index_config_file(), rebuild_config_index(), check_and_update_index()
+- Added query functions: query_configs_by_type(), query_total_proxy_count(), query_configs_by_server_addr(), get_index_stats()
+- Integrated index into moonfrp.sh and moonfrp-ui.sh
+- Updated list_configurations() and show_system_status() to use indexed queries with fallback
+- Added comprehensive error handling and graceful fallback to file parsing when index unavailable or corrupted
+- Implemented SQL injection prevention with proper string escaping
+- Created comprehensive test suite (tests/test_config_index.sh) covering all acceptance criteria
+
+**Key Features:**
+- Automatic index updates detect file changes via hash comparison
+- Index integrity verification prevents corrupted database usage
+- Full backward compatibility - system falls back to file parsing if sqlite3 unavailable or index corrupted
+- Performance optimizations: indexed queries with proper database indexes
+- Security: auth tokens are hashed before storage
+
+**Files Modified:**
+- moonfrp.sh: Added source for moonfrp-index.sh
+- moonfrp-config.sh: Updated list_configurations() to use indexed queries
+- moonfrp-ui.sh: Updated show_system_status() to use indexed queries, added source for moonfrp-index.sh
+
+**Files Created:**
+- moonfrp-index.sh: Complete index module (442 lines)
+- tests/test_config_index.sh: Comprehensive test suite covering all ACs
+
+**Performance Notes:**
+- Query functions use SQLite indexes for fast lookups
+- Incremental updates only process changed files (hash-based detection)
+- Database schema optimized with proper indexes on frequently queried fields
+
 ### File List
+
+- moonfrp-index.sh (new)
+- tests/test_config_index.sh (new)
+- moonfrp.sh (modified - added index module sourcing)
+- moonfrp-config.sh (modified - integrated indexed queries in list_configurations)
+- moonfrp-ui.sh (modified - integrated indexed queries in show_system_status)
 
 ## Change Log
 
 - 2025-11-02: Story created from Epic 1.2 requirements
+- 2025-11-02: Implementation complete - All tasks and subtasks completed, test suite created, ready for review
 

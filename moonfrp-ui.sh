@@ -9,6 +9,7 @@
 # Source core functions
 source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-core.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-config.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-services.sh"
 
 #==============================================================================
@@ -54,20 +55,39 @@ show_system_status() {
     # Configuration Status
     echo
     echo -e "${CYAN}Configuration Status:${NC}"
-    if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
-        echo -e "${GREEN}✓${NC} Server configuration exists"
+    
+    check_and_update_index 2>/dev/null || true
+    
+    # Use indexed queries with fallback
+    local server_count=0
+    local client_count=0
+    local server_result
+    if server_result=$(query_configs_by_type "server" 2>/dev/null); then
+        [[ -n "$server_result" ]] && server_count=$(echo "$server_result" | wc -l)
+    else
+        [[ -f "$CONFIG_DIR/frps.toml" ]] && server_count=1
+    fi
+    
+    local client_result
+    if client_result=$(query_configs_by_type "client" 2>/dev/null); then
+        [[ -n "$client_result" ]] && client_count=$(echo "$client_result" | wc -l)
+    else
+        client_count=$(find "$CONFIG_DIR" -name "frpc*.toml" -type f 2>/dev/null | wc -l)
+    fi
+    
+    if [[ $server_count -gt 0 ]]; then
+        echo -e "${GREEN}✓${NC} $server_count server configuration(s) exist"
     else
         echo -e "${GRAY}○${NC} No server configuration"
     fi
     
-    local client_configs=($(find "$CONFIG_DIR" -name "frpc*.toml" -type f | wc -l))
-    if [[ $client_configs -gt 0 ]]; then
-        echo -e "${GREEN}✓${NC} $client_configs client configuration(s) exist"
+    if [[ $client_count -gt 0 ]]; then
+        echo -e "${GREEN}✓${NC} $client_count client configuration(s) exist"
     else
         echo -e "${GRAY}○${NC} No client configurations"
     fi
     
-    local visitor_configs=($(find "$CONFIG_DIR" -name "visitor*.toml" -type f | wc -l))
+    local visitor_configs=($(find "$CONFIG_DIR" -name "visitor*.toml" -type f 2>/dev/null | wc -l))
     if [[ $visitor_configs -gt 0 ]]; then
         echo -e "${GREEN}✓${NC} $visitor_configs visitor configuration(s) exist"
     else

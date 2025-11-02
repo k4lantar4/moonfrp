@@ -394,32 +394,65 @@ restore_config() {
 
 # List available configurations
 list_configurations() {
+    check_and_update_index 2>/dev/null || true
+    
     echo -e "${CYAN}Available FRP Configurations:${NC}"
     echo
     
-    # Server configurations
-    if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
-        echo -e "${GREEN}Server Configuration:${NC}"
-        echo "  File: $CONFIG_DIR/frps.toml"
-        echo "  Status: $(get_service_status "$SERVER_SERVICE")"
-        echo
-    fi
-    
-    # Client configurations
-    local client_configs=($(find "$CONFIG_DIR" -name "frpc*.toml" -type f | sort))
-    if [[ ${#client_configs[@]} -gt 0 ]]; then
-        echo -e "${GREEN}Client Configurations:${NC}"
-        for config in "${client_configs[@]}"; do
-            local config_name=$(basename "$config" .toml)
-            local service_name="${CLIENT_SERVICE_PREFIX}-${config_name#frpc}"
-            echo "  File: $config"
-            echo "  Service: $service_name"
-            echo "  Status: $(get_service_status "$service_name")"
+    # Server configurations - try indexed query first, fallback to file parsing
+    local server_configs
+    if server_configs=$(query_configs_by_type "server" 2>/dev/null); then
+        if [[ -n "$server_configs" ]]; then
+            echo -e "${GREEN}Server Configuration:${NC}"
+            while IFS='|' read -r file_path server_addr proxy_count; do
+                echo "  File: $file_path"
+                [[ -n "$server_addr" ]] && echo "  Server: $server_addr"
+                echo "  Proxies: $proxy_count"
+                echo "  Status: $(get_service_status "$SERVER_SERVICE")"
+                echo
+            done <<< "$server_configs"
+        fi
+    else
+        if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+            echo -e "${GREEN}Server Configuration:${NC}"
+            echo "  File: $CONFIG_DIR/frps.toml"
+            echo "  Status: $(get_service_status "$SERVER_SERVICE")"
             echo
-        done
+        fi
     fi
     
-    # Visitor configurations
+    # Client configurations - try indexed query first, fallback to file parsing
+    local client_configs_data
+    if client_configs_data=$(query_configs_by_type "client" 2>/dev/null); then
+        if [[ -n "$client_configs_data" ]]; then
+            echo -e "${GREEN}Client Configurations:${NC}"
+            while IFS='|' read -r file_path server_addr proxy_count; do
+                local config_name=$(basename "$file_path" .toml)
+                local service_name="${CLIENT_SERVICE_PREFIX}-${config_name#frpc}"
+                echo "  File: $file_path"
+                [[ -n "$server_addr" ]] && echo "  Server: $server_addr"
+                echo "  Proxies: $proxy_count"
+                echo "  Service: $service_name"
+                echo "  Status: $(get_service_status "$service_name")"
+                echo
+            done <<< "$client_configs_data"
+        fi
+    else
+        local client_configs=($(find "$CONFIG_DIR" -name "frpc*.toml" -type f | sort))
+        if [[ ${#client_configs[@]} -gt 0 ]]; then
+            echo -e "${GREEN}Client Configurations:${NC}"
+            for config in "${client_configs[@]}"; do
+                local config_name=$(basename "$config" .toml)
+                local service_name="${CLIENT_SERVICE_PREFIX}-${config_name#frpc}"
+                echo "  File: $config"
+                echo "  Service: $service_name"
+                echo "  Status: $(get_service_status "$service_name")"
+                echo
+            done
+        fi
+    fi
+    
+    # Visitor configurations (not indexed, use file parsing)
     local visitor_configs=($(find "$CONFIG_DIR" -name "visitor*.toml" -type f | sort))
     if [[ ${#visitor_configs[@]} -gt 0 ]]; then
         echo -e "${GREEN}Visitor Configurations:${NC}"

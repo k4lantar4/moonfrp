@@ -25,7 +25,7 @@ development_status:
     effort: 0.5 days
   
   1-2-implement-config-index:
-    status: in-progress
+    status: review
     story_id: MOONFRP-E01-S02
     epic: 1
     title: Implement Config Index
