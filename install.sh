@@ -192,13 +192,22 @@ EOF
 create_config_file() {
     local config_file="/etc/moonfrp/config"
     
+    # Normalize ARCH to FRP format
+    local frp_arch="$ARCH"
+    case "$frp_arch" in
+        amd64) frp_arch="linux_amd64" ;;
+        arm64) frp_arch="linux_arm64" ;;
+        armv7) frp_arch="linux_armv7" ;;
+        *) frp_arch="linux_amd64" ;;
+    esac
+    
     cat > "$config_file" << EOF
 # MoonFRP Configuration
 # Generated on $(date)
 
 # FRP Version
 MOONFRP_FRP_VERSION="${MOONFRP_FRP_VERSION:-0.65.0}"
-MOONFRP_FRP_ARCH="${MOONFRP_FRP_ARCH:-$ARCH}"
+MOONFRP_FRP_ARCH="${MOONFRP_FRP_ARCH:-$frp_arch}"
 
 # Installation Directories
 MOONFRP_INSTALL_DIR="/opt/frp"
@@ -245,6 +254,61 @@ EOF
     log "INFO" "Created configuration file: $config_file"
 }
 
+# Install FRP binaries
+install_frp_binaries() {
+    # Source config to get FRP_VERSION and FRP_ARCH
+    local config_file="/etc/moonfrp/config"
+    if [[ -f "$config_file" ]]; then
+        source "$config_file"
+    fi
+    
+    local frp_version="${MOONFRP_FRP_VERSION:-0.65.0}"
+    
+    # Determine architecture (use normalized value from config or detect)
+    local frp_arch="${MOONFRP_FRP_ARCH:-}"
+    if [[ -z "$frp_arch" ]]; then
+        case "$ARCH" in
+            amd64) frp_arch="linux_amd64" ;;
+            arm64) frp_arch="linux_arm64" ;;
+            armv7) frp_arch="linux_armv7" ;;
+            *) frp_arch="linux_amd64" ;;
+        esac
+    fi
+    
+    local frp_dir="/opt/frp"
+    
+    log "INFO" "Installing FRP v$frp_version ($frp_arch)..."
+    
+    # Download URL
+    local download_url="https://github.com/fatedier/frp/releases/download/v${frp_version}/frp_${frp_version}_${frp_arch}.tar.gz"
+    local temp_file="$TEMP_DIR/frp_${frp_version}_${frp_arch}.tar.gz"
+    
+    # Download FRP
+    if ! curl -fsSL "$download_url" -o "$temp_file"; then
+        log "ERROR" "Failed to download FRP from: $download_url"
+        log "WARN" "You can install FRP later by running: moonfrp (then select option 6)"
+        return 1
+    fi
+    
+    # Extract FRP
+    if ! tar -xzf "$temp_file" -C "$TEMP_DIR"; then
+        log "ERROR" "Failed to extract FRP archive"
+        return 1
+    fi
+    
+    # Install binaries
+    cp "$TEMP_DIR/frp_${frp_version}_${frp_arch}/frps" "$frp_dir/"
+    cp "$TEMP_DIR/frp_${frp_version}_${frp_arch}/frpc" "$frp_dir/"
+    chmod +x "$frp_dir/frps" "$frp_dir/frpc"
+    
+    # Cleanup extracted files
+    rm -rf "$TEMP_DIR/frp_${frp_version}_${frp_arch}"
+    rm -f "$temp_file"
+    
+    log "INFO" "FRP v$frp_version installed successfully to $frp_dir"
+    return 0
+}
+
 # Verify installation
 verify_installation() {
     if [[ -x "$INSTALL_DIR/$SCRIPT_NAME" ]]; then
@@ -274,6 +338,12 @@ display_summary() {
     echo -e "  2. Choose 'Quick Setup' for easy configuration"
     echo -e "  3. Or use command line: $SCRIPT_NAME setup server"
     echo
+    if [[ -x "/opt/frp/frps" && -x "/opt/frp/frpc" ]]; then
+        echo -e "${GREEN}✓${NC} FRP binaries installed and ready"
+    else
+        echo -e "${YELLOW}⚠${NC} FRP binaries not installed - run $SCRIPT_NAME to install them"
+    fi
+    echo
     echo -e "${CYAN}Environment Variables:${NC}"
     echo -e "  Set configuration via environment variables:"
     echo -e "  MOONFRP_SERVER_BIND_PORT=7000 $SCRIPT_NAME setup server"
@@ -302,6 +372,7 @@ main() {
     create_directories
     install_moonfrp
     create_config_file
+    install_frp_binaries
     
     if verify_installation; then
         display_summary
