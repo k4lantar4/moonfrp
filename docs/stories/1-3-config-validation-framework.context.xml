@@ -1,0 +1,180 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>3</storyId>
+    <title>Config Validation Framework</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T18:04:09.193Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/1-3-config-validation-framework.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer</asA>
+    <iWant>config files validated before saving</iWant>
+    <soThat>invalid configurations are rejected with clear error messages and don't crash services</soThat>
+    <tasks>
+      - Implement TOML syntax validation (AC: 1, 4, 5)
+        - Create validate_toml_syntax() function
+        - Try using toml-validator command if available
+        - Fallback to parsing test with get_toml_value() for basic syntax check
+        - Return clear error messages if syntax invalid
+      - Implement server config validation (AC: 2, 3, 4)
+        - Create validate_server_config() function
+        - Validate required field: bindPort (must be 1-65535)
+        - Validate required field: auth.token (minimum 8 characters)
+        - Return clear error messages for each validation failure
+      - Implement client config validation (AC: 2, 3, 4)
+        - Create validate_client_config() function
+        - Validate required field: serverAddr (must be valid IP/domain)
+        - Validate required field: serverPort (must be 1-65535)
+        - Validate required field: auth.token
+        - Check for at least one proxy definition (warning if none)
+        - Return clear error messages for each validation failure
+      - Create main validation function (AC: 1, 2, 3, 4, 5)
+        - Create validate_config_file() function with auto-detection
+        - Detect config type (server/client) from filename
+        - Run TOML syntax validation
+        - Run config-type-specific validation
+        - Aggregate all errors and report clearly
+        - Return appropriate exit code (0=valid, 1=invalid)
+      - Integrate validation into save flow (AC: 6)
+        - Update save_config_file() or equivalent save function
+        - Write config to temporary file first
+        - Validate temporary file before moving to final location
+        - Prevent save if validation fails (delete temp file, show errors)
+        - Only move to final location if validation passes
+      - Add optional FRP binary validation (AC: 7)
+        - Check if frps --verify-config or similar command available
+        - Use FRP binary validation as additional check if available
+        - Make this optional (don't fail if command unavailable)
+      - Performance and error message testing (AC: 4, 5)
+        - Test validation completes in &lt;100ms
+        - Verify error messages are clear and actionable
+        - Test with various invalid configurations
+        - Test with valid configurations
+      - Unit tests (AC: 1, 2, 3, 4, 5, 6)
+        - Test valid server and client configs
+        - Test missing required fields
+        - Test invalid port ranges
+        - Test invalid TOML syntax
+        - Test performance &lt;100ms
+        - Test save rejection on validation failure
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. Validates TOML syntax before saving
+    2. Validates required fields (serverAddr, bindPort, auth.token, etc.)
+    3. Validates value ranges (ports 1-65535, valid IPs)
+    4. Clear error messages with line numbers
+    5. Validation completes in &lt;100ms
+    6. Prevents save if validation fails
+    7. Optional: Use frps --verify-config if available
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics/epic-01-scale-foundation.md" title="Epic 1: Critical Fixes &amp; Scale Foundation" section="Story 1.3: Config Validation Framework">
+        Provides problem statement, acceptance criteria, technical specification with validation function implementations, validation rules, and testing requirements. Specifies comprehensive validation framework with TOML syntax, required fields, and value range validation.
+      </doc>
+      <doc path="docs/stories/1-3-config-validation-framework.md" title="Story 1.3: Config Validation Framework">
+        Complete story definition with requirements context, validation rules for server and client configs, integration points, performance requirements, and testing strategy. Specifies integration with Stories 1.2 and 1.4.
+      </doc>
+    </docs>
+    <code>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="get_toml_value" lines="16-31" reason="Core function used for parsing TOML values during validation - extracts values for field validation">
+        Function used to read TOML values from config files. Used by validation functions to check required fields and extract values for range validation.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="validate_port" lines="233-240" reason="Existing validation function for port numbers - demonstrates validation pattern and should be reused">
+        Existing port validation function. Validates that port is integer 1-65535. Should be used by validation framework for port field validation.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="validate_ip" reason="Existing validation function for IP addresses - should be used for serverAddr validation">
+        Existing IP address validation function. Should be used by validate_client_config() to validate serverAddr field.
+      </file>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="generate_server_config" lines="54-131" reason="Reference for server config structure and required fields - shows bindPort and auth.token usage">
+        Server config generation function showing structure and required fields. Demonstrates bindPort and auth.token fields that need validation.
+      </file>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="generate_client_config" lines="133-224" reason="Reference for client config structure and required fields - shows serverAddr, serverPort, auth.token usage">
+        Client config generation function showing structure and required fields. Demonstrates serverAddr, serverPort, auth.token fields that need validation.
+      </file>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="set_toml_value" lines="33-51" reason="Function that modifies config files - save flow integration point for validation">
+        Function used to update TOML values in config files. Save operations should integrate validation before calling this function.
+      </file>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash">Bash shell scripting (system dependency)</package>
+        <package name="grep">Text pattern matching (coreutils)</package>
+        <package name="sed">Stream editor for text processing (coreutils)</package>
+      </ecosystem>
+      <ecosystem name="optional-tools">
+        <package name="toml-validator">Optional command-line tool for TOML syntax validation (if available)</package>
+        <package name="frps">FRP server binary with --verify-config flag (if available in FRP version)</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="file-location">Validation functions must be added to moonfrp-config.sh - new functions in existing module</constraint>
+    <constraint type="dependency">Must use existing get_toml_value() function from moonfrp-config.sh for parsing</constraint>
+    <constraint type="dependency">Must use existing validate_ip() and validate_port() functions from moonfrp-core.sh</constraint>
+    <constraint type="performance">Validation must complete in &lt;100ms to maintain responsive UI</constraint>
+    <constraint type="performance">Avoid multiple file reads - use temporary file for validation</constraint>
+    <constraint type="integration">Must integrate with save functions - validate before saving config files</constraint>
+    <constraint type="integration">Should integrate with Story 1.2 (Config Index) - validate before indexing</constraint>
+    <constraint type="integration">Should integrate with Story 1.4 (Automatic Backup) - validate before backup</constraint>
+    <constraint type="error-handling">Must provide clear, actionable error messages with field names and line numbers when possible</constraint>
+    <constraint type="optional">FRP binary validation (frps --verify-config) is optional - must not fail if command unavailable</constraint>
+    <constraint type="server-requirements">Server config must have: bindPort (1-65535), auth.token (minimum 8 characters)</constraint>
+    <constraint type="client-requirements">Client config must have: serverAddr (valid IP/domain), serverPort (1-65535), auth.token</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="validate_config_file" kind="bash-function" signature="validate_config_file(config_file, config_type?) - Main validation entry point" path="moonfrp-config.sh">
+      Main validation function with auto-detection of config type. Returns exit code: 0=valid, 1=invalid. Prints error messages to stderr.
+    </interface>
+    <interface name="validate_toml_syntax" kind="bash-function" signature="validate_toml_syntax(config_file) - Validate TOML syntax" path="moonfrp-config.sh">
+      Function to validate TOML file syntax. Uses toml-validator if available, falls back to basic parsing test.
+    </interface>
+    <interface name="validate_server_config" kind="bash-function" signature="validate_server_config(config_file) - Validate server config fields" path="moonfrp-config.sh">
+      Function to validate server config required fields and value ranges. Returns exit code: 0=valid, 1=invalid.
+    </interface>
+    <interface name="validate_client_config" kind="bash-function" signature="validate_client_config(config_file) - Validate client config fields" path="moonfrp-config.sh">
+      Function to validate client config required fields and value ranges. Returns exit code: 0=valid, 1=invalid.
+    </interface>
+    <interface name="get_toml_value" kind="bash-function" signature="get_toml_value(file, key) - Parse TOML value from file" path="moonfrp-config.sh">
+      Existing function used to extract TOML values for validation. Dependency function - do not modify.
+    </interface>
+    <interface name="validate_port" kind="bash-function" signature="validate_port(port) - Validate port number 1-65535" path="moonfrp-core.sh">
+      Existing validation function for port numbers. Should be reused by validation framework.
+    </interface>
+    <interface name="validate_ip" kind="bash-function" signature="validate_ip(ip) - Validate IP address" path="moonfrp-core.sh">
+      Existing validation function for IP addresses. Should be reused by validation framework.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing standards follow bash unit testing patterns. Performance testing is critical - must verify &lt;100ms validation time. Functional tests must cover valid configs, missing fields, invalid ranges, syntax errors, and save prevention. Edge cases: empty files, comments-only files, malformed TOML, correct TOML with missing fields.
+    </standards>
+    <locations>
+      Test suite location to be defined (create tests in test suite directory following project structure)
+    </locations>
+    <ideas>
+      <test ac="1,2">test_validate_valid_server_config - Test that valid server config passes all validations</test>
+      <test ac="1,2">test_validate_valid_client_config - Test that valid client config passes all validations</test>
+      <test ac="2">test_validate_missing_required_field - Test that missing required fields are detected (bindPort, serverAddr, auth.token)</test>
+      <test ac="3">test_validate_invalid_port_range - Test that ports outside 1-65535 range are rejected</test>
+      <test ac="3">test_validate_invalid_ip_address - Test that invalid IP addresses in serverAddr are rejected</test>
+      <test ac="1">test_validate_invalid_toml_syntax - Test that invalid TOML syntax is detected</test>
+      <test ac="4">test_validate_error_messages_clear - Test that error messages are clear and actionable</test>
+      <test ac="5">test_validate_performance_under_100ms - Performance test: validation must complete in &lt;100ms</test>
+      <test ac="6">test_save_rejected_on_validation_failure - Test that save is prevented when validation fails</test>
+      <test ac="7">test_validate_optional_frp_binary - Test that frps --verify-config is used if available (optional)</test>
+      <test ac="2">test_validate_auth_token_min_length - Test that server auth.token minimum length (8 chars) is enforced</test>
+      <test ac="2">test_validate_client_proxy_warning - Test that warning (not error) is shown if client config has no proxies</test>
+    </ideas>
+  </tests>
+</story-context>
+

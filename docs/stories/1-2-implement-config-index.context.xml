@@ -1,0 +1,151 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>2</storyId>
+    <title>Implement Config Index</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T18:04:09.193Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/1-2-implement-config-index.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer managing 50+ tunnels</asA>
+    <iWant>config file metadata indexed in a fast queryable database</iWant>
+    <soThat>menu loading and config queries complete in &lt;50ms instead of 2-3 seconds</soThat>
+    <tasks>
+      - Create new module file moonfrp-index.sh (AC: 1, 2, 3, 4, 5)
+        - Define SQLite database schema with config_index and index_meta tables
+        - Create init_config_index() function to initialize database
+        - Create index_config_file() function to index single config
+        - Create rebuild_config_index() function to rebuild entire index
+        - Create check_and_update_index() function for automatic updates
+        - Implement query functions: query_configs_by_type(), query_total_proxy_count()
+        - Add error handling and fallback to file parsing on corruption
+      - Integrate index into existing codebase (AC: 3)
+        - Source moonfrp-index.sh in moonfrp.sh
+        - Call check_and_update_index() before config queries
+        - Update menu loading to use indexed queries instead of file parsing
+        - Ensure backward compatibility if index unavailable
+      - Database schema implementation (AC: 1, 4)
+        - Create config_index table with required fields
+        - Create index_meta table for metadata storage
+        - Add indexes on config_type, server_addr, and tags
+        - Implement UNIQUE constraint on file_path
+      - Performance optimization and testing (AC: 2, 6)
+        - Benchmark query performance with 50 configs (target &lt;50ms)
+        - Benchmark rebuild performance (target &lt;2s for 50 configs)
+        - Verify index size stays under 1MB for 50 configs
+        - Test incremental update performance (target &lt;100ms)
+      - Testing and validation (AC: 1, 2, 3, 4, 5, 6)
+        - Unit tests for all functions
+        - Performance tests
+        - Load tests with 100 configs
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. SQLite database indexes all config files
+    2. Query time for 50 configs: &lt;50ms (vs 2000ms current)
+    3. Automatic rebuild on config file changes
+    4. Index includes: file path, server IP, port, proxy count, status, tags
+    5. Graceful fallback to file parsing if index corrupted
+    6. Index size: &lt;1MB for 50 configs
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics/epic-01-scale-foundation.md" title="Epic 1: Critical Fixes &amp; Scale Foundation" section="Story 1.2: Implement Config Index">
+        Provides problem statement, acceptance criteria, complete database schema definition, core function implementations, auto-rebuild trigger code, and comprehensive testing requirements. Specifies SQLite-based index system with performance targets.
+      </doc>
+      <doc path="docs/stories/1-2-implement-config-index.md" title="Story 1.2: Implement Config Index">
+        Complete story definition with requirements context, database schema details, integration points, performance requirements, and testing strategy. Specifies new module pattern and integration with existing codebase.
+      </doc>
+    </docs>
+    <code>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="get_toml_value" lines="16-31" reason="Core function used for parsing TOML files during indexing - extracts values from config files">
+        Function used to parse TOML values from config files. This is the existing mechanism that needs to be replaced by indexed queries for performance.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="CONFIG_DIR" reason="Variable that defines config directory location - used to find config files for indexing">
+        CONFIG_DIR variable defines where config files are stored. Default is /etc/frp. Used by indexing functions to locate config files.
+      </file>
+      <file path="moonfrp.sh" kind="entry-point" symbol="main" lines="1-44" reason="Main entry point where moonfrp-index.sh should be sourced - demonstrates module loading pattern">
+        Main script that sources modules. New moonfrp-index.sh module must be sourced here following the same pattern as other modules.
+      </file>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash">Bash shell scripting (system dependency)</package>
+        <package name="sqlite3">SQLite3 command-line tool for database operations (required)</package>
+        <package name="find">Find command for locating config files (coreutils)</package>
+        <package name="stat">File stat command for modification time (coreutils)</package>
+        <package name="sha256sum">SHA256 hash calculation (coreutils)</package>
+      </ecosystem>
+      <ecosystem name="database">
+        <package name="SQLite3">Embedded SQL database engine for indexing config metadata</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="file-location">New module file moonfrp-index.sh must be created - following modular architecture pattern</constraint>
+    <constraint type="database-location">Database location: $HOME/.moonfrp/index.db - directory must be writable</constraint>
+    <constraint type="dependency">SQLite3 must be available on system (sqlite3 command) - check availability before use</constraint>
+    <constraint type="performance">Query 50 configs: &lt;50ms (vs 2000ms current - 40x improvement required)</constraint>
+    <constraint type="performance">Rebuild index for 50 configs: &lt;2s</constraint>
+    <constraint type="performance">Incremental update: &lt;100ms per changed file</constraint>
+    <constraint type="storage">Database size: &lt;1MB for 50 configs</constraint>
+    <constraint type="compatibility">Must maintain backward compatibility - if index unavailable, fall back to file parsing</constraint>
+    <constraint type="integration">Must source moonfrp-index.sh in moonfrp.sh and call check_and_update_index() before config queries</constraint>
+    <constraint type="error-handling">Must handle database corruption gracefully - fallback to file parsing if index corrupted</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="init_config_index" kind="bash-function" signature="init_config_index() - Initialize SQLite database and schema" path="moonfrp-index.sh">
+      Function to create database file and initialize schema. Must create config_index and index_meta tables with proper indexes.
+    </interface>
+    <interface name="index_config_file" kind="bash-function" signature="index_config_file(config_file) - Index single config file" path="moonfrp-index.sh">
+      Function to extract metadata from single config file and store in database. Uses get_toml_value() for parsing.
+    </interface>
+    <interface name="rebuild_config_index" kind="bash-function" signature="rebuild_config_index() - Rebuild entire index from all config files" path="moonfrp-index.sh">
+      Function to rebuild complete index by processing all config files. Called when index is corrupted or needs full refresh.
+    </interface>
+    <interface name="check_and_update_index" kind="bash-function" signature="check_and_update_index() - Auto-update index for changed files" path="moonfrp-index.sh">
+      Function called before config queries to automatically update index for files that have changed since last indexing.
+    </interface>
+    <interface name="query_configs_by_type" kind="bash-function" signature="query_configs_by_type(config_type) - Query configs by type (server/client)" path="moonfrp-index.sh">
+      Fast query function returning configs filtered by type. Returns pipe-separated values: file_path|server_addr|proxy_count.
+    </interface>
+    <interface name="query_total_proxy_count" kind="bash-function" signature="query_total_proxy_count() - Get total proxy count across all configs" path="moonfrp-index.sh">
+      Fast aggregate query returning sum of all proxy_count values from indexed configs.
+    </interface>
+    <interface name="get_toml_value" kind="bash-function" signature="get_toml_value(file, key) - Parse TOML value from file" path="moonfrp-config.sh">
+      Existing function used during indexing to extract values from TOML config files. Dependency function - do not modify.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing standards follow bash unit testing patterns. Performance testing is critical - must verify &lt;50ms query time, &lt;2s rebuild time, &lt;100ms incremental update. Functional tests must verify index accuracy, corruption handling, and fallback behavior. Load tests required with 100 configs to verify scaling.
+    </standards>
+    <locations>
+      Test suite location to be defined (create tests in test suite directory following project structure)
+    </locations>
+    <ideas>
+      <test ac="1">test_index_initialization - Test that init_config_index() creates database with correct schema</test>
+      <test ac="1">test_index_single_file - Test that index_config_file() correctly extracts and stores metadata</test>
+      <test ac="2">test_index_query_50_configs_under_50ms - Performance test: query 50 configs must complete in &lt;50ms</test>
+      <test ac="3">test_index_auto_rebuild_on_changes - Test that check_and_update_index() detects and indexes changed files</test>
+      <test ac="5">test_index_survives_corrupted_config - Test that corrupted config file doesn't break indexing</test>
+      <test ac="5">test_index_fallback_to_file_parsing - Test that system falls back to file parsing if index corrupted</test>
+      <test ac="4">test_query_by_type - Test query_configs_by_type() returns correct results for server and client configs</test>
+      <test ac="4">test_query_by_server_addr - Test queries filtered by server address</test>
+      <test ac="4">test_total_proxy_count - Test query_total_proxy_count() returns accurate sum</test>
+      <test ac="2">test_index_rebuild_50_configs_under_2s - Performance test: rebuild 50 configs must complete in &lt;2s</test>
+      <test ac="2">test_index_incremental_update_under_100ms - Performance test: incremental update must complete in &lt;100ms</test>
+      <test ac="6">test_index_size_under_1mb - Test that index database stays under 1MB for 50 configs</test>
+      <test ac="1">test_index_unique_file_path - Test UNIQUE constraint on file_path prevents duplicates</test>
+    </ideas>
+  </tests>
+</story-context>
+

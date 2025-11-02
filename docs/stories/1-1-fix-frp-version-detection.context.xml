@@ -1,0 +1,129 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>1</storyId>
+    <title>Fix FRP Version Detection</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T18:04:09.193Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/1-1-fix-frp-version-detection.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer</asA>
+    <iWant>the system to accurately detect and display the FRP version</iWant>
+    <soThat>I can verify compatibility and troubleshoot issues effectively</soThat>
+    <tasks>
+      - Replace get_frp_version() function implementation (AC: 1, 2, 3, 4)
+        - Update function to check FRP installation first
+        - Implement Method 1: frps --version with regex pattern `v?[0-9]+\.[0-9]+\.[0-9]+`
+        - Implement Method 2: frpc --version as fallback with same pattern
+        - Implement Method 3: Read from $FRP_DIR/.version file if exists
+        - Ensure 'v' prefix is added if missing from detected version
+        - Return "unknown" if all methods fail
+        - Return "not installed" if FRP installation check fails
+      - Add unit tests for version detection (AC: 1, 2, 3, 4, 5)
+        - Test version detection with 'v' prefix
+        - Test version detection without 'v' prefix
+        - Test with old FRP versions (0.52.0, 0.58.0)
+        - Test with missing binary (should return "not installed")
+        - Test with corrupted binary (should return "unknown")
+        - Test performance &lt;100ms
+      - Manual testing verification (AC: 1, 2, 3, 4)
+        - Install FRP 0.58.0 and verify correct version display
+        - Install FRP 0.61.0 and verify correct version display
+        - Install FRP 0.65.0 and verify correct version display
+        - Remove FRP and verify "not installed" message
+        - Corrupt binary and verify "unknown" message
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. Version detection works for FRP versions 0.52.0 through 0.65.0+
+    2. Displays format: "v0.65.0" (with leading 'v')
+    3. Falls back gracefully: "unknown" if detection fails, "not installed" if missing
+    4. Uses multiple detection methods (frps, frpc, version file)
+    5. Detection completes in &lt;100ms
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics/epic-01-scale-foundation.md" title="Epic 1: Critical Fixes &amp; Scale Foundation" section="Story 1.1: Fix FRP Version Detection">
+        Provides problem statement, acceptance criteria, technical specification with implementation approach, and testing requirements. Current implementation shows "vunknown" due to incorrect regex parsing. Required: stricter regex pattern `v?[0-9]+\.[0-9]+\.[0-9]+`, multiple detection methods, consistent "v" prefix format.
+      </doc>
+      <doc path="docs/implementation-plan-dev.md" title="MoonFRP Implementation Plan - Developer Guide" section="1.1 Fix FRP Version Detection">
+        Contains detailed solution code with three detection methods (frps --version, frpc --version fallback, and version extraction without 'v' prefix), performance requirements, and implementation guidance.
+      </doc>
+      <doc path="docs/stories/1-1-fix-frp-version-detection.md" title="Story 1.1: Fix FRP Version Detection">
+        Complete story definition with requirements context, current implementation details, technical constraints, and testing strategy. Specifies file location, dependencies, performance requirements, and project structure notes.
+      </doc>
+    </docs>
+    <code>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="get_frp_version" lines="284-290" reason="Current implementation to be replaced - uses incorrect regex pattern 'grep -o v[0-9.]*' which fails to parse version output correctly">
+        Current function implementation that needs replacement. Uses simple regex that is too permissive and results in "vunknown" output.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="check_frp_installation" lines="275-281" reason="Dependency function that checks if FRP binaries exist - used by get_frp_version()">
+        Function that validates FRP installation by checking if frps and frpc binaries are executable. Required dependency for version detection.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="validate_port" lines="233-240" reason="Reference for validation pattern - demonstrates function structure and error handling approach">
+        Example validation function showing code patterns used in the codebase. Demonstrates regex validation and return code patterns.
+      </file>
+      <file path="moonfrp.sh" kind="entry-point" symbol="main" lines="1-44" reason="Main entry point that sources moonfrp-core.sh - confirms module loading structure">
+        Main script that sources moonfrp-core.sh, confirming the module structure and how functions are loaded.
+      </file>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="get_toml_value" lines="16-31" reason="Reference for file parsing patterns - shows how TOML values are extracted, demonstrates similar regex/file processing patterns">
+        TOML parsing function showing file I/O and regex patterns used in the codebase. Demonstrates error handling and file reading patterns.
+      </file>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash">Bash shell scripting (system dependency)</package>
+        <package name="grep">Text pattern matching (coreutils)</package>
+        <package name="sed">Stream editor for text processing (coreutils)</package>
+      </ecosystem>
+      <ecosystem name="system">
+        <package name="FRP binaries">frps and frpc binaries expected at $FRP_DIR/frps and $FRP_DIR/frpc</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="file-location">Function must be replaced in moonfrp-core.sh at lines 284-290 - pure function replacement, no new files required</constraint>
+    <constraint type="dependency">Must use existing check_frp_installation() function (line 275) - do not modify this function</constraint>
+    <constraint type="environment">$FRP_DIR environment variable must be set - assume it's already configured</constraint>
+    <constraint type="performance">Version detection must complete in &lt;100ms - avoid multiple unnecessary binary executions, cache-friendly design</constraint>
+    <constraint type="output-format">Must return "v0.65.0" format (with leading 'v') regardless of source output format</constraint>
+    <constraint type="error-handling">Must return "unknown" if all detection methods fail, "not installed" if FRP installation check fails</constraint>
+    <constraint type="compatibility">Must work with FRP versions 0.52.0 through 0.65.0+ - handle various version output formats</constraint>
+    <constraint type="testing">Unit tests required but test suite location is to be defined - create tests following existing patterns</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="get_frp_version" kind="bash-function" signature="get_frp_version() - Returns FRP version string or error status" path="moonfrp-core.sh">
+      Function signature to be maintained. Returns version string "vX.Y.Z", "unknown", or "not installed". No parameters. Exit code may be used for error status.
+    </interface>
+    <interface name="check_frp_installation" kind="bash-function" signature="check_frp_installation() - Returns 0 if installed, 1 if not" path="moonfrp-core.sh">
+      Dependency function interface. Returns exit code: 0 = installed (both frps and frpc are executable), 1 = not installed. Must not be modified.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing standards follow bash unit testing patterns. Test suite location to be defined, but tests should follow existing codebase patterns. Performance testing is critical - must verify &lt;100ms requirement. Tests should cover edge cases: missing binaries, corrupted binaries, various version formats, old versions (0.52.0, 0.58.0), new versions (0.65.0+). Manual testing required to verify with actual FRP installations.
+    </standards>
+    <locations>
+      Test suite location to be defined (create tests in test suite directory following project structure)
+    </locations>
+    <ideas>
+      <test ac="1">test_version_detection_with_v_prefix - Test that versions with 'v' prefix are correctly extracted and returned</test>
+      <test ac="1,2">test_version_detection_without_v_prefix - Test that versions without 'v' prefix get 'v' added automatically</test>
+      <test ac="1">test_version_detection_old_versions - Test with old FRP versions (0.52.0, 0.58.0) to ensure compatibility</test>
+      <test ac="3">test_version_detection_missing_binary - Test that "not installed" is returned when FRP binaries don't exist</test>
+      <test ac="3">test_version_detection_corrupted_binary - Test that "unknown" is returned when binary exists but fails to execute</test>
+      <test ac="4">test_version_detection_multiple_methods - Test that all three methods (frps, frpc, version file) are attempted in order</test>
+      <test ac="5">test_version_detection_performance - Benchmark test to ensure detection completes in &lt;100ms</test>
+      <test ac="1,2">test_version_detection_various_formats - Test with different version output formats from different FRP versions</test>
+    </ideas>
+  </tests>
+</story-context>
+

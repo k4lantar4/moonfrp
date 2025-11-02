@@ -38,7 +38,7 @@ show_system_status() {
     # FRP Installation Status
     if check_frp_installation; then
         local frp_version=$(get_frp_version)
-        echo -e "${GREEN}✓${NC} FRP v$frp_version installed"
+        echo -e "${GREEN}✓${NC} FRP $frp_version installed"
     else
         echo -e "${RED}✗${NC} FRP not installed"
     fi
@@ -283,7 +283,7 @@ main_menu() {
         # Lightweight status summary (2-state)
         echo -e "${CYAN}Status:${NC}"
         if check_frp_installation; then
-            echo -e "  FRP: ${GREEN}Active${NC} (v$(get_frp_version))"
+            echo -e "  FRP: ${GREEN}Active${NC} ($(get_frp_version))"
         else
             echo -e "  FRP: ${RED}Inactive${NC}"
         fi

@@ -1,0 +1,183 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>4</storyId>
+    <title>Automatic Backup System</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T18:04:09.193Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/1-4-automatic-backup-system.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer</asA>
+    <iWant>automatic backups created before any config modification</iWant>
+    <soThat>I can easily rollback to previous configurations if something goes wrong</soThat>
+    <tasks>
+      - Implement backup core functions (AC: 1, 2, 5, 6)
+        - Define BACKUP_DIR constant: $HOME/.moonfrp/backups
+        - Define MAX_BACKUPS_PER_FILE constant: 10
+        - Create backup_config_file() function
+        - Generate timestamp in format YYYYMMDD-HHMMSS
+        - Create backup filename: config-name.YYYYMMDD-HHMMSS.bak
+        - Copy config file to backup location
+        - Ensure backup directory exists
+        - Log backup creation
+      - Implement backup cleanup (AC: 3)
+        - Create cleanup_old_backups() function
+        - Find all backups for a specific config file
+        - Sort backups by modification time (newest first)
+        - Keep only last 10 backups per file
+        - Remove older backups beyond limit
+        - Log removed backups
+      - Implement backup listing (AC: 4)
+        - Create list_backups() function
+        - Support listing backups for specific config or all backups
+        - Sort by modification time (newest first)
+        - Return backup file paths
+      - Implement restore functionality (AC: 4)
+        - Create restore_config_from_backup() function
+        - Validate backup file exists
+        - Backup current config before restore (nested backup)
+        - Copy backup file to config location
+        - Revalidate restored config (using Story 1.3 validation)
+        - Update index if available (from Story 1.2)
+        - Log restore operation
+      - Implement interactive restore menu (AC: 4)
+        - Create restore_config_interactive() function
+        - List available backups with formatted dates
+        - Allow user to select backup by number
+        - Confirm restore operation
+        - Call restore_config_from_backup() on confirmation
+      - Integrate backup into save flow (AC: 1)
+        - Update save_config_file() or equivalent save function
+        - Call backup_config_file() before any config modification
+        - Ensure backup happens before file write
+        - Handle backup failures gracefully (log warning, continue if backup fails)
+      - Performance and testing (AC: 5)
+        - Benchmark backup operation (target &lt;50ms)
+        - Test backup cleanup keeps exactly 10 backups
+        - Test restore from backup
+        - Test restore validates config
+        - Test nested backup (backup before restore)
+        - Test backup listing and sorting
+      - Unit tests (AC: 1, 2, 3, 4, 5, 6)
+        - Test backup creates timestamped file
+        - Test cleanup keeps last 10
+        - Test restore from backup
+        - Test restore validates config
+        - Test backup performance &lt;50ms
+        - Test list backups sorted
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. Automatic backup before ANY config modification
+    2. Timestamped backups: config-name.YYYYMMDD-HHMMSS.bak
+    3. Keeps last 10 backups per file
+    4. Easy restore: moonfrp restore &lt;config&gt; --backup=&lt;timestamp&gt;
+    5. Backup operation &lt;50ms
+    6. Backup directory: ~/.moonfrp/backups/
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics/epic-01-scale-foundation.md" title="Epic 1: Critical Fixes &amp; Scale Foundation" section="Story 1.4: Automatic Backup System">
+        Provides problem statement, acceptance criteria, technical specification with backup workflow, restore workflow, and testing requirements. Specifies automatic backup system with timestamped files and retention policy.
+      </doc>
+      <doc path="docs/stories/1-4-automatic-backup-system.md" title="Story 1.4: Automatic Backup System">
+        Complete story definition with requirements context, backup workflow details, restore workflow, integration points with Stories 1.2 and 1.3, performance requirements, and testing strategy.
+      </doc>
+    </docs>
+    <code>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="set_toml_value" lines="33-51" reason="Function that modifies config files - backup integration point before calling this function">
+        Function that updates TOML values in config files. Backup must be called before this function modifies files.
+      </file>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="backup_config" lines="357-378" reason="Existing backup function showing backup patterns - may be enhanced or replaced">
+        Existing backup function with timestamp format and cleanup logic. May serve as reference but needs enhancement for automatic backup requirement.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="log" reason="Logging function used for backup and restore logging">
+        Logging function used throughout codebase. Should be used to log backup creation, restore operations, and cleanup actions.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="safe_read" lines="243-272" reason="Interactive prompt function used for restore menu user input">
+        Safe read function for interactive prompts. Used by restore_config_interactive() to get user input for backup selection.
+      </file>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash">Bash shell scripting (system dependency)</package>
+        <package name="cp">File copy command (coreutils)</package>
+        <package name="mkdir">Directory creation (coreutils)</package>
+        <package name="find">Find command for locating backup files (coreutils)</package>
+        <package name="sort">Sort command for backup ordering (coreutils)</package>
+        <package name="stat">File stat command for modification time (coreutils)</package>
+      </ecosystem>
+      <ecosystem name="optional-integration">
+        <package name="validate_config_file">Story 1.3 validation function (if available) - used after restore</package>
+        <package name="index_config_file">Story 1.2 index function (if available) - used after restore</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="file-location">Backup functions can be in moonfrp-core.sh or moonfrp-config.sh - follow existing module patterns</constraint>
+    <constraint type="backup-directory">Backup directory: $HOME/.moonfrp/backups/ - must be created automatically if doesn't exist</constraint>
+    <constraint type="backup-naming">Backup naming: {config-name}.YYYYMMDD-HHMMSS.bak (e.g., frpc.toml.20251102-143025.bak)</constraint>
+    <constraint type="retention">Must keep last 10 backups per file - remove older backups automatically</constraint>
+    <constraint type="performance">Backup operation must complete in &lt;50ms to maintain responsive UI</constraint>
+    <constraint type="integration">Must integrate with save functions - backup before any config modification</constraint>
+    <constraint type="integration">Should integrate with Story 1.3 (Config Validation) - validate restored config if available</constraint>
+    <constraint type="integration">Should integrate with Story 1.2 (Config Index) - update index after restore if available</constraint>
+    <constraint type="error-handling">Backup failures should be handled gracefully - log warning but allow save to continue if backup fails</constraint>
+    <constraint type="restore-workflow">Restore must backup current config first (nested backup) before restoring from backup</constraint>
+    <constraint type="user-experience">Interactive restore menu must show formatted dates and allow easy selection by number</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="backup_config_file" kind="bash-function" signature="backup_config_file(config_file) - Create timestamped backup" path="moonfrp-core.sh or moonfrp-config.sh">
+      Function to create timestamped backup of config file. Returns backup file path on success, exits with error on failure.
+    </interface>
+    <interface name="cleanup_old_backups" kind="bash-function" signature="cleanup_old_backups(config_file) - Remove old backups beyond limit" path="moonfrp-core.sh or moonfrp-config.sh">
+      Function to remove backups beyond MAX_BACKUPS_PER_FILE limit (10). Keeps newest backups, removes oldest.
+    </interface>
+    <interface name="list_backups" kind="bash-function" signature="list_backups(config_file?) - List available backups" path="moonfrp-core.sh or moonfrp-config.sh">
+      Function to list backups for specific config file or all backups if no file specified. Returns sorted list (newest first).
+    </interface>
+    <interface name="restore_config_from_backup" kind="bash-function" signature="restore_config_from_backup(config_file, backup_file) - Restore from backup" path="moonfrp-core.sh or moonfrp-config.sh">
+      Function to restore config file from backup. Backs up current config first, copies backup to config location, validates if Story 1.3 available.
+    </interface>
+    <interface name="restore_config_interactive" kind="bash-function" signature="restore_config_interactive(config_file) - Interactive restore menu" path="moonfrp-core.sh or moonfrp-config.sh">
+      Interactive function to select and restore backup. Shows formatted backup list, prompts for selection, confirms operation.
+    </interface>
+    <interface name="log" kind="bash-function" signature="log(level, message) - Logging function" path="moonfrp-core.sh">
+      Existing logging function. Used to log backup creation, restore operations, and cleanup actions.
+    </interface>
+    <interface name="safe_read" kind="bash-function" signature="safe_read(prompt, var_name, default?) - Interactive prompt" path="moonfrp-core.sh">
+      Existing safe read function for user input. Used by restore_config_interactive() for backup selection.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing standards follow bash unit testing patterns. Performance testing is critical - must verify &lt;50ms backup time. Functional tests must verify backup creation, cleanup retention, restore functionality, nested backup, and listing. Edge cases: missing config file, backup directory creation, backup failures, restore with invalid backup.
+    </standards>
+    <locations>
+      Test suite location to be defined (create tests in test suite directory following project structure)
+    </locations>
+    <ideas>
+      <test ac="2">test_backup_creates_timestamped_file - Test that backup creates file with correct timestamp format</test>
+      <test ac="3">test_backup_cleanup_keeps_last_10 - Test that cleanup_old_backups() keeps exactly 10 most recent backups</test>
+      <test ac="4">test_restore_from_backup - Test that restore_config_from_backup() correctly restores config from backup</test>
+      <test ac="4">test_restore_validates_config - Test that restore validates config if Story 1.3 validation available</test>
+      <test ac="4">test_restore_nested_backup - Test that restore backs up current config before restoring (nested backup)</test>
+      <test ac="5">test_backup_performance_under_50ms - Performance test: backup must complete in &lt;50ms</test>
+      <test ac="4">test_list_backups_sorted - Test that list_backups() returns backups sorted by modification time (newest first)</test>
+      <test ac="1">test_backup_before_save - Test that backup is created before config file modification</test>
+      <test ac="6">test_backup_directory_creation - Test that backup directory is created automatically if doesn't exist</test>
+      <test ac="1">test_backup_failure_handling - Test that backup failures are logged but don't prevent save operation</test>
+      <test ac="4">test_restore_interactive_menu - Test that restore_config_interactive() shows menu and handles user selection</test>
+      <test ac="2">test_backup_filename_format - Test that backup filename matches pattern: config-name.YYYYMMDD-HHMMSS.bak</test>
+    </ideas>
+  </tests>
+</story-context>
+

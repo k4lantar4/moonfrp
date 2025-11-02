@@ -282,11 +282,57 @@ check_frp_installation() {
 
 # Get FRP version
 get_frp_version() {
-    if check_frp_installation; then
-        "$FRP_DIR/frps" --version 2>/dev/null | head -1 | grep -o 'v[0-9.]*' || echo "unknown"
-    else
+    # Check if FRP is installed first
+    if ! check_frp_installation; then
         echo "not installed"
+        return 0
     fi
+
+    local version=""
+    local version_pattern='v?[0-9]+\.[0-9]+\.[0-9]+'
+
+    # Method 1: Try frps --version
+    if [[ -x "$FRP_DIR/frps" ]]; then
+        version=$("$FRP_DIR/frps" --version 2>/dev/null | grep -oE "$version_pattern" | head -1 || true)
+        if [[ -n "$version" ]]; then
+            # Ensure 'v' prefix is present
+            if [[ ! "$version" =~ ^v ]]; then
+                version="v$version"
+            fi
+            echo "$version"
+            return 0
+        fi
+    fi
+
+    # Method 2: Try frpc --version as fallback
+    if [[ -x "$FRP_DIR/frpc" ]]; then
+        version=$("$FRP_DIR/frpc" --version 2>/dev/null | grep -oE "$version_pattern" | head -1 || true)
+        if [[ -n "$version" ]]; then
+            # Ensure 'v' prefix is present
+            if [[ ! "$version" =~ ^v ]]; then
+                version="v$version"
+            fi
+            echo "$version"
+            return 0
+        fi
+    fi
+
+    # Method 3: Read from .version file if exists
+    if [[ -f "$FRP_DIR/.version" ]]; then
+        version=$(grep -oE "$version_pattern" "$FRP_DIR/.version" | head -1 || true)
+        if [[ -n "$version" ]]; then
+            # Ensure 'v' prefix is present
+            if [[ ! "$version" =~ ^v ]]; then
+                version="v$version"
+            fi
+            echo "$version"
+            return 0
+        fi
+    fi
+
+    # All methods failed
+    echo "unknown"
+    return 0
 }
 
 # Check service status
