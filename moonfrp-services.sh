@@ -8,6 +8,7 @@
 
 # Source core functions
 source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-core.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh"
 
 #==============================================================================
 # SERVICE MANAGEMENT FUNCTIONS
@@ -349,6 +350,241 @@ restart_all_services() {
     start_all_services
 }
 
+#==============================================================================
+# BULK PARALLEL SERVICE OPERATIONS
+#==============================================================================
+
+# Get all MoonFRP services
+get_moonfrp_services() {
+    systemctl list-units --type=service --all --no-pager --no-legend \
+        | grep -E "moonfrp-(server|client|visitor)" \
+        | awk '{print $1}' \
+        | sed 's/.service$//'
+}
+
+# Core parallel service operation framework
+bulk_service_operation() {
+    local operation="$1"  # start|stop|restart|reload
+    local max_parallel="${2:-10}"  # Maximum concurrent operations (default 10)
+    shift 2
+    local services=("$@")
+    
+    if [[ ${#services[@]} -eq 0 ]]; then
+        log "WARN" "No services provided for bulk operation"
+        echo "" >&2  # Clear any potential progress line
+        return 0
+    fi
+    
+    local total=${#services[@]}
+    local success_count=0
+    local fail_count=0
+    local completed=0
+    declare -a failed_services
+    declare -a failed_reasons
+    declare -a pids
+    declare -a service_names
+    local tmp_dir=$(mktemp -d)
+    trap "rm -rf '$tmp_dir'" EXIT
+    
+    log "INFO" "Starting bulk $operation operation on $total services (max parallel: $max_parallel)"
+    
+    for service in "${services[@]}"; do
+        while [[ ${#pids[@]} -ge $max_parallel ]]; do
+            local new_pids=()
+            local new_services=()
+            for i in "${!pids[@]}"; do
+                local pid="${pids[$i]}"
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    wait "$pid"
+                    local exit_code=$?
+                    local svc="${service_names[$i]}"
+                    
+                    if [[ $exit_code -eq 0 ]]; then
+                        ((success_count++))
+                    else
+                        ((fail_count++))
+                        failed_services+=("$svc")
+                        if [[ -f "$tmp_dir/$svc.error" ]]; then
+                            failed_reasons+=("$(cat "$tmp_dir/$svc.error")")
+                        else
+                            failed_reasons+=("Operation failed with exit code $exit_code")
+                        fi
+                    fi
+                    ((completed++))
+                    printf "\rProgress: $completed/$total services..." >&2
+                else
+                    new_pids+=("$pid")
+                    new_services+=("${service_names[$i]}")
+                fi
+            done
+            pids=("${new_pids[@]}")
+            service_names=("${new_services[@]}")
+            
+            if [[ ${#pids[@]} -ge $max_parallel ]]; then
+                sleep 0.1
+            fi
+        done
+        
+        {
+            case "$operation" in
+                "start")
+                    start_service "$service" > "$tmp_dir/$service.log" 2> "$tmp_dir/$service.error"
+                    ;;
+                "stop")
+                    stop_service "$service" > "$tmp_dir/$service.log" 2> "$tmp_dir/$service.error"
+                    ;;
+                "restart")
+                    restart_service "$service" > "$tmp_dir/$service.log" 2> "$tmp_dir/$service.error"
+                    ;;
+                "reload")
+                    if systemctl reload "$service" 2>/dev/null; then
+                        log "INFO" "Reloaded service: $service" > "$tmp_dir/$service.log"
+                        rm -f "$tmp_dir/$service.error"
+                    else
+                        log "ERROR" "Failed to reload service: $service" > "$tmp_dir/$service.error" 2>&1
+                        exit 1
+                    fi
+                    ;;
+                *)
+                    echo "Unknown operation: $operation" > "$tmp_dir/$service.error"
+                    exit 1
+                    ;;
+            esac
+        } &
+        
+        local pid=$!
+        pids+=("$pid")
+        service_names+=("$service")
+    done
+    
+    while [[ ${#pids[@]} -gt 0 ]]; do
+        local new_pids=()
+        local new_services=()
+        for i in "${!pids[@]}"; do
+            local pid="${pids[$i]}"
+            if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
+                local exit_code=$?
+                local svc="${service_names[$i]}"
+                
+                if [[ $exit_code -eq 0 ]]; then
+                    ((success_count++))
+                else
+                    ((fail_count++))
+                    failed_services+=("$svc")
+                    if [[ -f "$tmp_dir/$svc.error" ]]; then
+                        failed_reasons+=("$(cat "$tmp_dir/$svc.error")")
+                    else
+                        failed_reasons+=("Operation failed with exit code $exit_code")
+                    fi
+                fi
+                ((completed++))
+                printf "\rProgress: $completed/$total services..." >&2
+            else
+                new_pids+=("$pid")
+                new_services+=("${service_names[$i]}")
+            fi
+        done
+        pids=("${new_pids[@]}")
+        service_names=("${new_services[@]}")
+        
+        if [[ ${#pids[@]} -gt 0 ]]; then
+            sleep 0.1
+        fi
+    done
+    
+    echo "" >&2
+    rm -rf "$tmp_dir"
+    trap - EXIT
+    
+    log "INFO" "Bulk $operation complete: $success_count succeeded, $fail_count failed"
+    
+    if [[ $fail_count -gt 0 ]]; then
+        log "WARN" "Failed services:"
+        for i in "${!failed_services[@]}"; do
+            local svc="${failed_services[$i]}"
+            local reason="${failed_reasons[$i]:-Unknown error}"
+            echo "  - $svc: $reason" >&2
+        done
+    fi
+    
+    return $fail_count
+}
+
+# User-facing bulk operation functions
+bulk_start_services() {
+    local max_parallel="${1:-10}"
+    local services=($(get_moonfrp_services))
+    bulk_service_operation "start" "$max_parallel" "${services[@]}"
+}
+
+bulk_stop_services() {
+    local max_parallel="${1:-10}"
+    local services=($(get_moonfrp_services))
+    bulk_service_operation "stop" "$max_parallel" "${services[@]}"
+}
+
+bulk_restart_services() {
+    local max_parallel="${1:-10}"
+    local services=($(get_moonfrp_services))
+    bulk_service_operation "restart" "$max_parallel" "${services[@]}"
+}
+
+bulk_reload_services() {
+    local max_parallel="${1:-10}"
+    local services=($(get_moonfrp_services))
+    bulk_service_operation "reload" "$max_parallel" "${services[@]}"
+}
+
+# Filtered bulk operations (for Story 2.3 - tags integration)
+bulk_operation_filtered() {
+    local operation="$1"
+    local filter_type="$2"  # tag, status, name
+    local filter_value="$3"
+    local max_parallel="${4:-10}"
+    
+    local services=()
+    
+    case "$filter_type" in
+        "tag")
+            if command -v get_services_by_tag &>/dev/null; then
+                services=($(get_services_by_tag "$filter_value"))
+            else
+                log "ERROR" "Tag filtering requires Story 2.3 tagging system (not yet implemented)"
+                return 1
+            fi
+            ;;
+        "status")
+            local all_services=($(get_moonfrp_services))
+            for svc in "${all_services[@]}"; do
+                local status=$(get_detailed_service_status "$svc" | cut -d'_' -f1)
+                if [[ "$status" == "$filter_value" ]]; then
+                    services+=("$svc")
+                fi
+            done
+            ;;
+        "name")
+            local all_services=($(get_moonfrp_services))
+            for svc in "${all_services[@]}"; do
+                if [[ "$svc" == *"$filter_value"* ]]; then
+                    services+=("$svc")
+                fi
+            done
+            ;;
+        *)
+            log "ERROR" "Invalid filter type: $filter_type. Use: tag, status, or name"
+            return 1
+            ;;
+    esac
+    
+    if [[ ${#services[@]} -eq 0 ]]; then
+        log "WARN" "No services found matching filter: $filter_type=$filter_value"
+        return 0
+    fi
+    
+    bulk_service_operation "$operation" "$max_parallel" "${services[@]}"
+}
+
 # Remove service
 remove_service() {
     local service_name="$1"
@@ -561,3 +797,6 @@ export -f list_frp_services setup_server_service setup_client_service setup_all_
 export -f start_all_services stop_all_services restart_all_services
 export -f remove_service remove_all_services view_service_logs follow_service_logs
 export -f health_check service_management_menu
+export -f get_moonfrp_services bulk_service_operation
+export -f bulk_start_services bulk_stop_services bulk_restart_services bulk_reload_services
+export -f bulk_operation_filtered

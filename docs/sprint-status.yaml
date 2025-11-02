@@ -55,7 +55,7 @@ development_status:
     title: Bulk Operations
   
   2-1-parallel-service-management:
-    status: ready-for-dev
+    status: done
     story_id: MOONFRP-E02-S01
     epic: 2
     title: Parallel Service Management
@@ -63,7 +63,7 @@ development_status:
     effort: 2 days
   
   2-2-bulk-configuration-operations:
-    status: ready-for-dev
+    status: review
     story_id: MOONFRP-E02-S02
     epic: 2
     title: Bulk Configuration Operations
@@ -71,7 +71,7 @@ development_status:
     effort: 1.5 days
   
   2-3-service-grouping-tagging:
-    status: ready-for-dev
+    status: review
     story_id: MOONFRP-E02-S03
     epic: 2
     title: Service Grouping & Tagging
@@ -79,7 +79,7 @@ development_status:
     effort: 1.5 days
   
   2-4-configuration-templates:
-    status: ready-for-dev
+    status: review
     story_id: MOONFRP-E02-S04
     epic: 2
     title: Configuration Templates

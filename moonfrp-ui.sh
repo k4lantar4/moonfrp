@@ -375,10 +375,11 @@ advanced_tools_menu() {
         echo -e "${CYAN}Advanced Tools:${NC}"
         echo "1. Health Check"
         echo "2. View Logs"
-        echo "3. Backup Configurations"
-        echo "4. Restore Configurations"
-        echo "5. Update MoonFRP"
-        echo "6. Uninstall MoonFRP"
+        echo "3. Tag Management"
+        echo "4. Backup Configurations"
+        echo "5. Restore Configurations"
+        echo "6. Update MoonFRP"
+        echo "7. Uninstall MoonFRP"
         echo "0. Back to Main Menu"
         echo
         
@@ -393,18 +394,21 @@ advanced_tools_menu() {
                 view_logs_menu
                 ;;
             3)
+                tag_management_menu
+                ;;
+            4)
                 backup_configurations
                 read -p "Press Enter to continue..."
                 ;;
-            4)
+            5)
                 restore_configurations
                 read -p "Press Enter to continue..."
                 ;;
-            5)
+            6)
                 update_moonfrp
                 read -p "Press Enter to continue..."
                 ;;
-            6)
+            7)
                 uninstall_moonfrp
                 read -p "Press Enter to continue..."
                 ;;

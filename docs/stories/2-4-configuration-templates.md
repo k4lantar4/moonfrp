@@ -1,6 +1,6 @@
 # Story 2.4: Configuration Templates
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -20,82 +20,82 @@ so that I can rapidly deploy consistent tunnel configurations without manual edi
 
 ## Tasks / Subtasks
 
-- [ ] Create new module file `moonfrp-templates.sh` (AC: 1, 4)
-  - [ ] Define TEMPLATE_DIR constant: `$HOME/.moonfrp/templates`
-  - [ ] Create template directory if it doesn't exist
-  - [ ] Define template file extension: `.toml.tmpl`
-- [ ] Implement template creation (AC: 1, 7)
-  - [ ] Create create_template() function
-  - [ ] Save template content to `TEMPLATE_DIR/{name}.toml.tmpl`
-  - [ ] Support template metadata comments: `# Template:`, `# Variables:`, `# Tags:`
-  - [ ] Template versioning support (store version in metadata or filename)
-- [ ] Implement template listing (AC: 4)
-  - [ ] Create list_templates() function
-  - [ ] List all `.toml.tmpl` files in template directory
-  - [ ] Return template names (without extension)
-- [ ] Implement template instantiation (AC: 1, 2, 5, 6)
-  - [ ] Create instantiate_template() function
-  - [ ] Read template file from TEMPLATE_DIR
-  - [ ] Extract template metadata (tags, description) from comments
-  - [ ] Substitute variables: `${VAR_NAME}` → value
-  - [ ] Check for unsubstituted variables (warn or error)
-  - [ ] Write instantiated config to output file
-  - [ ] Validate generated config (use Story 1.3 validation)
-  - [ ] Index generated config (use Story 1.2 indexing)
-  - [ ] Apply tags from template metadata (use Story 2.3 tagging)
-- [ ] Implement variable substitution (AC: 1, 2)
-  - [ ] Parse variable format: `${VAR_NAME}`
-  - [ ] Accept variables as key=value pairs
-  - [ ] Substitute all occurrences of variable in template
-  - [ ] Handle variable values with special characters
-  - [ ] Support both string and numeric variables
-- [ ] Implement bulk instantiation from CSV (AC: 3)
-  - [ ] Create bulk_instantiate_template() function
-  - [ ] Parse CSV file: first row is header with variable names
-  - [ ] First column is output_file name
-  - [ ] Subsequent columns are variable values
-  - [ ] Instantiate template for each data row
-  - [ ] Handle errors per row (continue on error)
-- [ ] Integrate with validation system (AC: 5)
-  - [ ] Use Story 1.3 `validate_config_file()` after instantiation
-  - [ ] Abort if validation fails
-  - [ ] Clean up invalid generated configs
-- [ ] Integrate with indexing system (AC: 2)
-  - [ ] Use Story 1.2 `index_config_file()` after successful instantiation
-  - [ ] Index only if validation passes
-- [ ] Integrate with tagging system (AC: 6)
-  - [ ] Parse `# Tags:` comment from template
-  - [ ] Extract tags: `env:prod, type:client`
-  - [ ] Apply tags using Story 2.3 `add_config_tag()`
-  - [ ] Support tag inheritance from templates
-- [ ] Create interactive template menu (AC: 1, 2, 3)
-  - [ ] Create template_management_menu() function
-  - [ ] List existing templates
-  - [ ] Create template (interactive)
-  - [ ] Instantiate template (interactive with variable prompts)
-  - [ ] Bulk instantiate from CSV (interactive)
-  - [ ] View template content
-  - [ ] Delete template
-- [ ] CLI integration (AC: 1, 2, 3)
-  - [ ] Add `moonfrp template create <name> <file>` command
-  - [ ] Add `moonfrp template list` command
-  - [ ] Add `moonfrp template instantiate <name> <output> --var=X=Y` command
-  - [ ] Add `moonfrp template bulk-instantiate <name> <csv-file>` command
-  - [ ] Add `moonfrp template view <name>` command
-  - [ ] Add `moonfrp template delete <name>` command
-- [ ] Template versioning support (AC: 7)
-  - [ ] Store version in template metadata: `# Version: 1.0`
-  - [ ] Support version query: `moonfrp template version <name>`
-  - [ ] Optional: Support version in filename: `template-v1.0.toml.tmpl`
-- [ ] Testing (AC: 1, 2, 3, 5, 6)
-  - [ ] test_create_template()
-  - [ ] test_instantiate_template_with_variables()
-  - [ ] test_instantiate_template_missing_variable_warning()
-  - [ ] test_bulk_instantiate_from_csv()
-  - [ ] test_template_validation()
-  - [ ] test_template_auto_tagging()
-  - [ ] test_template_list()
-  - [ ] test_template_versioning()
+- [x] Create new module file `moonfrp-templates.sh` (AC: 1, 4)
+  - [x] Define TEMPLATE_DIR constant: `$HOME/.moonfrp/templates`
+  - [x] Create template directory if it doesn't exist
+  - [x] Define template file extension: `.toml.tmpl`
+- [x] Implement template creation (AC: 1, 7)
+  - [x] Create create_template() function
+  - [x] Save template content to `TEMPLATE_DIR/{name}.toml.tmpl`
+  - [x] Support template metadata comments: `# Template:`, `# Variables:`, `# Tags:`
+  - [x] Template versioning support (store version in metadata or filename)
+- [x] Implement template listing (AC: 4)
+  - [x] Create list_templates() function
+  - [x] List all `.toml.tmpl` files in template directory
+  - [x] Return template names (without extension)
+- [x] Implement template instantiation (AC: 1, 2, 5, 6)
+  - [x] Create instantiate_template() function
+  - [x] Read template file from TEMPLATE_DIR
+  - [x] Extract template metadata (tags, description) from comments
+  - [x] Substitute variables: `${VAR_NAME}` → value
+  - [x] Check for unsubstituted variables (warn or error)
+  - [x] Write instantiated config to output file
+  - [x] Validate generated config (use Story 1.3 validation)
+  - [x] Index generated config (use Story 1.2 indexing)
+  - [x] Apply tags from template metadata (use Story 2.3 tagging)
+- [x] Implement variable substitution (AC: 1, 2)
+  - [x] Parse variable format: `${VAR_NAME}`
+  - [x] Accept variables as key=value pairs
+  - [x] Substitute all occurrences of variable in template
+  - [x] Handle variable values with special characters
+  - [x] Support both string and numeric variables
+- [x] Implement bulk instantiation from CSV (AC: 3)
+  - [x] Create bulk_instantiate_template() function
+  - [x] Parse CSV file: first row is header with variable names
+  - [x] First column is output_file name
+  - [x] Subsequent columns are variable values
+  - [x] Instantiate template for each data row
+  - [x] Handle errors per row (continue on error)
+- [x] Integrate with validation system (AC: 5)
+  - [x] Use Story 1.3 `validate_config_file()` after instantiation
+  - [x] Abort if validation fails
+  - [x] Clean up invalid generated configs
+- [x] Integrate with indexing system (AC: 2)
+  - [x] Use Story 1.2 `index_config_file()` after successful instantiation
+  - [x] Index only if validation passes
+- [x] Integrate with tagging system (AC: 6)
+  - [x] Parse `# Tags:` comment from template
+  - [x] Extract tags: `env:prod, type:client`
+  - [x] Apply tags using Story 2.3 `add_config_tag()`
+  - [x] Support tag inheritance from templates
+- [x] Create interactive template menu (AC: 1, 2, 3)
+  - [x] Create template_management_menu() function
+  - [x] List existing templates
+  - [x] Create template (interactive)
+  - [x] Instantiate template (interactive with variable prompts)
+  - [x] Bulk instantiate from CSV (interactive)
+  - [x] View template content
+  - [x] Delete template
+- [x] CLI integration (AC: 1, 2, 3)
+  - [x] Add `moonfrp template create <name> <file>` command
+  - [x] Add `moonfrp template list` command
+  - [x] Add `moonfrp template instantiate <name> <output> --var=X=Y` command
+  - [x] Add `moonfrp template bulk-instantiate <name> <csv-file>` command
+  - [x] Add `moonfrp template view <name>` command
+  - [x] Add `moonfrp template delete <name>` command
+- [x] Template versioning support (AC: 7)
+  - [x] Store version in template metadata: `# Version: 1.0`
+  - [x] Support version query: `moonfrp template version <name>`
+  - [x] Optional: Support version in filename: `template-v1.0.toml.tmpl`
+- [x] Testing (AC: 1, 2, 3, 5, 6)
+  - [x] test_create_template()
+  - [x] test_instantiate_template_with_variables()
+  - [x] test_instantiate_template_missing_variable_warning()
+  - [x] test_bulk_instantiate_from_csv()
+  - [x] test_template_validation()
+  - [x] test_template_auto_tagging()
+  - [x] test_template_list()
+  - [x] test_template_versioning()
 
 ## Dev Notes
 
@@ -327,5 +327,33 @@ frpc-us-1.toml,10.0.1.50,7000,us,web-us-1,8080,30003
 
 ### Completion Notes List
 
+✅ **Implementation Complete (2025-11-02)**
+
+**Summary:**
+- Created new module `moonfrp-templates.sh` following the pattern established in `moonfrp-index.sh`
+- Implemented all core template functions: creation, listing, instantiation, bulk operations
+- Variable substitution supports `${VAR_NAME}` pattern with proper escaping
+- Integrated with validation (Story 1.3), indexing (Story 1.2), and tagging (Story 2.3 - graceful fallback when not available)
+- Added comprehensive CLI commands for template management
+- Created interactive template menu for user-friendly operations
+- Template versioning support via metadata comments
+- Comprehensive test suite created (`test_template_system.sh`)
+
+**Key Features:**
+- Templates stored in `~/.moonfrp/templates/` with `.toml.tmpl` extension
+- Bulk instantiation from CSV files (first column: output_file, subsequent: variables)
+- Automatic validation, indexing, and tagging integration
+- Template metadata extraction (Variables, Tags, Version, Description)
+- Graceful handling of missing `add_config_tag()` function (Story 2.3 dependency)
+
+**Integration Points:**
+- Module sourced in `moonfrp.sh` (line 25)
+- CLI commands added: `template list|create|view|instantiate|bulk-instantiate|version|delete`
+- Interactive menu available via `template` command without subcommand
+
 ### File List
+
+- moonfrp-templates.sh (new)
+- moonfrp.sh (modified - added template CLI commands)
+- tests/test_template_system.sh (new)
 

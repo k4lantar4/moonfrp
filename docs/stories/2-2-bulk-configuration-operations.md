@@ -1,6 +1,6 @@
 # Story 2.2: Bulk Configuration Operations
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -20,63 +20,63 @@ so that I can quickly change auth tokens, server IPs, or ports across all config
 
 ## Tasks / Subtasks
 
-- [ ] Implement bulk config field update (AC: 1, 3, 4, 5)
-  - [ ] Create bulk_update_config_field() function in moonfrp-config.sh
-  - [ ] Implement filter system: all|tag:X|type:client|server|name:pattern
-  - [ ] Implement dry-run mode to preview changes
-  - [ ] Use temp files for atomic transaction behavior
-  - [ ] Validate each temp file before commit (use Story 1.3 validation)
-  - [ ] Rollback on any validation failure
-  - [ ] Commit all changes atomically if all validations pass
-- [ ] Implement TOML field update helper (AC: 1)
-  - [ ] Create update_toml_field() helper function
-  - [ ] Support nested fields (e.g., "auth.token")
-  - [ ] Parse field path: section.key format
-  - [ ] Use awk/sed to update field value
-  - [ ] Preserve TOML formatting and comments
-- [ ] Implement config filtering (AC: 1)
-  - [ ] Create get_configs_by_filter() function
-  - [ ] Support filter types: all, type:server, type:client, tag:X, name:pattern
-  - [ ] Integrate with Story 2.3 tagging (when available)
-  - [ ] Return array of matching config file paths
-- [ ] Implement bulk update from file (AC: 2)
-  - [ ] Create bulk_update_from_file() function
-  - [ ] Parse JSON/YAML update file
-  - [ ] Extract field, value, and filter from update file
-  - [ ] Call bulk_update_config_field() with extracted values
-  - [ ] Support dry-run mode from file
-- [ ] Integrate with backup system (AC: 6)
-  - [ ] Call backup_config_file() before each config update
-  - [ ] Use Story 1.4 backup system (when available)
-  - [ ] Backup all configs before bulk update starts
-  - [ ] Handle backup failures gracefully
-- [ ] Integrate with validation system (AC: 4, 5)
-  - [ ] Validate each temp file using Story 1.3 validate_config_file()
-  - [ ] Abort transaction if any validation fails
-  - [ ] Only commit if all validations pass
-- [ ] Integrate with index system (AC: 7)
-  - [ ] Update index after successful bulk update
-  - [ ] Use Story 1.2 index_config_file() for each updated config
-  - [ ] Don't update index until commit phase
-- [ ] CLI integration (AC: 1, 2, 3)
-  - [ ] Add `moonfrp config bulk-update --field=X --value=Y --filter=all` command
-  - [ ] Add `--dry-run` option support
-  - [ ] Add `--file=updates.json` option for file-based updates
-  - [ ] Display changes preview in dry-run mode
-- [ ] Performance optimization (AC: 7)
-  - [ ] Minimize file I/O operations
-  - [ ] Batch validation operations
-  - [ ] Optimize temp file operations
-  - [ ] Benchmark with 50 configs (target <5s)
-- [ ] Testing (AC: 1, 2, 3, 4, 5, 6, 7)
-  - [ ] test_bulk_update_single_field_dry_run()
-  - [ ] test_bulk_update_single_field_apply()
-  - [ ] test_bulk_update_validation_failure_rollback()
-  - [ ] test_bulk_update_atomic_transaction()
-  - [ ] test_bulk_update_50_configs_under_5s()
-  - [ ] test_bulk_update_backup_before_change()
-  - [ ] test_bulk_update_filter_by_type()
-  - [ ] test_bulk_update_filter_by_tag()
+- [x] Implement bulk config field update (AC: 1, 3, 4, 5)
+  - [x] Create bulk_update_config_field() function in moonfrp-config.sh
+  - [x] Implement filter system: all|tag:X|type:client|server|name:pattern
+  - [x] Implement dry-run mode to preview changes
+  - [x] Use temp files for atomic transaction behavior
+  - [x] Validate each temp file before commit (use Story 1.3 validation)
+  - [x] Rollback on any validation failure
+  - [x] Commit all changes atomically if all validations pass
+- [x] Implement TOML field update helper (AC: 1)
+  - [x] Create update_toml_field() helper function
+  - [x] Support nested fields (e.g., "auth.token")
+  - [x] Parse field path: section.key format
+  - [x] Use awk/sed to update field value
+  - [x] Preserve TOML formatting and comments
+- [x] Implement config filtering (AC: 1)
+  - [x] Create get_configs_by_filter() function
+  - [x] Support filter types: all, type:server, type:client, tag:X, name:pattern
+  - [x] Integrate with Story 2.3 tagging (when available)
+  - [x] Return array of matching config file paths
+- [x] Implement bulk update from file (AC: 2)
+  - [x] Create bulk_update_from_file() function
+  - [x] Parse JSON/YAML update file
+  - [x] Extract field, value, and filter from update file
+  - [x] Call bulk_update_config_field() with extracted values
+  - [x] Support dry-run mode from file
+- [x] Integrate with backup system (AC: 6)
+  - [x] Call backup_config_file() before each config update
+  - [x] Use Story 1.4 backup system (when available)
+  - [x] Backup all configs before bulk update starts
+  - [x] Handle backup failures gracefully
+- [x] Integrate with validation system (AC: 4, 5)
+  - [x] Validate each temp file using Story 1.3 validate_config_file()
+  - [x] Abort transaction if any validation fails
+  - [x] Only commit if all validations pass
+- [x] Integrate with index system (AC: 7)
+  - [x] Update index after successful bulk update
+  - [x] Use Story 1.2 index_config_file() for each updated config
+  - [x] Don't update index until commit phase
+- [x] CLI integration (AC: 1, 2, 3)
+  - [x] Add `moonfrp config bulk-update --field=X --value=Y --filter=all` command
+  - [x] Add `--dry-run` option support
+  - [x] Add `--file=updates.json` option for file-based updates
+  - [x] Display changes preview in dry-run mode
+- [x] Performance optimization (AC: 7)
+  - [x] Minimize file I/O operations
+  - [x] Batch validation operations
+  - [x] Optimize temp file operations
+  - [x] Benchmark with 50 configs (target <5s)
+- [x] Testing (AC: 1, 2, 3, 4, 5, 6, 7)
+  - [x] test_bulk_update_single_field_dry_run()
+  - [x] test_bulk_update_single_field_apply()
+  - [x] test_bulk_update_validation_failure_rollback()
+  - [x] test_bulk_update_atomic_transaction()
+  - [x] test_bulk_update_50_configs_under_5s()
+  - [x] test_bulk_update_backup_before_change()
+  - [x] test_bulk_update_filter_by_type()
+  - [x] test_bulk_update_filter_by_tag()
 
 ## Dev Notes
 
@@ -272,5 +272,40 @@ When Stories 1.2, 1.3, 1.4, and 2.2 are all implemented:
 
 ### Completion Notes List
 
+**Implementation Complete (2025-11-02):**
+- ✅ Implemented all core bulk configuration functions in `moonfrp-config.sh`:
+  - `get_configs_by_filter()` - Filter configs by type, tag, or name pattern
+  - `update_toml_field()` - Update TOML fields while preserving formatting
+  - `bulk_update_config_field()` - Atomic bulk update with two-phase commit
+  - `bulk_update_from_file()` - JSON/YAML file-based bulk updates
+- ✅ Integrated with existing systems:
+  - Story 1.2 (Index): Updates index after successful commits
+  - Story 1.3 (Validation): Validates temp files before commit
+  - Story 1.4 (Backup): Creates backups before each update
+  - Story 2.3 (Tagging): Supports tag-based filtering (when available)
+- ✅ CLI integration in `moonfrp.sh`:
+  - Added `config bulk-update` command with `--field`, `--value`, `--filter`, `--dry-run`, `--file` options
+  - Supports both direct field updates and file-based updates
+- ✅ Comprehensive test suite created:
+  - Tests cover all acceptance criteria: dry-run, apply, validation failure, atomic transaction, backup, filtering, performance
+  - Test file: `tests/test_bulk_config_operations.sh`
+- ✅ Performance optimized:
+  - Uses index system for fast config queries when available
+  - Two-phase commit pattern minimizes I/O operations
+  - Temp files used for atomic transactions
+
+**Technical Approach:**
+- Two-phase commit pattern: Phase 1 (Prepare) validates all temp files, Phase 2 (Commit) applies all or rolls back
+- Filter system integrates with Story 1.2 index for fast queries, falls back to file system search
+- TOML field update preserves formatting and comments using sed-based parsing
+- Atomic transaction ensures all-or-nothing behavior as per AC 5
+
 ### File List
+
+**Modified:**
+- `moonfrp-config.sh` - Added bulk configuration operations functions (lines 1251-1762)
+- `moonfrp.sh` - Added CLI integration for `config bulk-update` command (lines 222-292)
+
+**Created:**
+- `tests/test_bulk_config_operations.sh` - Comprehensive test suite for bulk operations
 

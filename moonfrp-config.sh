@@ -1248,6 +1248,510 @@ config_visitor_wizard() {
     echo -e "${GREEN}Secret key:${NC} $generated_secret"
 }
 
+#==============================================================================
+# BULK CONFIGURATION OPERATIONS (Story 2.2)
+#==============================================================================
+
+# Get config files by filter criteria
+# Usage: get_configs_by_filter <filter>
+#   filter: "all" | "type:server" | "type:client" | "tag:key:value" | "name:pattern"
+# Returns: Array of config file paths (newline-separated)
+get_configs_by_filter() {
+    local filter="${1:-all}"
+    local config_files=()
+    
+    if [[ -z "$filter" ]]; then
+        filter="all"
+    fi
+    
+    # Try to use index system first (fast)
+    if type query_configs_by_type &>/dev/null; then
+        source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh" 2>/dev/null || true
+    fi
+    
+    case "$filter" in
+        all)
+            # Get all config files
+            if [[ -d "$CONFIG_DIR" ]]; then
+                while IFS= read -r -d '' file; do
+                    [[ -f "$file" ]] && config_files+=("$file")
+                done < <(find "$CONFIG_DIR" -name "*.toml" -type f -print0 2>/dev/null)
+            fi
+            ;;
+        type:server)
+            # Use index if available, fallback to file system
+            if query_configs_by_type "server" &>/dev/null; then
+                local query_result
+                query_result=$(query_configs_by_type "server" 2>/dev/null || true)
+                if [[ -n "$query_result" ]]; then
+                    while IFS='|' read -r file_path _ _; do
+                        [[ -n "$file_path" ]] && [[ -f "$file_path" ]] && config_files+=("$file_path")
+                    done <<< "$query_result"
+                else
+                    # Fallback to file system
+                    if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+                        config_files+=("$CONFIG_DIR/frps.toml")
+                    fi
+                    while IFS= read -r -d '' file; do
+                        [[ "$file" == *"frps"* ]] && [[ -f "$file" ]] && config_files+=("$file")
+                    done < <(find "$CONFIG_DIR" -name "frps*.toml" -type f -print0 2>/dev/null)
+                fi
+            else
+                # Fallback to file system
+                if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+                    config_files+=("$CONFIG_DIR/frps.toml")
+                fi
+                while IFS= read -r -d '' file; do
+                    [[ "$file" == *"frps"* ]] && [[ -f "$file" ]] && config_files+=("$file")
+                done < <(find "$CONFIG_DIR" -name "frps*.toml" -type f -print0 2>/dev/null)
+            fi
+            ;;
+        type:client)
+            # Use index if available, fallback to file system
+            if query_configs_by_type "client" &>/dev/null; then
+                local query_result
+                query_result=$(query_configs_by_type "client" 2>/dev/null || true)
+                if [[ -n "$query_result" ]]; then
+                    while IFS='|' read -r file_path _ _; do
+                        [[ -n "$file_path" ]] && [[ -f "$file_path" ]] && config_files+=("$file_path")
+                    done <<< "$query_result"
+                else
+                    # Fallback to file system
+                    while IFS= read -r -d '' file; do
+                        [[ "$file" == *"frpc"* ]] && [[ -f "$file" ]] && config_files+=("$file")
+                    done < <(find "$CONFIG_DIR" -name "frpc*.toml" -type f -print0 2>/dev/null)
+                fi
+            else
+                # Fallback to file system
+                while IFS= read -r -d '' file; do
+                    [[ "$file" == *"frpc"* ]] && [[ -f "$file" ]] && config_files+=("$file")
+                done < <(find "$CONFIG_DIR" -name "frpc*.toml" -type f -print0 2>/dev/null)
+            fi
+            ;;
+        tag:*)
+            # Tag-based filtering (requires Story 2.3)
+            local tag_spec="${filter#tag:}"
+            if type query_configs_by_tag &>/dev/null; then
+                source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh" 2>/dev/null || true
+                local tag_result
+                tag_result=$(query_configs_by_tag "$tag_spec" 2>/dev/null || true)
+                if [[ -n "$tag_result" ]]; then
+                    while IFS='|' read -r file_path _; do
+                        [[ -n "$file_path" ]] && [[ -f "$file_path" ]] && config_files+=("$file_path")
+                    done <<< "$tag_result"
+                fi
+            else
+                log "DEBUG" "Tag filtering requires Story 2.3 (query_configs_by_tag not available)"
+            fi
+            ;;
+        name:*)
+            # Filename pattern matching
+            local pattern="${filter#name:}"
+            if [[ -d "$CONFIG_DIR" ]]; then
+                while IFS= read -r -d '' file; do
+                    local basename_file=$(basename "$file")
+                    if [[ "$basename_file" =~ $pattern ]]; then
+                        [[ -f "$file" ]] && config_files+=("$file")
+                    fi
+                done < <(find "$CONFIG_DIR" -name "*.toml" -type f -print0 2>/dev/null)
+            fi
+            ;;
+        *)
+            log "WARN" "Unknown filter type: $filter (supported: all, type:server, type:client, tag:X, name:pattern)"
+            return 1
+            ;;
+    esac
+    
+    # Output config files (newline-separated)
+    if [[ ${#config_files[@]} -eq 0 ]]; then
+        return 1
+    fi
+    
+    printf '%s\n' "${config_files[@]}"
+    return 0
+}
+
+# Update a TOML field value while preserving formatting and comments
+# Usage: update_toml_field <config_file> <field_path> <new_value> [output_file]
+#   field_path: "key" or "section.key" (e.g., "auth.token")
+#   output_file: Optional output file (if not provided, updates in place)
+# Returns: 0 on success, 1 on failure
+update_toml_field() {
+    local config_file="$1"
+    local field_path="$2"
+    local new_value="$3"
+    local output_file="${4:-$config_file}"
+    
+    if [[ ! -f "$config_file" ]]; then
+        log "ERROR" "Config file not found: $config_file"
+        return 1
+    fi
+    
+    if [[ -z "$field_path" ]]; then
+        log "ERROR" "Field path is required"
+        return 1
+    fi
+    
+    # Parse field path: handle nested fields (e.g., "auth.token" -> "auth" and "token")
+    local section=""
+    local key="$field_path"
+    
+    if [[ "$field_path" =~ \. ]]; then
+        section="${field_path%%.*}"
+        key="${field_path#*.}"
+    fi
+    
+    # Escape special regex characters
+    local escaped_section=$(printf '%s' "$section" | sed 's/[].[^$*\\]/\\&/g')
+    local escaped_key=$(printf '%s' "$key" | sed 's/[].[^$*\\]/\\&/g')
+    local escaped_field=$(printf '%s' "$field_path" | sed 's/[].[^$*\\]/\\&/g')
+    
+    # Create temporary file for output
+    local tmp_file="${output_file}.tmp.$$"
+    
+    # If field has a section (e.g., "auth.token"), we need to handle section headers
+    if [[ -n "$section" ]]; then
+        local in_section=false
+        local field_found=false
+        local line_num=0
+        
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            ((line_num++))
+            
+            # Check if we're entering the target section
+            if [[ "$line" =~ ^[[:space:]]*\[${escaped_section}\][[:space:]]*$ ]]; then
+                in_section=true
+                echo "$line" >> "$tmp_file"
+                continue
+            fi
+            
+            # Check if we're leaving a section (entering another section or end of file)
+            if [[ "$in_section" == "true" ]] && [[ "$line" =~ ^[[:space:]]*\[ ]]; then
+                # We've left the section - if field wasn't found, add it before leaving
+                if [[ "$field_found" == "false" ]]; then
+                    echo "${key} = ${new_value}" >> "$tmp_file"
+                    field_found=true
+                fi
+                in_section=false
+            fi
+            
+            # Check if this is the field we're looking for (within the section)
+            if [[ "$in_section" == "true" ]] && [[ "$line" =~ ^[[:space:]]*${escaped_key}[[:space:]]*=[[:space:]]* ]]; then
+                # Replace the value, preserving formatting
+                if [[ "$line" =~ ^([[:space:]]*${escaped_key}[[:space:]]*=[[:space:]]*).*$ ]]; then
+                    echo "${BASH_REMATCH[1]}${new_value}" >> "$tmp_file"
+                    field_found=true
+                    continue
+                fi
+            fi
+            
+            # Output the line as-is (preserves comments and formatting)
+            echo "$line" >> "$tmp_file"
+        done < "$config_file"
+        
+        # If we ended in the section and field wasn't found, add it at the end of the section
+        if [[ "$in_section" == "true" ]] && [[ "$field_found" == "false" ]]; then
+            echo "${key} = ${new_value}" >> "$tmp_file"
+            field_found=true
+        fi
+        
+        # If section was never found, append section and field at the end
+        if [[ "$field_found" == "false" ]]; then
+            echo "" >> "$tmp_file"
+            echo "[${section}]" >> "$tmp_file"
+            echo "${key} = ${new_value}" >> "$tmp_file"
+        fi
+    else
+        # Simple field without section (e.g., "bindPort")
+        local field_found=false
+        
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            # Check if this is the field we're looking for
+            if [[ "$line" =~ ^[[:space:]]*${escaped_key}[[:space:]]*=[[:space:]]* ]]; then
+                # Replace the value, preserving formatting
+                if [[ "$line" =~ ^([[:space:]]*${escaped_key}[[:space:]]*=[[:space:]]*).*$ ]]; then
+                    echo "${BASH_REMATCH[1]}${new_value}" >> "$tmp_file"
+                    field_found=true
+                    continue
+                fi
+            fi
+            
+            # Output the line as-is
+            echo "$line" >> "$tmp_file"
+        done < "$config_file"
+        
+        # If field wasn't found, append it at the end
+        if [[ "$field_found" == "false" ]]; then
+            echo "${key} = ${new_value}" >> "$tmp_file"
+        fi
+    fi
+    
+    # Move temp file to output location
+    mv "$tmp_file" "$output_file"
+    return 0
+}
+
+# Bulk update config field across multiple configs with atomic transaction
+# Usage: bulk_update_config_field <field> <value> <filter> [dry_run]
+#   field: Field path (e.g., "auth.token", "serverPort")
+#   value: New value (should be properly formatted, e.g., "\"token\"", "7000")
+#   filter: Filter criteria (e.g., "all", "type:server", "type:client")
+#   dry_run: "true" for dry-run mode, "false" (default) to apply changes
+# Returns: 0 on success, 1 on failure
+bulk_update_config_field() {
+    local field="$1"
+    local value="$2"
+    local filter="${3:-all}"
+    local dry_run="${4:-false}"
+    
+    if [[ -z "$field" ]] || [[ -z "$value" ]]; then
+        log "ERROR" "Field and value are required"
+        return 1
+    fi
+    
+    # Get list of config files matching filter
+    local config_files=()
+    local configs_output
+    configs_output=$(get_configs_by_filter "$filter" 2>/dev/null || true)
+    
+    if [[ -z "$configs_output" ]]; then
+        log "WARN" "No config files found matching filter: $filter"
+        return 1
+    fi
+    
+    while IFS= read -r config_file; do
+        [[ -n "$config_file" ]] && [[ -f "$config_file" ]] && config_files+=("$config_file")
+    done <<< "$configs_output"
+    
+    if [[ ${#config_files[@]} -eq 0 ]]; then
+        log "WARN" "No valid config files found matching filter: $filter"
+        return 1
+    fi
+    
+    log "INFO" "Bulk update: ${#config_files[@]} config file(s) matching filter '$filter'"
+    
+    # Phase 1: Prepare - Update all to temp files and validate
+    local temp_files=()
+    local validation_failed=0
+    local updates_preview=()
+    
+    for config_file in "${config_files[@]}"; do
+        local temp_file="${config_file}.bulk_update.$$"
+        temp_files+=("$temp_file")
+        
+        # Get current value for preview
+        local current_value
+        current_value=$(get_toml_value "$config_file" "$field" 2>/dev/null | sed 's/["'\'']//g' || echo "<not set>")
+        
+        # Update to temp file
+        if ! update_toml_field "$config_file" "$field" "$value" "$temp_file" 2>/dev/null; then
+            log "ERROR" "Failed to update field in: $config_file"
+            ((validation_failed++))
+            continue
+        fi
+        
+        # Determine config type for validation
+        local config_type=""
+        local basename_file=$(basename "$config_file")
+        if [[ "$basename_file" == "frps.toml" ]] || [[ "$basename_file" =~ ^frps.*\.toml$ ]]; then
+            config_type="server"
+        elif [[ "$basename_file" == "frpc.toml" ]] || [[ "$basename_file" =~ ^frpc.*\.toml$ ]] || \
+             [[ "$basename_file" =~ ^frpc-.*\.toml$ ]]; then
+            config_type="client"
+        fi
+        
+        # Validate temp file
+        if [[ -n "$config_type" ]]; then
+            if ! validate_config_file "$temp_file" "$config_type" &>/dev/null; then
+                log "ERROR" "Validation failed for: $config_file"
+                ((validation_failed++))
+                rm -f "$temp_file"
+                continue
+            fi
+        fi
+        
+        # Store preview info
+        updates_preview+=("$config_file|$current_value|$value")
+    done
+    
+    # Show preview in dry-run mode
+    if [[ "$dry_run" == "true" ]]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "DRY-RUN: Preview of changes (field: $field)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        for preview in "${updates_preview[@]}"; do
+            IFS='|' read -r file current new <<< "$preview"
+            echo "  $(basename "$file"): '$current' → '$new'"
+        done
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Total: ${#updates_preview[@]} config file(s) would be updated"
+        
+        # Clean up temp files
+        for temp_file in "${temp_files[@]}"; do
+            [[ -f "$temp_file" ]] && rm -f "$temp_file"
+        done
+        
+        return 0
+    fi
+    
+    # Check if any validation failed
+    if [[ $validation_failed -gt 0 ]]; then
+        log "ERROR" "Validation failed for $validation_failed file(s). Transaction aborted."
+        
+        # Rollback: delete all temp files
+        for temp_file in "${temp_files[@]}"; do
+            [[ -f "$temp_file" ]] && rm -f "$temp_file"
+        done
+        
+        return 1
+    fi
+    
+    # Phase 2: Commit - All validations passed, commit changes
+    local commit_failed=0
+    local commit_count=0
+    
+    for i in "${!config_files[@]}"; do
+        local config_file="${config_files[$i]}"
+        local temp_file="${temp_files[$i]}"
+        
+        if [[ ! -f "$temp_file" ]]; then
+            log "ERROR" "Temp file missing: $temp_file"
+            ((commit_failed++))
+            continue
+        fi
+        
+        # Backup existing config before modification (Story 1.4)
+        if [[ -f "$config_file" ]]; then
+            backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed for $config_file, but continuing"
+        fi
+        
+        # Move temp file to final location
+        if mv "$temp_file" "$config_file" 2>/dev/null; then
+            ((commit_count++))
+            
+            # Update index after successful commit (Story 1.2)
+            if type index_config_file &>/dev/null; then
+                source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh" 2>/dev/null || true
+                index_config_file "$config_file" >/dev/null 2>&1 || log "DEBUG" "Index update skipped (non-critical)"
+            fi
+            
+            log "DEBUG" "Updated: $config_file"
+        else
+            log "ERROR" "Failed to commit changes to: $config_file"
+            [[ -f "$temp_file" ]] && rm -f "$temp_file"
+            ((commit_failed++))
+        fi
+    done
+    
+    if [[ $commit_failed -gt 0 ]]; then
+        log "ERROR" "Commit failed for $commit_failed file(s). Some changes may have been applied."
+        return 1
+    fi
+    
+    log "INFO" "Bulk update complete: $commit_count config file(s) updated successfully"
+    return 0
+}
+
+# Bulk update from JSON/YAML file
+# Usage: bulk_update_from_file <update_file> [dry_run]
+#   update_file: Path to JSON or YAML file with update instructions
+#   dry_run: "true" for dry-run mode, "false" (default) to apply changes
+# Update file format (JSON):
+#   {
+#     "updates": [
+#       {
+#         "field": "auth.token",
+#         "value": "NEW_TOKEN",
+#         "filter": "all"
+#       }
+#     ]
+#   }
+# Returns: 0 on success, 1 on failure
+bulk_update_from_file() {
+    local update_file="$1"
+    local dry_run="${2:-false}"
+    
+    if [[ ! -f "$update_file" ]]; then
+        log "ERROR" "Update file not found: $update_file"
+        return 1
+    fi
+    
+    # Determine file type (JSON or YAML)
+    local file_ext="${update_file##*.}"
+    local file_type=""
+    
+    if [[ "$file_ext" == "json" ]]; then
+        file_type="json"
+    elif [[ "$file_ext" == "yaml" ]] || [[ "$file_ext" == "yml" ]]; then
+        file_type="yaml"
+    else
+        # Try to detect from content
+        if head -1 "$update_file" | grep -q "^[[:space:]]*{"; then
+            file_type="json"
+        elif head -1 "$update_file" | grep -q "^[[:space:]]*-"; then
+            file_type="yaml"
+        else
+            log "ERROR" "Cannot determine file type. Use .json or .yaml/.yml extension"
+            return 1
+        fi
+    fi
+    
+    # Parse JSON (using jq if available, or simple parsing)
+    if [[ "$file_type" == "json" ]]; then
+        if command -v jq &>/dev/null; then
+            # Use jq for proper JSON parsing
+            local update_count=0
+            while IFS= read -r update; do
+                if [[ -z "$update" ]]; then
+                    continue
+                fi
+                
+                local field=$(echo "$update" | jq -r '.field // empty' 2>/dev/null || echo "")
+                local value=$(echo "$update" | jq -r '.value // empty' 2>/dev/null || echo "")
+                local filter=$(echo "$update" | jq -r '.filter // "all"' 2>/dev/null || echo "all")
+                
+                if [[ -n "$field" ]] && [[ -n "$value" ]]; then
+                    log "INFO" "Processing update: field=$field, filter=$filter"
+                    if ! bulk_update_config_field "$field" "$value" "$filter" "$dry_run"; then
+                        log "ERROR" "Failed to apply update: field=$field, filter=$filter"
+                        return 1
+                    fi
+                    ((update_count++))
+                fi
+            done < <(jq -c '.updates[]?' "$update_file" 2>/dev/null || echo "")
+            
+            if [[ $update_count -eq 0 ]]; then
+                log "WARN" "No valid updates found in file"
+                return 1
+            fi
+            
+            log "INFO" "Processed $update_count update(s) from file"
+            return 0
+        else
+            log "WARN" "jq is recommended for JSON parsing. Using basic parsing..."
+            # Basic JSON parsing (limited support)
+            local field value filter
+            field=$(grep -o '"field"[[:space:]]*:[[:space:]]*"[^"]*"' "$update_file" | sed 's/.*"field"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
+            value=$(grep -o '"value"[[:space:]]*:[[:space:]]*"[^"]*"' "$update_file" | sed 's/.*"value"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
+            filter=$(grep -o '"filter"[[:space:]]*:[[:space:]]*"[^"]*"' "$update_file" | sed 's/.*"filter"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1 || echo "all")
+            
+            if [[ -n "$field" ]] && [[ -n "$value" ]]; then
+                # Remove quotes from value if present
+                value=$(echo "$value" | sed 's/^"\(.*\)"$/\1/')
+                bulk_update_config_field "$field" "\"$value\"" "$filter" "$dry_run"
+                return $?
+            else
+                log "ERROR" "Failed to parse JSON file. Install 'jq' for better JSON support."
+                return 1
+            fi
+        fi
+    else
+        # YAML parsing (basic support)
+        log "WARN" "YAML parsing is not fully implemented. Use JSON format or install yq."
+        return 1
+    fi
+}
+
 # Export functions
 export -f generate_server_config generate_client_config generate_multi_ip_configs
 export -f generate_visitor_config validate_config_syntax backup_config restore_config
@@ -1255,3 +1759,4 @@ export -f backup_config_file cleanup_old_backups list_backups restore_config_fro
 export -f list_configurations config_wizard config_server_wizard config_client_wizard
 export -f config_multi_ip_wizard config_visitor_wizard
 export -f validate_toml_syntax validate_server_config validate_client_config validate_config_file
+export -f get_configs_by_filter update_toml_field bulk_update_config_field bulk_update_from_file

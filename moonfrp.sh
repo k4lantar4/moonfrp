@@ -22,6 +22,7 @@ source "$SCRIPT_DIR/moonfrp-config.sh"
 source "$SCRIPT_DIR/moonfrp-index.sh"
 source "$SCRIPT_DIR/moonfrp-services.sh"
 source "$SCRIPT_DIR/moonfrp-ui.sh"
+source "$SCRIPT_DIR/moonfrp-templates.sh"
 
 #==============================================================================
 # MAIN EXECUTION
@@ -51,11 +52,28 @@ COMMANDS:
     service restart [name]    Restart service(s)
     service status [name]     Show service status
     service logs [name]       View service logs
+    service start --tag=X    Start services by tag
+    service stop --tag=X     Stop services by tag
+    service restart --tag=X  Restart services by tag
+    
+    tag add <config> <key> <value>  Add tag to config
+    tag remove <config> <key>       Remove tag from config
+    tag list <config>               List tags for config
+    tag bulk --key=X --value=Y --filter=all  Bulk tag configs
     
     config server             Configure server
     config client             Configure client
     config multi-ip           Configure multi-IP clients
     config visitor            Configure visitor
+    config bulk-update        Bulk update config fields (--field=X --value=Y --filter=all [--dry-run])
+    
+    template list             List available templates
+    template create <name> <file>  Create template from file
+    template view <name>      View template content
+    template instantiate <name> <output> --var=KEY=VALUE  Instantiate template
+    template bulk-instantiate <name> <csv-file>  Bulk instantiate from CSV
+    template version <name>   Show template version
+    template delete <name>    Delete template
     
     health check              Check system health
     status                    Show system status
@@ -164,24 +182,60 @@ if [[ $# -gt 0 ]]; then
         "service")
             case "${2:-}" in
                 "start")
-                    if [[ "${3:-}" == "all" ]]; then
+                    local tag_filter=""
+                    local service_name="${3:-}"
+                    shift 3 2>/dev/null || shift 2
+                    while [[ $# -gt 0 ]]; do
+                        if [[ "$1" == --tag=* ]]; then
+                            tag_filter="${1#*=}"
+                            break
+                        fi
+                        shift
+                    done
+                    if [[ -n "$tag_filter" ]]; then
+                        bulk_operation_filtered "start" "tag" "$tag_filter"
+                    elif [[ "$service_name" == "all" ]] || [[ -z "$service_name" ]]; then
                         start_all_services
                     else
-                        start_service "${3:-}"
+                        start_service "$service_name"
                     fi
                     ;;
                 "stop")
-                    if [[ "${3:-}" == "all" ]]; then
+                    local tag_filter=""
+                    local service_name="${3:-}"
+                    shift 3 2>/dev/null || shift 2
+                    while [[ $# -gt 0 ]]; do
+                        if [[ "$1" == --tag=* ]]; then
+                            tag_filter="${1#*=}"
+                            break
+                        fi
+                        shift
+                    done
+                    if [[ -n "$tag_filter" ]]; then
+                        bulk_operation_filtered "stop" "tag" "$tag_filter"
+                    elif [[ "$service_name" == "all" ]] || [[ -z "$service_name" ]]; then
                         stop_all_services
                     else
-                        stop_service "${3:-}"
+                        stop_service "$service_name"
                     fi
                     ;;
                 "restart")
-                    if [[ "${3:-}" == "all" ]]; then
+                    local tag_filter=""
+                    local service_name="${3:-}"
+                    shift 3 2>/dev/null || shift 2
+                    while [[ $# -gt 0 ]]; do
+                        if [[ "$1" == --tag=* ]]; then
+                            tag_filter="${1#*=}"
+                            break
+                        fi
+                        shift
+                    done
+                    if [[ -n "$tag_filter" ]]; then
+                        bulk_operation_filtered "restart" "tag" "$tag_filter"
+                    elif [[ "$service_name" == "all" ]] || [[ -z "$service_name" ]]; then
                         restart_all_services
                     else
-                        restart_service "${3:-}"
+                        restart_service "$service_name"
                     fi
                     ;;
                 "status")
@@ -199,8 +253,86 @@ if [[ $# -gt 0 ]]; then
                         exit 1
                     fi
                     ;;
+                "bulk")
+                    local operation=""
+                    local filter=""
+                    local filter_type=""
+                    local filter_value=""
+                    local max_parallel=10
+                    local dry_run=false
+                    
+                    shift 2
+                    while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                            --operation=*)
+                                operation="${1#*=}"
+                                ;;
+                            --filter=*)
+                                filter="${1#*=}"
+                                if [[ "$filter" == tag:* ]]; then
+                                    filter_type="tag"
+                                    filter_value="${filter#tag:}"
+                                elif [[ "$filter" == status:* ]]; then
+                                    filter_type="status"
+                                    filter_value="${filter#status:}"
+                                elif [[ "$filter" == name:* ]]; then
+                                    filter_type="name"
+                                    filter_value="${filter#name:}"
+                                else
+                                    log "ERROR" "Invalid filter format. Use: --filter=tag:value, --filter=status:value, or --filter=name:value"
+                                    exit 1
+                                fi
+                                ;;
+                            --max-parallel=*)
+                                max_parallel="${1#*=}"
+                                if ! [[ "$max_parallel" =~ ^[0-9]+$ ]] || [[ $max_parallel -lt 1 ]]; then
+                                    log "ERROR" "max-parallel must be a positive integer"
+                                    exit 1
+                                fi
+                                ;;
+                            --dry-run)
+                                dry_run=true
+                                ;;
+                            *)
+                                log "ERROR" "Unknown option: $1"
+                                exit 1
+                                ;;
+                        esac
+                        shift
+                    done
+                    
+                    if [[ -z "$operation" ]]; then
+                        log "ERROR" "Operation required. Use: --operation=start|stop|restart|reload"
+                        exit 1
+                    fi
+                    
+                    if [[ "$dry_run" == true ]]; then
+                        log "INFO" "DRY RUN: Would execute bulk $operation operation"
+                        if [[ -n "$filter_type" ]]; then
+                            log "INFO" "  Filter: $filter_type=$filter_value"
+                        fi
+                        log "INFO" "  Max parallel: $max_parallel"
+                        local services=($(get_moonfrp_services))
+                        log "INFO" "  Services that would be affected: ${#services[@]}"
+                        if [[ -n "$filter_type" ]]; then
+                            log "INFO" "  Filtered services would be determined at runtime"
+                        else
+                            for svc in "${services[@]}"; do
+                                echo "    - $svc"
+                            done
+                        fi
+                        exit 0
+                    fi
+                    
+                    if [[ -n "$filter_type" ]]; then
+                        bulk_operation_filtered "$operation" "$filter_type" "$filter_value" "$max_parallel"
+                    else
+                        local services=($(get_moonfrp_services))
+                        bulk_service_operation "$operation" "$max_parallel" "${services[@]}"
+                    fi
+                    ;;
                 *)
-                    log "ERROR" "Invalid service command. Use: start, stop, restart, status, or logs"
+                    log "ERROR" "Invalid service command. Use: start, stop, restart, status, logs, or bulk"
                     exit 1
                     ;;
             esac
@@ -218,6 +350,77 @@ if [[ $# -gt 0 ]]; then
                     ;;
                 "visitor")
                     config_visitor_wizard
+                    ;;
+                "bulk-update")
+                    # Parse bulk-update command
+                    # Usage: moonfrp config bulk-update --field=X --value=Y --filter=all [--dry-run] [--file=updates.json]
+                    shift 2
+                    local field=""
+                    local value=""
+                    local filter="all"
+                    local dry_run="false"
+                    local update_file=""
+                    
+                    while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                            --field=*)
+                                field="${1#--field=}"
+                                ;;
+                            --field)
+                                field="${2:-}"
+                                shift
+                                ;;
+                            --value=*)
+                                value="${1#--value=}"
+                                ;;
+                            --value)
+                                value="${2:-}"
+                                shift
+                                ;;
+                            --filter=*)
+                                filter="${1#--filter=}"
+                                ;;
+                            --filter)
+                                filter="${2:-}"
+                                shift
+                                ;;
+                            --dry-run)
+                                dry_run="true"
+                                ;;
+                            --file=*)
+                                update_file="${1#--file=}"
+                                ;;
+                            --file)
+                                update_file="${2:-}"
+                                shift
+                                ;;
+                            *)
+                                log "ERROR" "Unknown option: $1"
+                                log "INFO" "Usage: moonfrp config bulk-update --field=X --value=Y --filter=all [--dry-run] [--file=updates.json]"
+                                exit 1
+                                ;;
+                        esac
+                        shift
+                    done
+                    
+                    # If update file is provided, use file-based bulk update
+                    if [[ -n "$update_file" ]]; then
+                        if ! bulk_update_from_file "$update_file" "$dry_run"; then
+                            log "ERROR" "Bulk update from file failed"
+                            exit 1
+                        fi
+                    # Otherwise, use field-based bulk update
+                    elif [[ -n "$field" ]] && [[ -n "$value" ]]; then
+                        if ! bulk_update_config_field "$field" "$value" "$filter" "$dry_run"; then
+                            log "ERROR" "Bulk update failed"
+                            exit 1
+                        fi
+                    else
+                        log "ERROR" "Either --field and --value, or --file is required"
+                        log "INFO" "Usage: moonfrp config bulk-update --field=X --value=Y --filter=all [--dry-run]"
+                        log "INFO" "   or: moonfrp config bulk-update --file=updates.json [--dry-run]"
+                        exit 1
+                    fi
                     ;;
                 *)
                     config_wizard
@@ -315,6 +518,93 @@ if [[ $# -gt 0 ]]; then
                 log "ERROR" "Failed to restore configuration"
                 exit 1
             fi
+            ;;
+        "tag")
+            case "${2:-}" in
+                "add")
+                    local config_file="${3:-}"
+                    local tag_key="${4:-}"
+                    local tag_value="${5:-}"
+                    if [[ -z "$config_file" ]] || [[ -z "$tag_key" ]] || [[ -z "$tag_value" ]]; then
+                        log "ERROR" "Usage: moonfrp tag add <config> <key> <value>"
+                        log "INFO" "Example: moonfrp tag add /etc/frp/frpc.toml env prod"
+                        exit 1
+                    fi
+                    if ! add_config_tag "$config_file" "$tag_key" "$tag_value"; then
+                        exit 1
+                    fi
+                    ;;
+                "remove")
+                    local config_file="${3:-}"
+                    local tag_key="${4:-}"
+                    if [[ -z "$config_file" ]] || [[ -z "$tag_key" ]]; then
+                        log "ERROR" "Usage: moonfrp tag remove <config> <key>"
+                        log "INFO" "Example: moonfrp tag remove /etc/frp/frpc.toml env"
+                        exit 1
+                    fi
+                    if ! remove_config_tag "$config_file" "$tag_key"; then
+                        exit 1
+                    fi
+                    ;;
+                "list")
+                    local config_file="${3:-}"
+                    if [[ -z "$config_file" ]]; then
+                        log "ERROR" "Usage: moonfrp tag list <config>"
+                        log "INFO" "Example: moonfrp tag list /etc/frp/frpc.toml"
+                        exit 1
+                    fi
+                    local tags_output
+                    if tags_output=$(list_config_tags "$config_file"); then
+                        while IFS=':' read -r key value; do
+                            [[ -n "$key" ]] && echo "$key: $value"
+                        done <<< "$tags_output"
+                    else
+                        log "INFO" "No tags found for $config_file"
+                    fi
+                    ;;
+                "bulk")
+                    local tag_key=""
+                    local tag_value=""
+                    local filter="all"
+                    shift 2
+                    while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                            --key=*)
+                                tag_key="${1#*=}"
+                                ;;
+                            --value=*)
+                                tag_value="${1#*=}"
+                                ;;
+                            --filter=*)
+                                filter="${1#*=}"
+                                ;;
+                            *)
+                                log "ERROR" "Unknown option: $1"
+                                log "INFO" "Usage: moonfrp tag bulk --key=X --value=Y --filter=all"
+                                exit 1
+                                ;;
+                        esac
+                        shift
+                    done
+                    if [[ -z "$tag_key" ]] || [[ -z "$tag_value" ]]; then
+                        log "ERROR" "Usage: moonfrp tag bulk --key=X --value=Y [--filter=all]"
+                        log "INFO" "Example: moonfrp tag bulk --key=env --value=prod --filter=type:client"
+                        exit 1
+                    fi
+                    if ! bulk_tag_configs "$tag_key" "$tag_value" "$filter"; then
+                        exit 1
+                    fi
+                    ;;
+                *)
+                    log "ERROR" "Invalid tag command. Use: add, remove, list, or bulk"
+                    log "INFO" "Examples:"
+                    log "INFO" "  moonfrp tag add <config> <key> <value>"
+                    log "INFO" "  moonfrp tag remove <config> <key>"
+                    log "INFO" "  moonfrp tag list <config>"
+                    log "INFO" "  moonfrp tag bulk --key=X --value=Y --filter=all"
+                    exit 1
+                    ;;
+            esac
             ;;
         "install")
             install_frp
