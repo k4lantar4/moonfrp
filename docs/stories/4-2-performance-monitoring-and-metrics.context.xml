@@ -1,0 +1,112 @@
+<story-context id="docs/stories/4-2-performance-monitoring-and-metrics.context" v="1.0">
+  <metadata>
+    <epicId>MOONFRP-E04</epicId>
+    <storyId>MOONFRP-E04-S02</storyId>
+    <title>Story 4.2: Performance Monitoring & Metrics</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-03</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/4-2-performance-monitoring-and-metrics.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer optimizing MoonFRP performance</asA>
+    <iWant>actionable service/system/tunnel metrics exported in Prometheus format and a simple dashboard</iWant>
+    <soThat>I can validate optimization impact, detect regressions, and operate confidently with low overhead</soThat>
+    <tasks>
+- Implement metrics module bootstrap (AC: 2, 3, 7)
+  - Create moonfrp-metrics.sh and source moonfrp-core.sh
+  - Initialize metrics dir and file paths under $HOME/.moonfrp/metrics
+  - Provide init_metrics() to start background collector
+- Implement periodic collection (AC: 1, 2, 7)
+  - collect_metrics() orchestrates service/system/tunnel metrics and writes timestamped values
+  - Ensure collection completes fast; sleep 60s cadence by default
+- Service metrics (AC: 6)
+  - collect_service_metrics(ts) counts total/active/failed moonfrp- systemd services
+  - Emit Prometheus metrics: moonfrp_services_total, active, failed
+- System metrics (AC: 2, 7)
+  - collect_system_metrics(ts) records CPU usage, memory used (MB), RX/TX bytes
+  - Optimize shell pipelines to keep CPU overhead <1%
+- Tunnel metrics (AC: 1, 6)
+  - collect_tunnel_metrics(ts) uses FRP API if available; otherwise placeholder counts with safe defaults
+- Prometheus export (AC: 3)
+  - Write metrics to $HOME/.moonfrp/metrics/moonfrp_metrics.prom in text exposition format
+  - Provide helper export_metrics_prometheus() with integration snippet
+- Dashboard (AC: 4)
+  - show_metrics_dashboard() prints current values grouped by category
+  - Gracefully handle case when metrics not yet present
+- Retention and housekeeping (AC: 5)
+  - Keep last 24h by default; parameterize via constant RETENTION_HOURS
+- Background worker (AC: 7)
+  - collect_metrics_background() runs forever, sleeps between cycles
+  - Validate measured CPU overhead under 1% on reference host
+- Alerting on tunnel failures (AC: 6)
+  - Detect failure conditions and emit alert counters
+  - Provide hook on_tunnel_failure()
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Track per-tunnel metrics: bandwidth, connections, errors
+2. System metrics: CPU, memory, network I/O
+3. Export metrics in Prometheus format
+4. Simple text dashboard for quick viewing
+5. Metrics history: last 24h, configurable retention
+6. Alerting on tunnel failures
+7. Performance: metrics collection <1% CPU overhead
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+- path: docs/epics/epic-04-system-optimization.md
+  title: Epic 4: System Optimization
+  section: Story 4.2 (Technical Specification)
+  snippet: Defines metrics collection scope, Prometheus export format, dashboard expectations, and low-overhead constraint.
+- path: docs/stories/4-2-performance-monitoring-and-metrics.md
+  title: Story 4.2: Performance Monitoring & Metrics
+  section: Acceptance Criteria
+  snippet: Lists per-tunnel, system metrics, Prometheus export, dashboard, alerts, and performance target.
+    </docs>
+    <code>
+- path: moonfrp-core.sh
+  kind: script
+  symbol: shared helpers
+  lines: n/a
+  reason: Common utilities sourced by new metrics module.
+- path: moonfrp-ui.sh
+  kind: script
+  symbol: show_header, log
+  lines: n/a
+  reason: UI/log helpers for dashboard output.
+    </code>
+    <dependencies>
+- shell: bash, coreutils, grep, awk, systemctl, top, free
+- monitoring: Prometheus textfile collector compatible output
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Modular collectors; atomic writes to exposition file; background collector <1% CPU.
+  </constraints>
+  <interfaces>
+- function init_metrics()
+- function collect_metrics()
+- function collect_service_metrics(ts)
+- function collect_system_metrics(ts)
+- function collect_tunnel_metrics(ts)
+- function collect_metrics_background()
+- function show_metrics_dashboard()
+- function export_metrics_prometheus()
+  </interfaces>
+  <tests>
+    <standards>Prometheus exposition format compliance; minimal overhead; resilient when FRP API absent.</standards>
+    <locations>docs/stories (test requirements listed); future tests near scripts.</locations>
+    <ideas>
+- Validate metrics files contain expected HELP/TYPE headers
+- Dashboard summarizes latest values without errors when file absent
+- Retention logic respects RETENTION_HOURS
+- Low overhead verified via simple timing/CPU sampling
+- Alert counters increment on simulated tunnel failures
+    </ideas>
+  </tests>
+</story-context>

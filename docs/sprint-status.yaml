@@ -124,3 +124,25 @@ development_status:
     priority: P1
     effort: 1 day
 
+
+  # Epic 4: System Optimization
+  epic-4:
+    status: in-progress
+    epic_id: MOONFRP-E04
+    title: System Optimization
+
+  4-1-system-optimization-module-with-safety:
+    status: done
+    story_id: MOONFRP-E04-S01
+    epic: 4
+    title: System Optimization Module with Safety
+    priority: P1
+    effort: 2 days
+
+  4-2-performance-monitoring-and-metrics:
+    status: done
+    story_id: MOONFRP-E04-S02
+    epic: 4
+    title: Performance Monitoring & Metrics
+    priority: P1
+    effort: 2 days
