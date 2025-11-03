@@ -179,25 +179,25 @@ show_service_status() {
     esac
 }
 
-# List all FRP services
+# List all FRP services (simplified - always fresh on each call)
 list_frp_services() {
     echo -e "${CYAN}MoonFRP Services Status:${NC}"
     echo
     
-    # Server service
-    if [[ -f "/etc/systemd/system/${SERVER_SERVICE}.service" ]]; then
-        show_service_status "$SERVER_SERVICE"
+    # Get all MoonFRP services from systemd in one query (faster, always fresh)
+    local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
+        awk '{print $1}' | \
+        sed 's/.service$//' | \
+        sort))
+    
+    if [[ ${#all_services[@]} -eq 0 ]]; then
+        echo -e "${GRAY}No MoonFRP services found${NC}"
+        return 0
     fi
     
-    # Client services
-    local client_services=($(systemctl list-unit-files | grep "${CLIENT_SERVICE_PREFIX}-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${client_services[@]}"; do
-        show_service_status "$service"
-    done
-    
-    # Visitor services
-    local visitor_services=($(systemctl list-unit-files | grep "moonfrp-visitor-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${visitor_services[@]}"; do
+    # Display status for each service
+    for service in "${all_services[@]}"; do
         show_service_status "$service"
     done
 }
@@ -244,116 +244,170 @@ setup_client_service() {
 # Setup all services
 setup_all_services() {
     local setup_count=0
+    local failed_count=0
+    local failed_configs=()
+    
+    echo -e "${CYAN}Setting up MoonFRP services...${NC}"
+    echo
     
     # Setup server service
     if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
-        setup_server_service
-        ((setup_count++))
+        if setup_server_service; then
+            ((setup_count++))
+            echo -e "  ${GREEN}✓${NC} Server service (frps.toml)"
+        else
+            ((failed_count++))
+            failed_configs+=("frps.toml")
+            echo -e "  ${RED}✗${NC} Server service (frps.toml) - failed"
+        fi
     fi
     
     # Setup client services
-    local client_configs=($(find "$CONFIG_DIR" -name "frpc*.toml" -type f | sort))
+    local client_configs=($(find "$CONFIG_DIR" -maxdepth 1 -name "frpc*.toml" -type f 2>/dev/null | sort))
     for config in "${client_configs[@]}"; do
         local config_name=$(basename "$config" .toml)
         local suffix="${config_name#frpc}"
-        setup_client_service "$suffix"
-        ((setup_count++))
+        if setup_client_service "$suffix"; then
+            ((setup_count++))
+            echo -e "  ${GREEN}✓${NC} Client service ($config_name)"
+        else
+            ((failed_count++))
+            failed_configs+=("$config_name")
+            echo -e "  ${RED}✗${NC} Client service ($config_name) - failed"
+        fi
     done
     
     # Setup visitor services
-    local visitor_configs=($(find "$CONFIG_DIR" -name "visitor*.toml" -type f | sort))
+    local visitor_configs=($(find "$CONFIG_DIR" -maxdepth 1 -name "visitor*.toml" -type f 2>/dev/null | sort))
     for config in "${visitor_configs[@]}"; do
         local config_name=$(basename "$config" .toml)
         local suffix="${config_name#visitor}"
         local service_name="moonfrp-visitor$suffix"
-        create_systemd_service "visitor" "$service_name" "$config" "frpc" "$suffix"
-        enable_service "$service_name"
-        ((setup_count++))
+        if create_systemd_service "visitor" "$service_name" "$config" "frpc" "$suffix" && enable_service "$service_name"; then
+            ((setup_count++))
+            echo -e "  ${GREEN}✓${NC} Visitor service ($config_name)"
+        else
+            ((failed_count++))
+            failed_configs+=("$config_name")
+            echo -e "  ${RED}✗${NC} Visitor service ($config_name) - failed"
+        fi
     done
     
-    log "INFO" "Setup complete for $setup_count services"
+    echo
+    if [[ $failed_count -eq 0 ]]; then
+        log "INFO" "Successfully setup $setup_count service(s)"
+    else
+        log "WARN" "Setup $setup_count service(s), $failed_count failed"
+        if [[ ${#failed_configs[@]} -gt 0 ]]; then
+            echo -e "${YELLOW}Failed configs:${NC} ${failed_configs[*]}"
+        fi
+    fi
+    
+    # Reload systemd after setup
+    if [[ $setup_count -gt 0 ]]; then
+        systemctl daemon-reload 2>/dev/null || true
+    fi
 }
 
-# Start all services
+# Start all services (simplified - uses same logic as list_frp_services)
 start_all_services() {
     local started_count=0
     local failed_count=0
+    local failed_services=()
     
-    # Start server service
-    if [[ -f "/etc/systemd/system/${SERVER_SERVICE}.service" ]]; then
-        if start_service "$SERVER_SERVICE"; then
-            ((started_count++))
-        else
-            ((failed_count++))
-        fi
+    # Get all MoonFRP services in one query
+    local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
+        awk '{print $1}' | \
+        sed 's/.service$//' | \
+        sort))
+    
+    if [[ ${#all_services[@]} -eq 0 ]]; then
+        log "WARN" "No MoonFRP services found to start"
+        return 0
     fi
     
-    # Start client services
-    local client_services=($(systemctl list-unit-files | grep "${CLIENT_SERVICE_PREFIX}-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${client_services[@]}"; do
+    echo -e "${CYAN}Starting ${#all_services[@]} service(s)...${NC}"
+    
+    for service in "${all_services[@]}"; do
         if start_service "$service"; then
             ((started_count++))
+            echo -e "  ${GREEN}✓${NC} $service"
         else
             ((failed_count++))
+            failed_services+=("$service")
+            echo -e "  ${RED}✗${NC} $service"
         fi
     done
     
-    # Start visitor services
-    local visitor_services=($(systemctl list-unit-files | grep "moonfrp-visitor-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${visitor_services[@]}"; do
-        if start_service "$service"; then
-            ((started_count++))
-        else
-            ((failed_count++))
+    echo
+    if [[ $failed_count -eq 0 ]]; then
+        log "INFO" "Successfully started $started_count service(s)"
+    else
+        log "WARN" "Started $started_count service(s), $failed_count failed"
+        if [[ ${#failed_services[@]} -gt 0 ]]; then
+            echo -e "${YELLOW}Failed services:${NC} ${failed_services[*]}"
         fi
-    done
-    
-    log "INFO" "Started $started_count services, $failed_count failed"
+    fi
 }
 
-# Stop all services
+# Stop all services (simplified - uses same logic as list_frp_services)
 stop_all_services() {
     local stopped_count=0
     local failed_count=0
+    local failed_services=()
     
-    # Stop visitor services first
-    local visitor_services=($(systemctl list-unit-files | grep "moonfrp-visitor-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${visitor_services[@]}"; do
-        if stop_service "$service"; then
-            ((stopped_count++))
-        else
-            ((failed_count++))
-        fi
-    done
+    # Get all MoonFRP services in one query
+    local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
+        awk '{print $1}' | \
+        sed 's/.service$//' | \
+        sort -r))  # Reverse sort to stop visitors/clients before server
     
-    # Stop client services
-    local client_services=($(systemctl list-unit-files | grep "${CLIENT_SERVICE_PREFIX}-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${client_services[@]}"; do
-        if stop_service "$service"; then
-            ((stopped_count++))
-        else
-            ((failed_count++))
-        fi
-    done
-    
-    # Stop server service last
-    if [[ -f "/etc/systemd/system/${SERVER_SERVICE}.service" ]]; then
-        if stop_service "$SERVER_SERVICE"; then
-            ((stopped_count++))
-        else
-            ((failed_count++))
-        fi
+    if [[ ${#all_services[@]} -eq 0 ]]; then
+        log "WARN" "No MoonFRP services found to stop"
+        return 0
     fi
     
-    log "INFO" "Stopped $stopped_count services, $failed_count failed"
+    echo -e "${CYAN}Stopping ${#all_services[@]} service(s)...${NC}"
+    
+    for service in "${all_services[@]}"; do
+        if stop_service "$service"; then
+            ((stopped_count++))
+            echo -e "  ${GREEN}✓${NC} $service"
+        else
+            ((failed_count++))
+            failed_services+=("$service")
+            echo -e "  ${RED}✗${NC} $service"
+        fi
+    done
+    
+    echo
+    if [[ $failed_count -eq 0 ]]; then
+        log "INFO" "Successfully stopped $stopped_count service(s)"
+    else
+        log "WARN" "Stopped $stopped_count service(s), $failed_count failed"
+        if [[ ${#failed_services[@]} -gt 0 ]]; then
+            echo -e "${YELLOW}Failed services:${NC} ${failed_services[*]}"
+        fi
+    fi
 }
 
 # Restart all services
 restart_all_services() {
-    log "INFO" "Restarting all MoonFRP services..."
+    echo -e "${CYAN}Restarting all MoonFRP services...${NC}"
+    echo
+    
     stop_all_services
-    sleep 2
-    start_all_services
+    echo
+    
+    if [[ $? -eq 0 ]] || [[ $? -eq 1 ]]; then  # stop_all_services may return 0 even with some failures
+        sleep 2
+        start_all_services
+    else
+        log "ERROR" "Failed to stop services. Cannot restart."
+        return 1
+    fi
 }
 
 #==============================================================================
@@ -664,51 +718,41 @@ follow_service_logs() {
     journalctl -u "$service_name" -f
 }
 
-# Health check
+# Health check (simplified - uses same logic as list_frp_services)
 health_check() {
     local all_healthy=true
+    local checked_count=0
     
     echo -e "${CYAN}MoonFRP Health Check:${NC}"
     echo
     
-    # Check server service
-    if [[ -f "/etc/systemd/system/${SERVER_SERVICE}.service" ]]; then
-        local status=$(get_detailed_service_status "$SERVER_SERVICE")
-        if [[ "$status" == "active_enabled" ]]; then
-            echo -e "${GREEN}✓${NC} Server service is healthy"
-        else
-            echo -e "${RED}✗${NC} Server service is not healthy (status: $status)"
-            all_healthy=false
-        fi
+    # Get all MoonFRP services in one query
+    local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
+        awk '{print $1}' | \
+        sed 's/.service$//' | \
+        sort))
+    
+    if [[ ${#all_services[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No services found to check.${NC}"
+        return 1
     fi
     
-    # Check client services
-    local client_services=($(systemctl list-unit-files | grep "${CLIENT_SERVICE_PREFIX}-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${client_services[@]}"; do
+    # Check each service
+    for service in "${all_services[@]}"; do
+        ((checked_count++))
         local status=$(get_detailed_service_status "$service")
         if [[ "$status" == "active_enabled" ]]; then
-            echo -e "${GREEN}✓${NC} $service is healthy"
+            echo -e "${GREEN}✓${NC} $service (healthy)"
         else
-            echo -e "${RED}✗${NC} $service is not healthy (status: $status)"
-            all_healthy=false
-        fi
-    done
-    
-    # Check visitor services
-    local visitor_services=($(systemctl list-unit-files | grep "moonfrp-visitor-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${visitor_services[@]}"; do
-        local status=$(get_detailed_service_status "$service")
-        if [[ "$status" == "active_enabled" ]]; then
-            echo -e "${GREEN}✓${NC} $service is healthy"
-        else
-            echo -e "${RED}✗${NC} $service is not healthy (status: $status)"
+            echo -e "${RED}✗${NC} $service (unhealthy - status: $status)"
             all_healthy=false
         fi
     done
     
     echo
     if $all_healthy; then
-        echo -e "${GREEN}All services are healthy!${NC}"
+        echo -e "${GREEN}All $checked_count service(s) are healthy!${NC}"
         return 0
     else
         echo -e "${RED}Some services are not healthy!${NC}"
@@ -749,48 +793,126 @@ service_management_menu() {
         
         case "$choice" in
             1)
-                start_all_services
-                read -p "Press Enter to continue..."
+                # Validate: Check if any services exist
+                local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                if [[ $services_count -eq 0 ]]; then
+                    log "WARN" "No services found. Use option 4 (Setup All Services) first."
+                    read -p "Press Enter to continue..."
+                else
+                    start_all_services
+                    echo
+                    read -p "Press Enter to continue..."
+                fi
                 ;;
             2)
-                stop_all_services
-                read -p "Press Enter to continue..."
+                # Validate: Check if any services exist
+                local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                if [[ $services_count -eq 0 ]]; then
+                    log "WARN" "No services found to stop."
+                    read -p "Press Enter to continue..."
+                else
+                    stop_all_services
+                    echo
+                    read -p "Press Enter to continue..."
+                fi
                 ;;
             3)
-                restart_all_services
-                read -p "Press Enter to continue..."
+                # Validate: Check if any services exist
+                local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                if [[ $services_count -eq 0 ]]; then
+                    log "WARN" "No services found to restart."
+                    read -p "Press Enter to continue..."
+                else
+                    restart_all_services
+                    echo
+                    read -p "Press Enter to continue..."
+                fi
                 ;;
             4)
-                setup_all_services
-                read -p "Press Enter to continue..."
+                # Validate: Check if config files exist
+                if [[ ! -f "$CONFIG_DIR/frps.toml" ]] && [[ $(find "$CONFIG_DIR" -name "frpc*.toml" -o -name "visitor*.toml" 2>/dev/null | wc -l) -eq 0 ]]; then
+                    log "WARN" "No configuration files found. Please create configs first (Main Menu -> 3)."
+                    read -p "Press Enter to continue..."
+                else
+                    setup_all_services
+                    echo
+                    read -p "Press Enter to continue..."
+                fi
                 ;;
             5)
                 health_check
+                echo
                 read -p "Press Enter to continue..."
                 ;;
             6)
-                echo -e "${CYAN}Available Services:${NC}"
-                systemctl list-unit-files | grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | awk '{print $1}' | sed 's/.service$//'
-                echo
-                safe_read "Enter service name" "service_name" ""
-                if [[ -n "$service_name" ]]; then
-                    view_service_logs "$service_name"
+                # Get available services
+                local available_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
+                    awk '{print $1}' | \
+                    sed 's/.service$//' | \
+                    sort))
+                
+                if [[ ${#available_services[@]} -eq 0 ]]; then
+                    log "WARN" "No services found."
+                    read -p "Press Enter to continue..."
+                else
+                    echo -e "${CYAN}Available Services:${NC}"
+                    local idx=1
+                    for svc in "${available_services[@]}"; do
+                        echo "$idx. $svc"
+                        ((idx++))
+                    done
+                    echo "0. Cancel"
+                    echo
+                    safe_read "Select service (number or name)" "service_input" "0"
+                    
+                    if [[ "$service_input" == "0" ]]; then
+                        continue
+                    elif [[ "$service_input" =~ ^[0-9]+$ ]] && [[ "$service_input" -ge 1 ]] && [[ "$service_input" -le ${#available_services[@]} ]]; then
+                        local service_name="${available_services[$((service_input - 1))]}"
+                        view_service_logs "$service_name"
+                    elif [[ -n "$service_input" ]]; then
+                        # User entered service name directly
+                        if [[ " ${available_services[*]} " =~ " ${service_input} " ]]; then
+                            view_service_logs "$service_input"
+                        else
+                            log "ERROR" "Service not found: $service_input"
+                        fi
+                    fi
+                    echo
                     read -p "Press Enter to continue..."
                 fi
                 ;;
             7)
-                echo -e "${RED}This will remove ALL MoonFRP services!${NC}"
-                safe_read "Are you sure? (yes/no)" "confirm" "no"
-                if [[ "$confirm" == "yes" ]]; then
-                    remove_all_services
+                # Validate: Check if any services exist
+                local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                if [[ $services_count -eq 0 ]]; then
+                    log "WARN" "No services found to remove."
+                    read -p "Press Enter to continue..."
+                else
+                    echo -e "${RED}⚠ WARNING: This will remove ALL MoonFRP services!${NC}"
+                    echo -e "${YELLOW}This action cannot be undone.${NC}"
+                    echo
+                    safe_read "Type 'yes' to confirm removal" "confirm" "no"
+                    if [[ "$confirm" == "yes" ]]; then
+                        remove_all_services
+                    else
+                        log "INFO" "Removal cancelled."
+                    fi
+                    echo
+                    read -p "Press Enter to continue..."
                 fi
-                read -p "Press Enter to continue..."
                 ;;
             0)
                 return
                 ;;
             *)
-                log "ERROR" "Invalid choice"
+                log "ERROR" "Invalid choice: $choice"
+                read -p "Press Enter to continue..."
                 ;;
         esac
     done
