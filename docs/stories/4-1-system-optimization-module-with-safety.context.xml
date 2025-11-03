@@ -1,0 +1,120 @@
+<story-context id="docs/stories/4-1-system-optimization-module-with-safety.context" v="1.0">
+  <metadata>
+    <epicId>MOONFRP-E04</epicId>
+    <storyId>MOONFRP-E04-S01</storyId>
+    <title>Story 4.1: System Optimization Module with Safety</title>
+    <status>approved</status>
+    <generatedAt>2025-11-03</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/4-1-system-optimization-module-with-safety.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer operating high-throughput MoonFRP tunnels</asA>
+    <iWant>safe, preset-based system network tuning with dry-run and automatic rollback</iWant>
+    <soThat>I can maximize performance for 50+ tunnels without risking system stability</soThat>
+    <tasks>
+- Implement optimization entrypoint (AC: 1, 2, 7)
+  - Add optimize_system(preset, dry_run) in moonfrp-optimize.sh
+  - Clear screen and show header with preset info
+  - Support dry_run=true to preview without changes
+  - Confirm before applying when not dry-run
+- Implement OS compatibility checks (AC: 6)
+  - validate_os_compatibility() using lsb_release if available
+  - Warn for non-Ubuntu or Ubuntu <20.04 and require explicit confirm
+- Define presets with safe defaults (AC: 1)
+  - PRESET_CONSERVATIVE, PRESET_BALANCED, PRESET_AGGRESSIVE assoc arrays
+  - Include fs.file-max, rmem_max/wmem_max, tcp_rmem/tcp_wmem, backlog, syn backlog
+  - Aggressive includes tcp_fastopen, somaxconn, default_qdisc
+- Implement dry-run preview (AC: 2)
+  - preview_optimizations(preset) shows current → new values for each sysctl key
+  - Show planned ulimit changes (open files, processes)
+- Implement backup/rollback (AC: 3, 5)
+  - backup_system_settings() saves /etc/sysctl.conf, /etc/profile, and sysctl -a snapshot
+  - Track latest backup timestamp in .latest
+  - rollback_system_settings() restores files and reapplies sysctl -p
+- Apply sysctl changes (AC: 2, 4)
+  - apply_sysctl_optimizations(preset) writes a titled block to /etc/sysctl.conf
+  - Remove previous MoonFRP block before appending
+  - Apply immediately via sysctl -p with error handling
+- Apply ulimit changes (AC: 2, 4)
+  - apply_ulimit_optimizations(preset) appends limits block to /etc/profile
+  - Set ulimit -n 1048576 and ulimit -u 65536 defaults
+- Validate applied settings (AC: 4)
+  - validate_optimizations(preset) compares actual sysctl values to expected
+  - On mismatch: log WARN and fail validation
+  - On failure: trigger automatic rollback and report
+- Interactive menu (optional helper) (AC: 1, 2, 5)
+  - optimization_menu() allowing preset selection, dry-run preview, and rollback
+- Performance target (AC: 7)
+  - Ensure end-to-end optimization path completes in <10s on Ubuntu 20.04+
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Three presets: conservative (safe), balanced (recommended), aggressive (max performance)
+2. Dry-run shows all sysctl/ulimit changes before applying
+3. Automatic backup of original settings
+4. Validation of changes after applying
+5. One-command rollback to original settings
+6. OS detection with warnings for non-Ubuntu systems
+7. Optimization completes in <10s
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+- path: docs/epics/epic-04-system-optimization.md
+  title: Epic 4: System Optimization
+  section: Story 4.1 (Technical Specification)
+  snippet: Prescribes presets, dry-run, backup/rollback, validation, and OS checks with a reference shell implementation outline.
+- path: docs/stories/4-1-system-optimization-module-with-safety.md
+  title: Story 4.1: System Optimization Module with Safety
+  section: Acceptance Criteria
+  snippet: Lists 7 criteria including presets, dry-run, backup/rollback, validation, OS detection, and performance target.
+    </docs>
+    <code>
+- path: moonfrp-ui.sh
+  kind: script
+  symbol: show_header, safe_read, log
+  lines: n/a
+  reason: Provides shared UI/log helpers referenced by optimization module.
+- path: moonfrp-core.sh
+  kind: script
+  symbol: core utilities
+  lines: n/a
+  reason: Core sourcing target for new optimization module.
+    </code>
+    <dependencies>
+- shell: bash >= 4 (assoc arrays), coreutils, sed, sysctl, lsb_release
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Apply idempotent titled blocks; remove previous MoonFRP block before append
+- Always validate applied values; rollback on mismatch
+- Keep risky toggles to aggressive preset only
+  </constraints>
+  <interfaces>
+- function optimize_system(preset, dry_run)
+- function validate_os_compatibility()
+- function preview_optimizations(preset)
+- function apply_sysctl_optimizations(preset)
+- function apply_ulimit_optimizations(preset)
+- function backup_system_settings()
+- function rollback_system_settings()
+- function validate_optimizations(preset)
+  </interfaces>
+  <tests>
+    <standards>Shell-based test harness with idempotent checks; ensure no destructive defaults.</standards>
+    <locations>docs/stories (test requirements listed); future tests alongside scripts.</locations>
+    <ideas>
+- Validate presets apply expected sysctl keys
+- Dry-run prints current → new values without changes
+- Backup artifacts created and .latest updated
+- Rollback restores prior state after induced failure
+- Validation fails when sysctl differs; triggers rollback
+- OS compatibility path handles non-Ubuntu and <20.04 with confirmation
+- End-to-end completes under 10s on Ubuntu 20.04+
+    </ideas>
+  </tests>
+</story-context>

@@ -233,8 +233,8 @@ substitute_variables() {
     # Substitute all ${VAR_NAME} occurrences
     for var_key in "${!var_map[@]}"; do
         local var_value="${var_map[$var_key]}"
-        # Escape special characters for sed
-        local escaped_value=$(printf '%s\n' "$var_value" | sed 's/[[\.*^$()+?{|]/\\&/g')
+        # Escape special characters for sed (fix: properly escape [ and close character class)
+        local escaped_value=$(printf '%s\n' "$var_value" | sed 's/[\[\]\.\*\+\?\|\{\}\(\)\^\$]/\\&/g')
         # Replace ${VAR_KEY} with value
         result=$(echo "$result" | sed "s|\${${var_key}}|${escaped_value}|g")
     done

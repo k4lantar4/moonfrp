@@ -790,6 +790,214 @@ service_management_menu() {
     done
 }
 
+#==============================================================================
+# ASYNC CONNECTION TESTING (Story 3.4)
+#==============================================================================
+
+# Check and display completed test results
+check_completed_tests() {
+    local -n pids_ref="$1"
+    local -n results_ref="$2"
+    local tmp_dir="$3"
+    local -n completed_ref="$4"
+    
+    local new_pids=()
+    local updated=false
+    
+    for i in "${!pids_ref[@]}"; do
+        local pid="${pids_ref[$i]}"
+        if ! kill -0 "$pid" 2>/dev/null; then
+            # Process completed
+            wait "$pid" 2>/dev/null || true
+            local result_file="$tmp_dir/$i.result"
+            
+            if [[ -f "$result_file" ]]; then
+                local result=$(cat "$result_file" 2>/dev/null || echo "FAIL")
+                local result_line="${results_ref[$i]}"
+                
+                # Extract server:port from result_line
+                if [[ "$result_line" =~ ^([^:]+:[0-9]+) ]]; then
+                    local server_port="${BASH_REMATCH[1]}"
+                    local status_indicator=""
+                    local status_text=""
+                    
+                    if [[ "$result" == "OK" ]]; then
+                        status_indicator="${GREEN}✓${NC}"
+                        status_text="${GREEN}OK${NC}"
+                    else
+                        status_indicator="${RED}✗${NC}"
+                        status_text="${RED}FAIL${NC}"
+                    fi
+                    
+                    # Display result immediately
+                    echo -e "  $server_port $status_indicator $status_text"
+                    
+                    # Update result in array
+                    results_ref[$i]="$server_port|$result"
+                fi
+            fi
+            
+            ((completed_ref++))
+            updated=true
+        else
+            # Process still running
+            new_pids+=("$pid")
+        fi
+    done
+    
+    # Update pids array
+    pids_ref=("${new_pids[@]}")
+    
+    return 0
+}
+
+# Core parallel connection testing framework
+async_connection_test() {
+    local configs=("$@")
+    
+    if [[ ${#configs[@]} -eq 0 ]]; then
+        log "WARN" "No configs provided for connection testing"
+        return 0
+    fi
+    
+    local max_parallel=20
+    local timeout=1
+    local total=${#configs[@]}
+    local started=0
+    local completed=0
+    local success_count=0
+    local fail_count=0
+    
+    declare -A pids
+    declare -A results
+    local tmp_dir=$(mktemp -d)
+    
+    # Trap for cleanup on exit or SIGINT
+    trap "rm -rf '$tmp_dir'; kill $(jobs -p) 2>/dev/null || true; trap - EXIT INT TERM" EXIT INT TERM
+    
+    log "INFO" "Testing connectivity to $total servers (max parallel: $max_parallel, timeout: ${timeout}s per test)"
+    echo -e "${CYAN}Testing connectivity to $total servers...${NC}"
+    echo
+    
+    local db_path="$INDEX_DB_PATH"
+    local i=0
+    local total_tests=0
+    
+    # Start all tests
+    for config in "${configs[@]}"; do
+        # Wait if max parallel reached
+        while [[ ${#pids[@]} -ge $max_parallel ]]; do
+            check_completed_tests pids results "$tmp_dir" completed
+            if [[ $completed -lt $total_tests ]]; then
+                printf "\r${CYAN}Testing %d/%d servers...${NC}" "$completed" "$total_tests" >&2
+            fi
+            sleep 0.05
+        done
+        
+        # Extract server_addr and server_port from index
+        local server_addr=$(sqlite3 "$db_path" \
+            "SELECT server_addr FROM config_index WHERE file_path='$config'" 2>/dev/null || echo "")
+        local server_port=$(sqlite3 "$db_path" \
+            "SELECT server_port FROM config_index WHERE file_path='$config'" 2>/dev/null || echo "")
+        
+        # Skip if no server info
+        if [[ -z "$server_addr" || -z "$server_port" ]]; then
+            continue
+        fi
+        
+        # Start test in background
+        (
+            if timeout "$timeout" bash -c "echo > /dev/tcp/$server_addr/$server_port" 2>/dev/null; then
+                echo "OK" > "$tmp_dir/$i.result"
+            else
+                echo "FAIL" > "$tmp_dir/$i.result"
+            fi
+        ) &
+        
+        local pid=$!
+        pids[$i]=$pid
+        results[$i]="$server_addr:$server_port"
+        ((started++))
+        ((total_tests++))
+        ((i++))
+    done
+    
+    # Wait for remaining tests
+    while [[ ${#pids[@]} -gt 0 ]]; do
+        check_completed_tests pids results "$tmp_dir" completed
+        if [[ $completed -lt $total_tests ]]; then
+            printf "\r${CYAN}Testing %d/%d servers...${NC}" "$completed" "$total_tests" >&2
+        fi
+        sleep 0.1
+    done
+    
+    echo "" >&2
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    # Generate summary
+    success_count=0
+    fail_count=0
+    for result_key in "${!results[@]}"; do
+        local result_line="${results[$result_key]}"
+        if [[ "$result_line" =~ \|(OK|FAIL)$ ]]; then
+            local status="${BASH_REMATCH[1]}"
+            if [[ "$status" == "OK" ]]; then
+                ((success_count++))
+            else
+                ((fail_count++))
+            fi
+        fi
+    done
+    
+    # Display summary
+    echo -e "${CYAN}Summary:${NC}"
+    echo -e "  ${GREEN}✓ Reachable: $success_count${NC} | ${RED}✗ Unreachable: $fail_count${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    # Cleanup
+    rm -rf "$tmp_dir"
+    trap - EXIT INT TERM
+    
+    return $fail_count
+}
+
+# User-facing function for testing all client configs
+run_connection_tests_all() {
+    if ! command -v query_configs_by_type &>/dev/null; then
+        log "ERROR" "query_configs_by_type function not available. Index may not be initialized."
+        return 1
+    fi
+    
+    local configs_output=$(query_configs_by_type "client" 2>/dev/null)
+    
+    if [[ -z "$configs_output" ]]; then
+        log "WARN" "No client configs found in index"
+        echo -e "${YELLOW}No client configurations found to test.${NC}"
+        return 0
+    fi
+    
+    # Parse pipe-separated output
+    local configs=()
+    while IFS='|' read -r file_path server_addr proxy_count; do
+        if [[ -n "$file_path" ]]; then
+            configs+=("$file_path")
+        fi
+    done <<< "$configs_output"
+    
+    if [[ ${#configs[@]} -eq 0 ]]; then
+        log "WARN" "No valid client configs found"
+        echo -e "${YELLOW}No valid client configurations found to test.${NC}"
+        return 0
+    fi
+    
+    echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║     Connection Test - All Servers    ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
+    echo
+    
+    async_connection_test "${configs[@]}"
+}
+
 # Export functions
 export -f create_systemd_service start_service stop_service restart_service
 export -f enable_service disable_service get_detailed_service_status show_service_status
@@ -800,3 +1008,4 @@ export -f health_check service_management_menu
 export -f get_moonfrp_services bulk_service_operation
 export -f bulk_start_services bulk_stop_services bulk_restart_services bulk_reload_services
 export -f bulk_operation_filtered
+export -f async_connection_test check_completed_tests run_connection_tests_all
