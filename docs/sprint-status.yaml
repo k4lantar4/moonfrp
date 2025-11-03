@@ -146,3 +146,33 @@ development_status:
     title: Performance Monitoring & Metrics
     priority: P1
     effort: 2 days
+
+  # Epic 5: DevOps Integration
+  epic-5:
+    status: backlog
+    epic_id: MOONFRP-E05
+    title: DevOps Integration
+
+  5-1-configuration-as-code-export-import:
+    status: ready-for-dev
+    story_id: MOONFRP-E05-S01
+    epic: 5
+    title: Configuration as Code (Export/Import)
+    priority: P2
+    effort: 1.5 days
+
+  5-2-non-interactive-cli-mode:
+    status: ready-for-dev
+    story_id: MOONFRP-E05-S02
+    epic: 5
+    title: Non-Interactive CLI Mode
+    priority: P2
+    effort: 1 day
+
+  5-3-structured-logging:
+    status: ready-for-dev
+    story_id: MOONFRP-E05-S03
+    epic: 5
+    title: Structured Logging
+    priority: P2
+    effort: 0.5 days

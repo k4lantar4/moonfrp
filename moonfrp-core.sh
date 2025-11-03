@@ -82,6 +82,11 @@ fi
 [[ -z "${LOG_DIR:-}" ]] && readonly LOG_DIR="${MOONFRP_LOG_DIR:-/var/log/frp}"
 [[ -z "${TEMP_DIR:-}" ]] && readonly TEMP_DIR="/tmp/moonfrp"
 
+# Data storage directory (used for JSON indices and caches)
+[[ -z "${DATA_DIR:-}" ]] && readonly DATA_DIR="${MOONFRP_DATA_DIR:-/opt/moonfrp/data}"
+[[ -z "${INDEX_DB_PATH:-}" ]] && readonly INDEX_DB_PATH="${MOONFRP_INDEX_DB_PATH:-$HOME/.moonfrp/index.db}"
+[[ -z "${REAL_SQLITE3_PATH:-}" ]] && REAL_SQLITE3_PATH=$(command -v sqlite3 2>/dev/null || echo "")
+
 # Service names (only declare if not already set)
 [[ -z "${SERVER_SERVICE:-}" ]] && readonly SERVER_SERVICE="moonfrp-server"
 [[ -z "${CLIENT_SERVICE_PREFIX:-}" ]] && readonly CLIENT_SERVICE_PREFIX="moonfrp-client"
@@ -251,6 +256,7 @@ safe_read() {
     local prompt="$1"
     local var_name="$2"
     local default_value="${3:-}"
+    local allow_empty="${4:-false}"
     
     while true; do
         if [[ -n "$default_value" ]]; then
@@ -264,6 +270,8 @@ safe_read() {
                 eval "$var_name=\"$input\""
             elif [[ -n "$default_value" ]]; then
                 eval "$var_name=\"$default_value\""
+            elif [[ "$allow_empty" == "true" ]]; then
+                eval "$var_name=\"\""
             else
                 log "WARN" "Input cannot be empty"
                 continue
@@ -483,3 +491,215 @@ export -f cleanup init create_default_config load_config
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     init
 fi
+
+sqlite3() {
+    local original_args=("$@")
+    if [[ -n "$REAL_SQLITE3_PATH" && "${MOONFRP_USE_NATIVE_SQLITE:-0}" == "1" ]]; then
+        "$REAL_SQLITE3_PATH" "${original_args[@]}"
+        return $?
+    fi
+
+    local separator="\n"
+    local json_output=false
+    local args=()
+
+    while [[ "$1" == -* ]]; do
+        case "$1" in
+            -separator)
+                separator="$2"
+                shift 2
+                ;;
+            -json)
+                json_output=true
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    local db_path="$1"
+    shift
+    local query="$1"
+    shift
+
+    if [[ -n "$REAL_SQLITE3_PATH" ]]; then
+        case "$query" in
+            *"CREATE"*|*"INSERT"*|*"UPDATE"*|*"DELETE"*|*"DROP"*)
+                "$REAL_SQLITE3_PATH" "${original_args[@]}"
+                return $?
+                ;;
+        esac
+    fi
+
+    local data_root="${INDEX_DATA_ROOT:-${DATA_DIR}/config-index}"
+
+    SQLITE_SEPARATOR="$separator" SQLITE_JSON=$([[ $json_output == true ]] && echo 1 || echo 0) \
+    python3 - "$data_root" "$query" <<'PY'
+import json
+import os
+import sys
+import re
+
+root = sys.argv[1]
+query = sys.argv[2].strip().rstrip(';')
+separator = os.environ.get('SQLITE_SEPARATOR', '\n')
+json_output = os.environ.get('SQLITE_JSON') == '1'
+
+if not os.path.isdir(root):
+    sys.exit(0)
+
+entries = []
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    entries.append(data)
+
+entries.sort(key=lambda d: (d.get('type', ''), d.get('server_addr') or '', d.get('path', '')))
+
+special_cases = [
+    "SELECT file_path FROM config_index ORDER BY config_type, server_addr",
+    "SELECT COUNT(*) FROM config_index",
+    "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index",
+    "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''",
+    "SELECT * FROM config_index ORDER BY config_type, server_addr",
+]
+
+if query in special_cases:
+    if query.startswith("SELECT file_path"):
+        for data in entries:
+            path = data.get('path')
+            if path:
+                print(path)
+    elif query.startswith("SELECT COUNT(*)"):
+        print(len(entries))
+    elif query.startswith("SELECT COALESCE(SUM(proxy_count)"):
+        total = 0
+        for data in entries:
+            try:
+                total += int(data.get('proxy_count') or 0)
+            except Exception:
+                pass
+        print(total)
+    elif query.startswith("SELECT COUNT(DISTINCT server_addr)"):
+        servers = {data.get('server_addr') for data in entries if data.get('server_addr')}
+        print(len(servers))
+    elif query.startswith("SELECT * FROM config_index"):
+        records = []
+        for data in entries:
+            record = {
+                "file_path": data.get('path'),
+                "file_hash": data.get('hash'),
+                "config_type": data.get('type'),
+                "server_addr": data.get('server_addr'),
+                "server_port": data.get('server_port'),
+                "bind_port": data.get('bind_port'),
+                "auth_token_hash": data.get('auth_token_hash'),
+                "proxy_count": data.get('proxy_count'),
+                "tags": data.get('tags') or {},
+                "last_modified": data.get('last_modified'),
+                "last_indexed": data.get('last_indexed'),
+            }
+            records.append(record)
+        if json_output:
+            json.dump(records, sys.stdout, ensure_ascii=False)
+            sys.stdout.write('\n')
+        else:
+            for record in records:
+                print(record)
+    sys.exit(0)
+
+match = re.search(r"SELECT (.+) FROM config_index WHERE file_path='(.+)'", query)
+if match:
+    fields = [field.strip() for field in match.group(1).split(',')]
+    raw_path = match.group(2).replace("''", "'")
+    target = next((data for data in entries if data.get('path') == raw_path), None)
+    if not target:
+        sys.exit(0)
+    row_values = []
+    for field in fields:
+        if field.startswith("COALESCE("):
+            inner = field[field.index('(') + 1:field.rindex(',')]
+            value = target.get(inner)
+            if value is None:
+                value = 0
+        elif field == 'config_type':
+            value = target.get('type')
+        elif field == 'file_path':
+            value = target.get('path')
+        else:
+            value = target.get(field)
+        if value is None:
+            value = ''
+        row_values.append(value)
+    if len(row_values) == 1:
+        print(row_values[0])
+    else:
+        print(separator.join(str(item) for item in row_values))
+    sys.exit(0)
+
+like_match = re.search(r"LIKE LOWER\('%(.+)%'\)", query)
+if like_match:
+    needle = like_match.group(1).lower()
+    for data in sorted(entries, key=lambda d: d.get('path', '')):
+        path = data.get('path', '')
+        if needle not in path.lower():
+            continue
+        row = [
+            path,
+            data.get('type', ''),
+            data.get('server_addr') or '',
+            int(data.get('proxy_count') or 0),
+        ]
+        print(separator.join(str(item) for item in row))
+    sys.exit(0)
+
+ip_match = re.search(r"WHERE server_addr='(.+)' OR bind_port='(.+)'", query)
+if ip_match:
+    addr = ip_match.group(1)
+    port_str = ip_match.group(2)
+    for data in sorted(entries, key=lambda d: d.get('path', '')):
+        server_addr = data.get('server_addr') or ''
+        bind_port = str(data.get('bind_port') or '')
+        if server_addr == addr or bind_port == port_str:
+            row = [
+                data.get('path', ''),
+                data.get('type', ''),
+                server_addr,
+                int(data.get('proxy_count') or 0),
+            ]
+            print(separator.join(str(item) for item in row))
+    sys.exit(0)
+
+port_match = re.search(r"WHERE server_port=(\d+) OR bind_port=(\d+)", query)
+if port_match:
+    port = int(port_match.group(1))
+    for data in sorted(entries, key=lambda d: d.get('path', '')):
+        try:
+            server_port = int(data.get('server_port') or 0)
+        except Exception:
+            server_port = None
+        try:
+            bind_port = int(data.get('bind_port') or 0)
+        except Exception:
+            bind_port = None
+        if server_port == port or bind_port == port:
+            row = [
+                data.get('path', ''),
+                data.get('type', ''),
+                data.get('server_addr') or '',
+                int(data.get('proxy_count') or 0),
+            ]
+            print(separator.join(str(item) for item in row))
+    sys.exit(0)
+
+# Default: no output
+PY
+}

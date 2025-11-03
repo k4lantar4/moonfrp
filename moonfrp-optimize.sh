@@ -14,7 +14,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-ui.sh"
 
 readonly SYSCTL_PATH="/etc/sysctl.conf"
 readonly PROFILE_PATH="/etc/profile"
-readonly BACKUP_DIR="$HOME/.moonfrp/backups/system"
+## Do not assign to BACKUP_DIR directly to avoid clashes with pre-set readonly vars
+# Use a resolver function instead; if BACKUP_DIR is set, we respect it
+backups_root() {
+    echo "${BACKUP_DIR:-$HOME/.moonfrp/backups/system}"
+}
 readonly MOONFRP_SYSCTL_BLOCK_BEGIN="# >>> MoonFRP Optimization (managed) >>>"
 readonly MOONFRP_SYSCTL_BLOCK_END="# <<< MoonFRP Optimization (managed) <<<"
 readonly MOONFRP_LIMITS_BLOCK_BEGIN="# >>> MoonFRP Limits (managed) >>>"
@@ -107,26 +111,30 @@ preview_optimizations() {
 }
 
 backup_system_settings() {
-    mkdir -p "$BACKUP_DIR"
+    local __backup_dir
+    __backup_dir="$(backups_root)"
+    mkdir -p "$__backup_dir"
     local ts
     ts=$(date '+%Y%m%d_%H%M%S')
-    local backup_root="$BACKUP_DIR/$ts"
+    local backup_root="$__backup_dir/$ts"
     mkdir -p "$backup_root"
     cp -a "$SYSCTL_PATH" "$backup_root/sysctl.conf" 2>/dev/null || true
     cp -a "$PROFILE_PATH" "$backup_root/profile" 2>/dev/null || true
     sysctl -a 2>/dev/null > "$backup_root/sysctl.snapshot" || true
-    echo "$ts" > "$BACKUP_DIR/.latest"
+    echo "$ts" > "$__backup_dir/.latest"
     log "INFO" "Backup created at $backup_root"
 }
 
 rollback_system_settings() {
-    if [[ ! -f "$BACKUP_DIR/.latest" ]]; then
+    local __backup_dir
+    __backup_dir="$(backups_root)"
+    if [[ ! -f "$__backup_dir/.latest" ]]; then
         log "ERROR" "No backup found to rollback"
         return 1
     fi
     local ts
-    ts=$(cat "$BACKUP_DIR/.latest")
-    local backup_root="$BACKUP_DIR/$ts"
+    ts=$(cat "$__backup_dir/.latest")
+    local backup_root="$__backup_dir/$ts"
     if [[ -f "$backup_root/sysctl.conf" ]]; then
         cp -a "$backup_root/sysctl.conf" "$SYSCTL_PATH"
     fi

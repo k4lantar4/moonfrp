@@ -151,10 +151,28 @@ quick_server_setup() {
     echo -e "${CYAN}Setting up FRP server for Iran server...${NC}"
     echo
     
-    # Generate server configuration
-    local auth_token=$(generate_server_config)
+    # Generate server configuration with smart error handling
+    local auth_token
+    if ! auth_token=$(generate_server_config); then
+        log "WARN" "Automatic server config generation failed. Attempting to prepare directories..."
+        mkdir -p "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
+        chmod 755 "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
+        if ! auth_token=$(generate_server_config); then
+            log "ERROR" "Failed to generate server configuration automatically. Launching Server Configuration Wizard."
+            config_server_wizard
+            # After wizard, verify file exists
+            if [[ ! -f "$CONFIG_DIR/frps.toml" ]]; then
+                log "ERROR" "Server configuration not created. Aborting quick setup."
+                read -p "Press Enter to continue..."
+                return 1
+            fi
+            # No auth token returned by wizard path; extract from file for display
+            auth_token=$(get_toml_value "$CONFIG_DIR/frps.toml" "auth.token" 2>/dev/null | sed 's/["\'\'']//g' || echo "")
+        fi
+    fi
     
-    # Setup service
+    # Setup service (create directories if needed before setup)
+    mkdir -p "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
     setup_server_service
     
     # Start service
@@ -308,10 +326,9 @@ main_menu() {
         echo "1. Quick Setup"
         echo "2. Service Management"
         echo "3. Configuration Management"
-        echo "4. System Status"
-        echo "5. Search & Filter"
-        echo "6. Advanced Tools"
-        echo "7. Download & Install FRP v$FRP_VERSION"
+        echo "4. Config Details (Copy-Paste Ready)"
+        echo "5. Advanced Tools"
+        echo "6. System Optimization"
         echo "r. Refresh Status"
         echo "0. Exit"
         echo
@@ -332,15 +349,10 @@ main_menu() {
                 show_config_details
                 ;;
             5)
-                search_filter_menu
-                ;;
-            6)
                 advanced_tools_menu
                 ;;
-            7)
-                show_header "Install FRP" "Download & Install FRP v$FRP_VERSION"
-                install_frp
-                read -p "Press Enter to continue..."
+            6)
+                optimize_system
                 ;;
             r|R)
                 # Manual refresh (Story 3.1)
@@ -366,15 +378,17 @@ advanced_tools_menu() {
         fi
         
         show_header "Advanced Tools" "System Utilities"
-        
+
         echo -e "${CYAN}Advanced Tools:${NC}"
-        echo "1. Health Check"
-        echo "2. View Logs"
-        echo "3. Tag Management"
-        echo "4. Backup Configurations"
-        echo "5. Restore Configurations"
-        echo "6. Update MoonFRP"
-        echo "7. Uninstall MoonFRP"
+        echo "1. Download & Install FRP (Version Selectable)"
+        echo "2. Health Check"
+        echo "3. View Logs"
+        echo "4. File Viewer & Editor"
+        echo "5. Tag Management"
+        echo "6. Backup Configurations"
+        echo "7. Restore Configurations"
+        echo "8. Update MoonFRP"
+        echo "9. Uninstall MoonFRP"
         echo "0. Back to Main Menu"
         echo
         
@@ -382,28 +396,34 @@ advanced_tools_menu() {
         
         case "$choice" in
             1)
+                install_frp_with_version
+                ;;
+            2)
                 health_check
                 read -p "Press Enter to continue..."
                 ;;
-            2)
+            3)
                 view_logs_menu
                 ;;
-            3)
+            4)
+                quick_file_viewer
+                ;;
+            5)
                 tag_management_menu
                 ;;
-            4)
+            6)
                 backup_configurations
                 read -p "Press Enter to continue..."
                 ;;
-            5)
+            7)
                 restore_configurations
                 read -p "Press Enter to continue..."
                 ;;
-            6)
+            8)
                 update_moonfrp
                 read -p "Press Enter to continue..."
                 ;;
-            7)
+            9)
                 uninstall_moonfrp
                 read -p "Press Enter to continue..."
                 ;;
@@ -562,12 +582,7 @@ show_config_details() {
     
     local db_path="$HOME/.moonfrp/index.db"
     
-    # Check if index exists
-    if [[ ! -f "$db_path" ]]; then
-        log "ERROR" "Config index not found. Please initialize index first."
-        read -p "Press Enter to continue..."
-        return 1
-    fi
+    check_and_update_index >/dev/null 2>&1 || true
     
     # Query index for all configs
     local configs
@@ -774,79 +789,68 @@ export_config_summary() {
     
     case "$format" in
         text)
-            # Regenerate content without interactive menu
             {
                 echo "MoonFRP Configuration Summary"
                 echo "Generated: $(date)"
                 echo ""
                 
                 local db_path="$HOME/.moonfrp/index.db"
-                if [[ -f "$db_path" ]]; then
-                    local configs
-                    configs=($(sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr" 2>/dev/null || echo ""))
+                check_and_update_index >/dev/null 2>&1 || true
+                local configs
+                configs=($(sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr" 2>/dev/null || echo ""))
+                
+                if [[ ${#configs[@]} -gt 0 ]]; then
+                    declare -A server_groups
                     
-                    if [[ ${#configs[@]} -gt 0 ]]; then
-                        declare -A server_groups
-                        
-                        for config in "${configs[@]}"; do
-                            local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
-                            local server_addr
-                            server_addr=$(sqlite3 "$db_path" "SELECT server_addr FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
-                            
-                            if [[ -z "$server_addr" ]]; then
-                                server_addr="server"
-                            fi
-                            
-                            server_groups["$server_addr"]+="$config "
-                        done
-                        
-                        local sorted_servers
-                        sorted_servers=($(printf '%s\n' "${!server_groups[@]}" | sort))
-                        
-                        for server_ip in "${sorted_servers[@]}"; do
-                            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                            echo "🖥️  Server: $server_ip"
-                            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                            
-                            local configs_for_server
-                            configs_for_server=(${server_groups[$server_ip]})
-                            
-                            for config in "${configs_for_server[@]}"; do
-                                display_config_summary "$config" "$db_path" | sed 's/\x1b\[[0-9;]*m//g'
-                            done
-                            
-                            echo ""
-                        done
-                        
+                    for config in "${configs[@]}"; do
+                        local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
+                        local server_addr
+                        server_addr=$(sqlite3 "$db_path" "SELECT server_addr FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
+                        [[ -z "$server_addr" ]] && server_addr="server"
+                        server_groups["$server_addr"]+="$config "
+                    done
+                    
+                    local sorted_servers
+                    sorted_servers=($(printf '%s\n' "${!server_groups[@]}" | sort))
+                    
+                    for server_ip in "${sorted_servers[@]}"; do
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        echo "📊 Overall Statistics"
+                        echo "🖥️  Server: $server_ip"
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                         
-                        local total_configs
-                        total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index" 2>/dev/null || echo "0")
-                        local total_proxies
-                        total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index" 2>/dev/null || echo "0")
-                        local unique_servers
-                        unique_servers=$(sqlite3 "$db_path" "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''" 2>/dev/null || echo "0")
+                        local configs_for_server
+                        configs_for_server=(${server_groups[$server_ip]})
                         
-                        echo "  Total Configs: $total_configs"
-                        echo "  Total Proxies: $total_proxies"
-                        echo "  Unique Servers: $unique_servers"
-                    fi
+                        for config in "${configs_for_server[@]}"; do
+                            display_config_summary "$config" "$db_path" | sed 's/\x1b\[[0-9;]*m//g'
+                        done
+                        
+                        echo ""
+                    done
+                    
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "📊 Overall Statistics"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    
+                    local total_configs
+                    total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index" 2>/dev/null || echo "0")
+                    local total_proxies
+                    total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index" 2>/dev/null || echo "0")
+                    local unique_servers
+                    unique_servers=$(sqlite3 "$db_path" "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''" 2>/dev/null || echo "0")
+                    
+                    echo "  Total Configs: $total_configs"
+                    echo "  Total Proxies: $total_proxies"
+                    echo "  Unique Servers: $unique_servers"
                 fi
             } > "$output_file"
             ;;
         json)
-            # JSON export using sqlite3 -json flag
             local db_path="$HOME/.moonfrp/index.db"
-            if [[ -f "$db_path" ]]; then
-                sqlite3 "$db_path" -json "SELECT * FROM config_index ORDER BY config_type, server_addr" > "$output_file" 2>/dev/null || echo "[]" > "$output_file"
-            else
-                echo "[]" > "$output_file"
-            fi
+            check_and_update_index >/dev/null 2>&1 || true
+            sqlite3 "$db_path" -json "SELECT * FROM config_index ORDER BY config_type, server_addr" > "$output_file" 2>/dev/null || echo "[]" > "$output_file"
             ;;
         yaml)
-            # YAML export with server grouping
             local db_path="$HOME/.moonfrp/index.db"
             {
                 echo "---"
@@ -854,136 +858,58 @@ export_config_summary() {
                 echo "# Generated: $(date)"
                 echo ""
                 
-                if [[ -f "$db_path" ]]; then
-                    local configs
-                    configs=($(sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr" 2>/dev/null || echo ""))
+                check_and_update_index >/dev/null 2>&1 || true
+                local configs
+                configs=($(sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr" 2>/dev/null || echo ""))
+                
+                if [[ ${#configs[@]} -gt 0 ]]; then
+                    declare -A server_groups
                     
-                    if [[ ${#configs[@]} -gt 0 ]]; then
-                        declare -A server_groups
-                        
-                        # Group configs by server
-                        for config in "${configs[@]}"; do
+                    for config in "${configs[@]}"; do
+                        local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
+                        local server_addr
+                        server_addr=$(sqlite3 "$db_path" "SELECT server_addr FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
+                        [[ -z "$server_addr" ]] && server_addr="server"
+                        server_groups["$server_addr"]+="$config "
+                    done
+                    
+                    echo "servers:"
+                    local sorted_servers
+                    sorted_servers=($(printf '%s\n' "${!server_groups[@]}" | sort))
+                    
+                    for server_ip in "${sorted_servers[@]}"; do
+                        echo "  - server_ip: \"$server_ip\""
+                        echo "    configs:"
+                        local configs_for_server
+                        configs_for_server=(${server_groups[$server_ip]})
+                        for config in "${configs_for_server[@]}"; do
                             local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
-                            local server_addr
-                            server_addr=$(sqlite3 "$db_path" "SELECT server_addr FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
-                            
-                            if [[ -z "$server_addr" ]]; then
-                                server_addr="server"
-                            fi
-                            
-                            server_groups["$server_addr"]+="$config "
+                            local config_type=$(sqlite3 "$db_path" "SELECT config_type FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
+                            local server_addr=$(sqlite3 "$db_path" "SELECT server_addr FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
+                            local server_port=$(sqlite3 "$db_path" "SELECT server_port FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
+                            local bind_port=$(sqlite3 "$db_path" "SELECT bind_port FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
+                            local proxy_count=$(sqlite3 "$db_path" "SELECT COALESCE(proxy_count, 0) FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "0")
+                            local config_name=$(basename "$config" .toml)
+                            echo "      - name: \"$config_name\""
+                            echo "        type: \"$config_type\""
+                            [[ -n "$server_addr" ]] && echo "        server_addr: \"$server_addr\""
+                            [[ -n "$server_port" ]] && echo "        server_port: $server_port"
+                            [[ -n "$bind_port" ]] && echo "        bind_port: $bind_port"
+                            echo "        proxy_count: $proxy_count"
                         done
-                        
-                        # Sort servers for consistent output
-                        local sorted_servers
-                        sorted_servers=($(printf '%s\n' "${!server_groups[@]}" | sort))
-                        
-                        echo "servers:"
-                        
-                        for server_ip in "${sorted_servers[@]}"; do
-                            echo "  - server_ip: \"$server_ip\""
-                            echo "    configs:"
-                            
-                            local configs_for_server
-                            configs_for_server=(${server_groups[$server_ip]})
-                            
-                            for config in "${configs_for_server[@]}"; do
-                                local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
-                                
-                                local config_type
-                                config_type=$(sqlite3 "$db_path" "SELECT config_type FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
-                                local server_addr
-                                server_addr=$(sqlite3 "$db_path" "SELECT server_addr FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
-                                local server_port
-                                server_port=$(sqlite3 "$db_path" "SELECT server_port FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
-                                local bind_port
-                                bind_port=$(sqlite3 "$db_path" "SELECT bind_port FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
-                                local proxy_count
-                                proxy_count=$(sqlite3 "$db_path" "SELECT COALESCE(proxy_count, 0) FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "0")
-                                
-                                local config_name
-                                config_name=$(basename "$config" .toml)
-                                
-                                # Get auth token from TOML file (masked)
-                                local auth_token
-                                auth_token=$(get_toml_value "$config" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
-                                local token_masked=""
-                                if [[ -n "$auth_token" ]] && [[ ${#auth_token} -gt 12 ]]; then
-                                    token_masked="${auth_token:0:8}...${auth_token: -4}"
-                                elif [[ -n "$auth_token" ]]; then
-                                    token_masked="${auth_token:0:8}..."
-                                fi
-                                
-                                # Get service status
-                                local service_name="moonfrp-${config_name}"
-                                local service_status="inactive"
-                                if systemctl list-unit-files 2>/dev/null | grep -q "${service_name}\.service"; then
-                                    service_status=$(systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
-                                fi
-                                
-                                echo "      - name: \"$config_name\""
-                                echo "        type: \"$config_type\""
-                                
-                                if [[ "$config_type" == "client" ]]; then
-                                    if [[ -n "$server_addr" ]]; then
-                                        echo "        server_addr: \"$server_addr\""
-                                    fi
-                                    if [[ -n "$server_port" ]]; then
-                                        echo "        server_port: $server_port"
-                                    fi
-                                    if [[ "$proxy_count" -gt 0 ]]; then
-                                        echo "        proxy_count: $proxy_count"
-                                    fi
-                                elif [[ "$config_type" == "server" ]]; then
-                                    if [[ -n "$bind_port" ]]; then
-                                        echo "        bind_port: $bind_port"
-                                    fi
-                                fi
-                                
-                                if [[ -n "$token_masked" ]]; then
-                                    echo "        token_masked: \"$token_masked\""
-                                fi
-                                
-                                echo "        service_status: \"$service_status\""
-                                
-                                # Get tags (from Story 2.3)
-                                if command -v list_config_tags &>/dev/null || type list_config_tags &>/dev/null 2>&1; then
-                                    local tags
-                                    tags=$(list_config_tags "$config" 2>/dev/null || echo "")
-                                    if [[ -n "$tags" ]]; then
-                                        echo "        tags:"
-                                        # Convert tags to YAML list format
-                                        echo "$tags" | while IFS= read -r tag_line; do
-                                            if [[ -n "$tag_line" ]] && [[ "$tag_line" =~ ^([^:]+):(.+)$ ]]; then
-                                                echo "          - \"$tag_line\""
-                                            fi
-                                        done
-                                    fi
-                                fi
-                                
-                                echo ""
-                            done
-                        done
-                        
-                        # Overall statistics
-                        local total_configs
-                        total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index" 2>/dev/null || echo "0")
-                        local total_proxies
-                        total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index" 2>/dev/null || echo "0")
-                        local unique_servers
-                        unique_servers=$(sqlite3 "$db_path" "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''" 2>/dev/null || echo "0")
-                        
-                        echo "statistics:"
-                        echo "  total_configs: $total_configs"
-                        echo "  total_proxies: $total_proxies"
-                        echo "  unique_servers: $unique_servers"
-                    else
-                        echo "servers: []"
-                        echo "statistics:"
-                        echo "  total_configs: 0"
-                        echo "  total_proxies: 0"
-                        echo "  unique_servers: 0"
-                    fi
+                    done
+                    
+                    local total_configs
+                    total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index" 2>/dev/null || echo "0")
+                    local total_proxies
+                    total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index" 2>/dev/null || echo "0")
+                    local unique_servers
+                    unique_servers=$(sqlite3 "$db_path" "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''" 2>/dev/null || echo "0")
+                    
+                    echo "statistics:"
+                    echo "  total_configs: $total_configs"
+                    echo "  total_proxies: $total_proxies"
+                    echo "  unique_servers: $unique_servers"
                 else
                     echo "servers: []"
                     echo "statistics:"
@@ -994,7 +920,7 @@ export_config_summary() {
             } > "$output_file"
             ;;
         *)
-            log "ERROR" "Unsupported export format: $format"
+            log "ERROR" "Unknown export format: $format"
             return 1
             ;;
     esac
@@ -1190,15 +1116,14 @@ generate_quick_status() {
     local failed_services=0
     local inactive_services=0
     
-    # Query SQLite index for config counts (fast)
-    if [[ -f "$db_path" ]] && command -v sqlite3 >/dev/null 2>&1; then
+    # Populate config counts from index metadata
+    check_and_update_index >/dev/null 2>&1 || true
+    if command -v sqlite3 >/dev/null 2>&1; then
         total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index;" 2>/dev/null || echo "0")
         total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index;" 2>/dev/null || echo "0")
     else
-        # Fallback to query_total_proxy_count if available
-        if command -v query_total_proxy_count >/dev/null 2>&1; then
-            total_proxies=$(query_total_proxy_count 2>/dev/null || echo "0")
-        fi
+        total_configs=$(list_indexed_configs 2>/dev/null | wc -l | tr -d ' ')
+        total_proxies=$(query_total_proxy_count 2>/dev/null || echo "0")
     fi
     
     # Batch systemctl query for service status
@@ -1374,3 +1299,106 @@ export -f backup_configurations restore_configurations update_moonfrp uninstall_
 export -f show_config_details display_config_summary export_config_summary
 export -f get_cached_status refresh_status_cache_sync refresh_status_cache_background
 export -f generate_quick_status get_frp_version_cached display_cached_status init_status_cache
+
+#===============================================================================
+# MINIMAL WRAPPERS (Versioned install & File Viewer)
+#===============================================================================
+
+# Prompt for FRP version and install
+install_frp_with_version() {
+    show_header "Install FRP" "Download & Install FRP Binaries"
+    
+    safe_read "FRP Version (default: 0.65.0)" "frp_version" "0.65.0"
+    
+    if [[ ! "$frp_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log "ERROR" "Invalid version format. Use X.Y.Z (e.g., 0.65.0)"
+        read -p "Press Enter to continue..."
+        return 1
+    fi
+    
+    local old_version="${FRP_VERSION:-}"
+    export FRP_VERSION="$frp_version"
+    install_frp
+    local rc=$?
+    if [[ -n "$old_version" ]]; then
+        export FRP_VERSION="$old_version"
+    fi
+    read -p "Press Enter to continue..."
+    return $rc
+}
+
+# Minimal file viewer (view-only)
+quick_file_viewer() {
+    show_header "File Viewer" "View Configuration & Service Files"
+    
+    echo -e "${CYAN}Available Files:${NC}"
+    echo "1. Server Config (frps.toml)"
+    echo "2. Client Configs (frpc*.toml)"
+    echo "3. Systemd Service Files"
+    echo "4. Custom File Path"
+    echo "0. Back"
+    echo
+    
+    safe_read "Select option" "choice" "0"
+    case "$choice" in
+        1)
+            if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+                echo -e "${CYAN}File: $CONFIG_DIR/frps.toml${NC}"; echo
+                cat "$CONFIG_DIR/frps.toml" || true
+            else
+                log "ERROR" "Server config not found"
+            fi
+            ;;
+        2)
+            local configs=($(find "$CONFIG_DIR" -maxdepth 1 -name "frpc*.toml" -type f | sort))
+            if [[ ${#configs[@]} -eq 0 ]]; then
+                log "WARN" "No client configs found"
+            else
+                local idx=1
+                for f in "${configs[@]}"; do
+                    echo "$idx. $f"; idx=$((idx+1))
+                done
+                echo "0. Back"
+                safe_read "Select config" "sel" "0"
+                if [[ "$sel" =~ ^[0-9]+$ ]] && [[ "$sel" -ge 1 ]] && [[ "$sel" -le ${#configs[@]} ]]; then
+                    local file="${configs[$((sel-1))]}"
+                    echo -e "${CYAN}File: $file${NC}"; echo
+                    cat "$file" || true
+                fi
+            fi
+            ;;
+        3)
+            local services=($(find /etc/systemd/system -maxdepth 1 -name "moonfrp*.service" -type f 2>/dev/null | sort))
+            if [[ ${#services[@]} -eq 0 ]]; then
+                log "WARN" "No service files found"
+            else
+                local idx=1
+                for f in "${services[@]}"; do
+                    echo "$idx. $f"; idx=$((idx+1))
+                done
+                echo "0. Back"
+                safe_read "Select service file" "sel" "0"
+                if [[ "$sel" =~ ^[0-9]+$ ]] && [[ "$sel" -ge 1 ]] && [[ "$sel" -le ${#services[@]} ]]; then
+                    local file="${services[$((sel-1))]}"
+                    echo -e "${CYAN}File: $file${NC}"; echo
+                    cat "$file" || true
+                fi
+            fi
+            ;;
+        4)
+            safe_read "Enter file path" "custom_path" ""
+            if [[ -n "$custom_path" ]] && [[ -f "$custom_path" ]]; then
+                echo -e "${CYAN}File: $custom_path${NC}"; echo
+                cat "$custom_path" || true
+            else
+                log "ERROR" "File not found"
+            fi
+            ;;
+        0)
+            return ;;
+    esac
+    echo
+    read -p "Press Enter to continue..."
+}
+
+export -f install_frp_with_version quick_file_viewer

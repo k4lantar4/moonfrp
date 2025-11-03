@@ -74,131 +74,140 @@ search_configs() {
         return 1
     fi
     
-    if ! check_sqlite3; then
-        log "ERROR" "sqlite3 is required for search functionality"
-        return 1
-    fi
-    
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "WARN" "Index database not found at $db_path"
-        return 1
-    fi
-    
-    if ! verify_index_integrity; then
-        log "WARN" "Index integrity check failed"
-        return 1
-    fi
-    
-    # Handle auto type by calling auto-detect function
+    # Handle auto mode by delegating to the detector
     if [[ "$search_type" == "auto" ]]; then
         search_configs_auto "$query"
         return $?
     fi
+
+    if ! check_python3; then
+        log "ERROR" "python3 is required for search functionality"
+        return 1
+    fi
     
-    # Escape query for SQL injection prevention
-    local escaped_query=$(printf '%s\n' "$query" | sed "s/'/''/g")
-    
+    # Ensure metadata is up-to-date
+    check_and_update_index >/dev/null 2>&1 || true
+
     case "$search_type" in
-        name)
-            # Name search with fuzzy matching (LIKE operator, case-insensitive)
-            sqlite3 -separator '|' "$db_path" \
-                "SELECT file_path, config_type, server_addr, COALESCE(proxy_count, 0)
-                 FROM config_index 
-                 WHERE LOWER(file_path) LIKE LOWER('%$escaped_query%')
-                 ORDER BY file_path;" 2>/dev/null
-            return $?
-            ;;
-        ip)
-            # IP search: match server_addr or bind_port
-            sqlite3 -separator '|' "$db_path" \
-                "SELECT file_path, config_type, server_addr, COALESCE(proxy_count, 0)
-                 FROM config_index 
-                 WHERE server_addr='$escaped_query' OR bind_port='$escaped_query'
-                 ORDER BY file_path;" 2>/dev/null
-            return $?
-            ;;
-        port)
-            # Port search: match server_port or bind_port (numeric)
-            sqlite3 -separator '|' "$db_path" \
-                "SELECT file_path, config_type, server_addr, COALESCE(proxy_count, 0)
-                 FROM config_index 
-                 WHERE server_port=$escaped_query OR bind_port=$escaped_query
-                 ORDER BY file_path;" 2>/dev/null
-            return $?
-            ;;
-        tag)
-            # Tag search: use query_configs_by_tag() from Story 2.3
-            if command -v query_configs_by_tag &> /dev/null || [[ "$(type -t query_configs_by_tag)" == "function" ]]; then
-                local tag_results
-                tag_results=$(query_configs_by_tag "$query" 2>/dev/null)
-                if [[ $? -eq 0 ]] && [[ -n "$tag_results" ]]; then
-                    # Convert tag results to pipe-separated format
-                    while IFS= read -r file_path; do
-                        if [[ -n "$file_path" ]]; then
-                            local config_info
-                            config_info=$(sqlite3 -separator '|' "$db_path" \
-                                "SELECT file_path, config_type, server_addr, COALESCE(proxy_count, 0)
-                                 FROM config_index 
-                                 WHERE file_path='$(printf '%s\n' "$file_path" | sed "s/'/''/g")'
-                                 LIMIT 1;" 2>/dev/null)
-                            if [[ -n "$config_info" ]]; then
-                                echo "$config_info"
-                            fi
-                        fi
-                    done <<< "$tag_results"
+        name|ip|port|tag)
+            python3 - <<'PY' "$INDEX_DATA_ROOT" "$search_type" "$query"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+search_type = sys.argv[2]
+query = sys.argv[3]
+
+if search_type == 'port':
+    try:
+        query_port = int(query)
+    except ValueError:
+        query_port = None
+else:
+    query_port = None
+
+if search_type == 'tag':
+    tag_key = query
+    tag_value = None
+    if ':' in query:
+        tag_key, tag_value = query.split(':', 1)
+
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+
+    cfg_path = data.get('path', '')
+    cfg_type = data.get('type', '')
+    server_addr = data.get('server_addr') or ''
+    proxy_count = int(data.get('proxy_count') or 0)
+    bind_port = data.get('bind_port')
+    server_port = data.get('server_port')
+
+    if search_type == 'name':
+        if query.lower() not in cfg_path.lower():
+            continue
+    elif search_type == 'ip':
+        match = False
+        if server_addr == query:
+            match = True
+        elif bind_port is not None and str(bind_port) == query:
+            match = True
+        if not match:
+            continue
+    elif search_type == 'port':
+        if query_port is None:
+            continue
+        match = False
+        if isinstance(server_port, int) and server_port == query_port:
+            match = True
+        if isinstance(bind_port, int) and bind_port == query_port:
+            match = True
+        if not match:
+            continue
+    elif search_type == 'tag':
+        tags = data.get('tags')
+        if not isinstance(tags, dict):
+            continue
+        if tag_key not in tags:
+            continue
+        if tag_value is not None and str(tags.get(tag_key)) != tag_value:
+            continue
+
+    print(f"{cfg_path}|{cfg_type}|{server_addr}|{proxy_count}")
+PY
                     return 0
-                else
-                    return 1
-                fi
-            else
-                log "WARN" "query_configs_by_tag() function not available (Story 2.3 dependency)"
-                return 1
-            fi
             ;;
         status)
-            # Status search: filter by service status (active, failed, inactive)
-            # This requires querying systemctl for each config
-            local matching_configs=()
-            local all_configs
-            all_configs=$(sqlite3 "$db_path" \
-                "SELECT file_path FROM config_index ORDER BY file_path;" 2>/dev/null)
-            
-            while IFS= read -r config_file; do
-                if [[ -z "$config_file" ]]; then
+            local target_status="$query"
+            local services=($(get_moonfrp_services))
+            for svc in "${services[@]}"; do
+                local svc_status
+                svc_status=$(get_detailed_service_status "$svc" | cut -d'_' -f1)
+                if [[ "$svc_status" != "$target_status" ]]; then
                     continue
                 fi
-                
-                local config_name=$(basename "$config_file" .toml)
-                local service_name="moonfrp-${config_name}"
-                
-                local service_status
-                if systemctl is-active --quiet "$service_name" 2>/dev/null; then
-                    service_status="active"
-                elif systemctl is-failed --quiet "$service_name" 2>/dev/null; then
-                    service_status="failed"
-                else
-                    service_status="inactive"
-                fi
-                
-                if [[ "$service_status" == "$query" ]]; then
-                    local config_info
-                    config_info=$(sqlite3 -separator '|' "$db_path" \
-                        "SELECT file_path, config_type, server_addr, COALESCE(proxy_count, 0)
-                         FROM config_index 
-                         WHERE file_path='$(printf '%s\n' "$config_file" | sed "s/'/''/g")'
-                         LIMIT 1;" 2>/dev/null)
-                    if [[ -n "$config_info" ]]; then
-                        echo "$config_info"
+                local config_name="${svc#moonfrp-}"
+                local config_path="$CONFIG_DIR/${config_name}.toml"
+                if [[ -f "$config_path" ]]; then
+                    local summary
+                    summary=$(python3 - <<'PY' "$INDEX_DATA_ROOT" "$config_path"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+config_path = sys.argv[2]
+slug = None
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    if data.get('path') == config_path:
+        print(f"{data.get('path','')}|{data.get('type','')}|{data.get('server_addr') or ''}|{int(data.get('proxy_count') or 0)}")
+        break
+PY
+)
+                    if [[ -n "$summary" ]]; then
+                        echo "$summary"
                     fi
                 fi
-            done <<< "$all_configs"
+            done
             return 0
             ;;
         *)
             log "ERROR" "Unknown search type: $search_type"
-            log "INFO" "Supported types: auto, name, ip, port, tag, status"
             return 1
             ;;
     esac

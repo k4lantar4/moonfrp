@@ -2,8 +2,8 @@
 
 #==============================================================================
 # MoonFRP Config Index Module
-# Version: 2.0.0
-# Description: SQLite-based index for fast config file metadata queries
+# Version: 3.0.0
+# Description: JSON-based index for fast config file metadata queries
 #==============================================================================
 
 # Prevent multiple sourcing
@@ -15,7 +15,7 @@ if [[ "${MOONFRP_INDEX_LOADED:-}" == "true" ]]; then
 fi
 export MOONFRP_INDEX_LOADED="true"
 
-# Source core functions
+# Source core helpers
 source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-core.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-config.sh"
 
@@ -23,187 +23,305 @@ source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-config.sh"
 # CONFIGURATION
 #==============================================================================
 
-readonly INDEX_DB_DIR="$HOME/.moonfrp"
-readonly INDEX_DB_PATH="$INDEX_DB_DIR/index.db"
+readonly INDEX_DATA_ROOT="${DATA_DIR}/config-index"
+readonly INDEX_META_FILE="${DATA_DIR}/index-meta.json"
+readonly INDEX_TMP_DIR="${DATA_DIR}/tmp"
 
 #==============================================================================
-# DATABASE FUNCTIONS
+# HELPER FUNCTIONS
 #==============================================================================
 
-# Check if SQLite3 is available
-check_sqlite3() {
-    if ! command -v sqlite3 &> /dev/null; then
-        log "ERROR" "sqlite3 is required but not installed"
+check_python3() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        log "ERROR" "python3 is required but not installed"
         return 1
     fi
     return 0
 }
 
-# Initialize database schema
-init_config_index() {
-    if ! check_sqlite3; then
-        return 1
-    fi
-    
-    mkdir -p "$INDEX_DB_DIR"
-    
-    local db_path="$INDEX_DB_PATH"
-    
-    sqlite3 "$db_path" << 'SQL'
-CREATE TABLE IF NOT EXISTS config_index (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_path TEXT UNIQUE NOT NULL,
-    file_hash TEXT NOT NULL,
-    config_type TEXT NOT NULL,
-    server_addr TEXT,
-    server_port INTEGER,
-    bind_port INTEGER,
-    auth_token_hash TEXT,
-    proxy_count INTEGER DEFAULT 0,
-    tags TEXT,
-    last_modified INTEGER,
-    last_indexed INTEGER,
-    UNIQUE(file_path)
-);
+ensure_index_dirs() {
+    mkdir -p "$DATA_DIR" "$INDEX_DATA_ROOT" "$INDEX_TMP_DIR"
+    chmod 755 "$DATA_DIR" "$INDEX_DATA_ROOT" "$INDEX_TMP_DIR" 2>/dev/null || true
+}
 
-CREATE INDEX IF NOT EXISTS idx_config_type ON config_index(config_type);
-CREATE INDEX IF NOT EXISTS idx_server_addr ON config_index(server_addr);
-CREATE INDEX IF NOT EXISTS idx_tags ON config_index(tags);
+metadata_path_for_config() {
+    local config_file="$1"
+    local slug
+    slug=$(printf '%s' "$config_file" | sha256sum | cut -c1-16)
+    echo "$INDEX_DATA_ROOT/${slug}.json"
+}
 
-CREATE TABLE IF NOT EXISTS index_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
+python_write_meta() {
+    local metadata_path="$1"
+    python3 - "$metadata_path" <<'PY'
+import json
+import os
+import sys
+import time
 
-CREATE TABLE IF NOT EXISTS service_tags (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    config_id INTEGER NOT NULL,
-    tag_key TEXT NOT NULL,
-    tag_value TEXT NOT NULL,
-    FOREIGN KEY (config_id) REFERENCES config_index(id) ON DELETE CASCADE,
-    UNIQUE(config_id, tag_key)
-);
+metadata_path = sys.argv[1]
+existing = {}
+if os.path.exists(metadata_path):
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as fh:
+            existing = json.load(fh) or {}
+    except Exception:
+        existing = {}
 
-CREATE INDEX IF NOT EXISTS idx_tag_key ON service_tags(tag_key);
-CREATE INDEX IF NOT EXISTS idx_tag_value ON service_tags(tag_value);
-CREATE INDEX IF NOT EXISTS idx_tag_key_value ON service_tags(tag_key, tag_value);
-SQL
-    
-    if [[ $? -eq 0 ]]; then
-        local created_time=$(date +%s)
-        sqlite3 "$db_path" "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('created', '$created_time');"
-        sqlite3 "$db_path" "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('version', '1.0');"
-        log "DEBUG" "Config index database initialized: $db_path"
-        return 0
-    else
-        log "ERROR" "Failed to initialize config index database"
-        return 1
+def parse_int(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+metadata = {
+    "path": os.environ.get("CONFIG_PATH", ""),
+    "hash": os.environ.get("CONFIG_HASH", ""),
+    "type": os.environ.get("CONFIG_TYPE", "client"),
+    "server_addr": os.environ.get("SERVER_ADDR") or None,
+    "server_port": parse_int(os.environ.get("SERVER_PORT")),
+    "bind_port": parse_int(os.environ.get("BIND_PORT")),
+    "auth_token_hash": os.environ.get("AUTH_TOKEN_HASH") or None,
+    "proxy_count": parse_int(os.environ.get("PROXY_COUNT")) or 0,
+    "tags": existing.get("tags") or {},
+    "last_modified": parse_int(os.environ.get("LAST_MODIFIED")) or 0,
+    "last_indexed": parse_int(os.environ.get("LAST_INDEXED")) or int(time.time())
+}
+
+tmp_path = metadata_path + '.tmp'
+with open(tmp_path, 'w', encoding='utf-8') as fh:
+    json.dump(metadata, fh, indent=2, ensure_ascii=False)
+    fh.write('\n')
+os.replace(tmp_path, metadata_path)
+PY
+}
+
+python_update_meta_file() {
+    python3 - "$INDEX_META_FILE" <<'PY'
+import json
+import os
+import sys
+
+meta_path = sys.argv[1]
+key = os.environ.get('META_KEY')
+value = os.environ.get('META_VALUE')
+meta = {}
+if os.path.exists(meta_path):
+    try:
+        with open(meta_path, 'r', encoding='utf-8') as fh:
+            meta = json.load(fh) or {}
+    except Exception:
+        meta = {}
+
+meta[key] = value
+
+tmp_path = meta_path + '.tmp'
+with open(tmp_path, 'w', encoding='utf-8') as fh:
+    json.dump(meta, fh, indent=2, ensure_ascii=False)
+    fh.write('\n')
+os.replace(tmp_path, meta_path)
+PY
+}
+
+python_extract_field() {
+    local metadata_path="$1"
+    local field_name="$2"
+    python3 - "$metadata_path" "$field_name" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+field = sys.argv[2]
+try:
+    with open(path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh) or {}
+except Exception:
+    data = {}
+value = data.get(field)
+if value is None:
+    print("")
+elif isinstance(value, (dict, list)):
+    import json as _json
+    print(_json.dumps(value))
+else:
+    print(str(value))
+PY
+}
+
+remove_orphan_metadata() {
+    shopt -s nullglob
+    local removed=0
+    for meta_file in "$INDEX_DATA_ROOT"/*.json; do
+        [[ -f "$meta_file" ]] || continue
+        local config_path
+        config_path=$(python_extract_field "$meta_file" "path")
+        if [[ -z "$config_path" || ! -f "$config_path" ]]; then
+            rm -f "$meta_file"
+            ((removed++))
+        fi
+    done
+    shopt -u nullglob
+    if [[ $removed -gt 0 ]]; then
+        log "DEBUG" "Removed $removed orphaned index entries"
     fi
 }
 
-# Index a single config file
+get_config_metadata_json() {
+    local config_file="$1"
+    local metadata_path
+    metadata_path=$(metadata_path_for_config "$config_file")
+    if [[ ! -f "$metadata_path" ]]; then
+        return 1
+    fi
+    python3 - <<'PY' "$metadata_path"
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh) or {}
+except Exception:
+    data = {}
+
+print(json.dumps(data))
+PY
+}
+
+list_indexed_configs() {
+    if ! check_python3; then
+        return 1
+    fi
+    ensure_index_dirs
+    python3 - <<'PY' "$INDEX_DATA_ROOT"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+paths = []
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    cfg_path = data.get('path')
+    if cfg_path:
+        paths.append(cfg_path)
+for cfg in sorted(paths):
+    print(cfg)
+PY
+}
+
+get_config_metadata_field() {
+    local config_file="$1"
+    local field_name="$2"
+    local metadata_path
+    metadata_path=$(metadata_path_for_config "$config_file")
+    if [[ ! -f "$metadata_path" ]]; then
+        echo ""
+        return 1
+    fi
+    python_extract_field "$metadata_path" "$field_name"
+}
+
+#==============================================================================
+# INDEX MANAGEMENT
+#==============================================================================
+
+init_config_index() {
+    if ! check_python3; then
+        return 1
+    fi
+    ensure_index_dirs
+    if [[ ! -f "$INDEX_META_FILE" ]]; then
+        META_KEY="created" META_VALUE="$(date +%s)" python_update_meta_file
+        META_KEY="version" META_VALUE="json-1" python_update_meta_file
+    fi
+    return 0
+}
+
 index_config_file() {
     local config_file="$1"
-    
+
     if [[ ! -f "$config_file" ]]; then
         log "WARN" "Config file not found: $config_file"
-        return 1
-    fi
-    
-    if ! check_sqlite3; then
-        return 1
-    fi
-    
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        if ! init_config_index; then
             return 1
         fi
+    if ! check_python3; then
+        return 1
     fi
+
+    ensure_index_dirs
     
     local file_hash
+    file_hash=$(sha256sum "$config_file" 2>/dev/null | awk '{print $1}') || {
+        log "WARN" "Failed to hash config: $config_file"
+        return 1
+    }
+
+    local last_modified
+    last_modified=$(stat -c %Y "$config_file" 2>/dev/null || echo "0")
+
     local config_type="client"
-    local server_addr=""
-    local server_port=""
-    local bind_port=""
-    local auth_token=""
-    local auth_token_hash=""
-    local proxy_count=0
-    local tags="[]"
-    local last_modified=0
-    local last_indexed=$(date +%s)
-    
     if [[ "$config_file" == *"frps.toml" ]] || [[ "$config_file" == *"frps"* ]]; then
         config_type="server"
     fi
     
-    if ! file_hash=$(sha256sum "$config_file" 2>/dev/null | awk '{print $1}'); then
-        log "WARN" "Failed to calculate hash for: $config_file"
-        return 1
-    fi
-    
-    if last_modified=$(stat -c %Y "$config_file" 2>/dev/null || echo "0"); then
-        : 
-    fi
-    
+    local server_addr=""
+    local server_port=""
     if [[ "$config_type" == "client" ]]; then
         server_addr=$(get_toml_value "$config_file" "serverAddr" 2>/dev/null | sed 's/["'\'']//g' || echo "")
         server_port=$(get_toml_value "$config_file" "serverPort" 2>/dev/null | tr -d '"' || echo "")
     fi
     
+    local bind_port=""
     bind_port=$(get_toml_value "$config_file" "bindPort" 2>/dev/null | tr -d '"' || echo "")
-    auth_token=$(get_toml_value "$config_file" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
     
+    local auth_token_hash=""
+    local auth_token
+    auth_token=$(get_toml_value "$config_file" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
     if [[ -n "$auth_token" ]]; then
         auth_token_hash=$(echo -n "$auth_token" | sha256sum | awk '{print $1}')
     fi
     
+    local proxy_count
     proxy_count=$(grep -c '^\[\[proxies\]\]' "$config_file" 2>/dev/null || echo "0")
     
-    local escaped_path=$(printf '%s\n' "$config_file" | sed "s/'/''/g")
-    local escaped_hash=$(printf '%s\n' "$file_hash" | sed "s/'/''/g")
-    local escaped_type=$(printf '%s\n' "$config_type" | sed "s/'/''/g")
-    local escaped_addr=$(printf '%s\n' "$server_addr" | sed "s/'/''/g")
-    local escaped_tags=$(printf '%s\n' "$tags" | sed "s/'/''/g")
-    local escaped_token_hash=$(printf '%s\n' "$auth_token_hash" | sed "s/'/''/g")
-    
-    sqlite3 "$db_path" << SQL
-INSERT OR REPLACE INTO config_index 
-    (file_path, file_hash, config_type, server_addr, server_port, 
-     bind_port, auth_token_hash, proxy_count, tags, last_modified, last_indexed)
-VALUES 
-    ('$escaped_path', '$escaped_hash', '$escaped_type', '$escaped_addr', 
-     ${server_port:-NULL}, ${bind_port:-NULL}, '$escaped_token_hash', 
-     $proxy_count, '$escaped_tags', $last_modified, $last_indexed);
-SQL
-    
-    if [[ $? -eq 0 ]]; then
-        log "DEBUG" "Indexed config file: $config_file"
-        return 0
-    else
-        log "WARN" "Failed to index config file: $config_file"
-        return 1
-    fi
+    local metadata_path
+    metadata_path=$(metadata_path_for_config "$config_file")
+    local now
+    now=$(date +%s)
+
+    CONFIG_PATH="$config_file" \
+    CONFIG_HASH="$file_hash" \
+    CONFIG_TYPE="$config_type" \
+    SERVER_ADDR="$server_addr" \
+    SERVER_PORT="$server_port" \
+    BIND_PORT="$bind_port" \
+    AUTH_TOKEN_HASH="$auth_token_hash" \
+    PROXY_COUNT="$proxy_count" \
+    LAST_MODIFIED="$last_modified" \
+    LAST_INDEXED="$now" \
+        python_write_meta "$metadata_path"
 }
 
-# Rebuild entire index
 rebuild_config_index() {
-    if ! check_sqlite3; then
+    if ! check_python3; then
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        if ! init_config_index; then
-            return 1
-        fi
-    fi
+    ensure_index_dirs
     
     log "INFO" "Rebuilding config index..."
-    
-    sqlite3 "$db_path" "DELETE FROM config_index;"
     
     local indexed_count=0
     local failed_count=0
@@ -215,47 +333,50 @@ rebuild_config_index() {
             ((failed_count++))
         fi
     done < <(find "$CONFIG_DIR" -name "*.toml" -type f -print0 2>/dev/null)
+
+    remove_orphan_metadata
+
+    META_KEY="last_rebuild" META_VALUE="$(date +%s)" python_update_meta_file
     
     if [[ $indexed_count -gt 0 ]]; then
-        local rebuild_time=$(date +%s)
-        sqlite3 "$db_path" "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('last_rebuild', '$rebuild_time');"
         log "INFO" "Index rebuild complete: $indexed_count files indexed, $failed_count failed"
         return 0
-    else
+    fi
+
         log "WARN" "Index rebuild completed but no files were indexed"
         return 1
-    fi
 }
 
-# Check and update index for changed files
 check_and_update_index() {
-    if ! check_sqlite3; then
+    if ! check_python3; then
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        if ! init_config_index; then
-            log "WARN" "Index unavailable, falling back to file parsing"
-            return 1
-        fi
-        rebuild_config_index
-        return $?
+    ensure_index_dirs
+
+    if [[ ! -f "$INDEX_META_FILE" ]]; then
+        init_config_index || return 1
     fi
     
     local updated_count=0
     
     while IFS= read -r -d '' config_file; do
-        local file_hash=$(sha256sum "$config_file" 2>/dev/null | awk '{print $1}')
-        local indexed_hash=$(sqlite3 "$db_path" "SELECT file_hash FROM config_index WHERE file_path='$(printf '%s' "$config_file" | sed "s/'/''/g")';" 2>/dev/null || echo "")
-        
-        if [[ "$file_hash" != "$indexed_hash" ]]; then
+        local file_hash
+        file_hash=$(sha256sum "$config_file" 2>/dev/null | awk '{print $1}') || continue
+        local metadata_path
+        metadata_path=$(metadata_path_for_config "$config_file")
+        local stored_hash=""
+        if [[ -f "$metadata_path" ]]; then
+            stored_hash=$(python_extract_field "$metadata_path" "hash")
+        fi
+        if [[ -z "$stored_hash" || "$stored_hash" != "$file_hash" ]]; then
             if index_config_file "$config_file"; then
                 ((updated_count++))
             fi
         fi
     done < <(find "$CONFIG_DIR" -name "*.toml" -type f -print0 2>/dev/null)
+
+    remove_orphan_metadata
     
     if [[ $updated_count -gt 0 ]]; then
         log "DEBUG" "Index updated: $updated_count files changed"
@@ -264,19 +385,28 @@ check_and_update_index() {
     return 0
 }
 
-# Verify index integrity
 verify_index_integrity() {
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
+    ensure_index_dirs
+    shopt -s nullglob
+    for meta_file in "$INDEX_DATA_ROOT"/*.json; do
+        [[ -f "$meta_file" ]] || continue
+        python3 - "$meta_file" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], 'r', encoding='utf-8') as fh:
+        json.load(fh)
+except Exception:
+    raise SystemExit(1)
+PY
+        if [[ $? -ne 0 ]]; then
+            log "WARN" "Corrupted metadata detected: $meta_file"
+            shopt -u nullglob
         return 1
     fi
-    
-    if ! sqlite3 "$db_path" "PRAGMA integrity_check;" 2>/dev/null | grep -q "ok"; then
-        log "WARN" "Index database corruption detected"
-        return 1
-    fi
-    
+    done
+    shopt -u nullglob
     return 0
 }
 
@@ -284,7 +414,6 @@ verify_index_integrity() {
 # QUERY FUNCTIONS
 #==============================================================================
 
-# Query configs by type
 query_configs_by_type() {
     local config_type="${1:-}"
     
@@ -293,55 +422,68 @@ query_configs_by_type() {
         return 1
     fi
     
-    if ! check_sqlite3; then
+    if ! check_python3; then
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "DEBUG" "Index not available, falling back to file parsing"
-        return 1
-    fi
-    
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted, falling back to file parsing"
-        return 1
-    fi
-    
-    local escaped_type=$(printf '%s\n' "$config_type" | sed "s/'/''/g")
-    
-    sqlite3 -separator '|' "$db_path" \
-        "SELECT file_path, server_addr, COALESCE(proxy_count, 0) FROM config_index 
-         WHERE config_type='$escaped_type' ORDER BY file_path;" 2>/dev/null
-    
-    return $?
+    check_and_update_index >/dev/null 2>&1 || true
+
+    python3 - <<'PY' "$INDEX_DATA_ROOT" "$config_type"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+filter_type = sys.argv[2]
+
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    if data.get('type') != filter_type:
+        continue
+    file_path = data.get('path', '')
+    server_addr = data.get('server_addr') or ''
+    proxy_count = data.get('proxy_count') or 0
+    print(f"{file_path}|{server_addr}|{proxy_count}")
+PY
 }
 
-# Query total proxy count
 query_total_proxy_count() {
-    if ! check_sqlite3; then
+    if ! check_python3; then
+        echo "0"
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "DEBUG" "Index not available, falling back to file parsing"
-        return 1
-    fi
-    
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted, falling back to file parsing"
-        return 1
-    fi
-    
-    local total=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index;" 2>/dev/null || echo "0")
-    echo "$total"
+    check_and_update_index >/dev/null 2>&1 || true
+
+    python3 - <<'PY' "$INDEX_DATA_ROOT"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+proxies = 0
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    proxies += int(data.get('proxy_count') or 0)
+print(proxies)
+PY
     return 0
 }
 
-# Query configs by server address
 query_configs_by_server_addr() {
     local server_addr="${1:-}"
     
@@ -350,543 +492,454 @@ query_configs_by_server_addr() {
         return 1
     fi
     
-    if ! check_sqlite3; then
+    if ! check_python3; then
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "DEBUG" "Index not available, falling back to file parsing"
-        return 1
-    fi
-    
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted, falling back to file parsing"
-        return 1
-    fi
-    
-    local escaped_addr=$(printf '%s\n' "$server_addr" | sed "s/'/''/g")
-    
-    sqlite3 -separator '|' "$db_path" \
-        "SELECT file_path, server_port, COALESCE(proxy_count, 0) FROM config_index 
-         WHERE server_addr='$escaped_addr' ORDER BY file_path;" 2>/dev/null
-    
-    return $?
+    check_and_update_index >/dev/null 2>&1 || true
+
+    python3 - <<'PY' "$INDEX_DATA_ROOT" "$server_addr"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+target = sys.argv[2]
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    if data.get('server_addr') != target:
+        continue
+    file_path = data.get('path', '')
+    proxy_count = data.get('proxy_count') or 0
+    print(f"{file_path}|{proxy_count}")
+PY
 }
 
-# Get index statistics
 get_index_stats() {
-    if ! check_sqlite3; then
-        return 1
-    fi
-    
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
+    if ! check_python3; then
         echo "Index not available"
         return 1
     fi
     
-    if ! verify_index_integrity; then
-        echo "Index corrupted"
-        return 1
-    fi
-    
-    local total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index;" 2>/dev/null || echo "0")
-    local server_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index WHERE config_type='server';" 2>/dev/null || echo "0")
-    local client_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index WHERE config_type='client';" 2>/dev/null || echo "0")
-    local total_proxies=$(query_total_proxy_count)
-    local db_size=$(stat -c %s "$db_path" 2>/dev/null || echo "0")
-    local db_size_mb=$(awk "BEGIN {printf \"%.2f\", $db_size/1024/1024}")
-    
-    echo "Total configs: $total_configs (server: $server_count, client: $client_count)"
-    echo "Total proxies: $total_proxies"
-    echo "Database size: ${db_size_mb}MB"
-    
+    check_and_update_index >/dev/null 2>&1 || true
+
+    python3 - <<'PY' "$INDEX_DATA_ROOT"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+summary = {
+    "total": 0,
+    "servers": 0,
+    "clients": 0,
+    "proxies": 0,
+    "size_bytes": 0,
+}
+
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    summary["total"] += 1
+    cfg_type = data.get('type')
+    if cfg_type == 'server':
+        summary["servers"] += 1
+    elif cfg_type == 'client':
+        summary["clients"] += 1
+    summary["proxies"] += int(data.get('proxy_count') or 0)
+    try:
+        summary["size_bytes"] += os.path.getsize(path)
+    except OSError:
+        pass
+
+size_mb = summary["size_bytes"] / (1024 * 1024) if summary["size_bytes"] else 0
+print(f"Total configs: {summary['total']} (server: {summary['servers']}, client: {summary['clients']})")
+print(f"Total proxies: {summary['proxies']}")
+print(f"Metadata size: {size_mb:.2f}MB")
+PY
     return 0
-}
-
-#==============================================================================
-# FALLBACK FUNCTIONS
-#==============================================================================
-
-# Fallback to file parsing (when index unavailable)
-query_configs_by_type_fallback() {
-    local config_type="${1:-}"
-    local config_files=()
-    
-    if [[ "$config_type" == "server" ]]; then
-        if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
-            config_files+=("$CONFIG_DIR/frps.toml")
-        fi
-    elif [[ "$config_type" == "client" ]]; then
-        while IFS= read -r -d '' file; do
-            config_files+=("$file")
-        done < <(find "$CONFIG_DIR" -name "frpc*.toml" -type f -print0 2>/dev/null)
-    fi
-    
-    for file in "${config_files[@]}"; do
-        local server_addr=$(get_toml_value "$file" "serverAddr" 2>/dev/null | sed 's/["'\'']//g' || echo "")
-        local proxy_count=$(grep -c '^\[\[proxies\]\]' "$file" 2>/dev/null || echo "0")
-        echo "${file}|${server_addr}|${proxy_count}"
-    done
-}
-
-# Fallback total proxy count
-query_total_proxy_count_fallback() {
-    local total=0
-    
-    while IFS= read -r -d '' file; do
-        local count=$(grep -c '^\[\[proxies\]\]' "$file" 2>/dev/null || echo "0")
-        total=$((total + count))
-    done < <(find "$CONFIG_DIR" -name "*.toml" -type f -print0 2>/dev/null)
-    
-    echo "$total"
 }
 
 #==============================================================================
 # TAG MANAGEMENT FUNCTIONS
 #==============================================================================
 
-# Add tag to config
+query_configs_by_tag() {
+    local tag="${1:-}"
+
+    if [[ -z "$tag" ]]; then
+        log "ERROR" "tag parameter required"
+        return 1
+    fi
+
+    if ! check_python3; then
+        return 1
+    fi
+
+    check_and_update_index >/dev/null 2>&1 || true
+
+    python3 - <<'PY' "$INDEX_DATA_ROOT" "$tag"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+tag_query = sys.argv[2]
+key = tag_query
+value = None
+if ':' in tag_query:
+    key, value = tag_query.split(':', 1)
+
+results = []
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    tags = data.get('tags')
+    if not isinstance(tags, dict):
+        continue
+    if key not in tags:
+        continue
+    if value is not None and str(tags.get(key)) != value:
+        continue
+    results.append(data.get('path', ''))
+
+for item in results:
+    if item:
+        print(item)
+PY
+}
+
 add_config_tag() {
     local config_file="$1"
     local tag_key="$2"
     local tag_value="$3"
     
-    if [[ -z "$config_file" ]] || [[ -z "$tag_key" ]] || [[ -z "$tag_value" ]]; then
-        log "ERROR" "Usage: add_config_tag <config_file> <tag_key> <tag_value>"
+    if [[ -z "$tag_key" || -z "$tag_value" ]]; then
+        log "ERROR" "Both tag key and value are required"
         return 1
     fi
     
-    if ! check_sqlite3; then
+    if [[ ! -f "$config_file" ]]; then
+        log "ERROR" "Config file not found: $config_file"
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "ERROR" "Index database not found. Please initialize index first."
+    if ! check_python3; then
         return 1
     fi
     
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted"
+    check_and_update_index >/dev/null 2>&1 || true
+
+    local metadata_path
+    metadata_path=$(metadata_path_for_config "$config_file")
+
+    if [[ ! -f "$metadata_path" ]]; then
+        log "ERROR" "Config file not indexed: $config_file"
         return 1
     fi
     
-    local escaped_path=$(printf '%s\n' "$config_file" | sed "s/'/''/g")
-    local escaped_key=$(printf '%s\n' "$tag_key" | sed "s/'/''/g")
-    local escaped_value=$(printf '%s\n' "$tag_value" | sed "s/'/''/g")
-    
-    local config_id=$(sqlite3 "$db_path" "SELECT id FROM config_index WHERE file_path='$escaped_path';" 2>/dev/null || echo "")
-    
-    if [[ -z "$config_id" ]]; then
-        log "ERROR" "Config file not found in index: $config_file"
-        log "INFO" "Please index the config file first using index_config_file()"
-        return 1
-    fi
-    
-    sqlite3 "$db_path" << SQL
-INSERT OR REPLACE INTO service_tags (config_id, tag_key, tag_value)
-VALUES ($config_id, '$escaped_key', '$escaped_value');
-SQL
-    
-    if [[ $? -eq 0 ]]; then
+    TAG_KEY="$tag_key" TAG_VALUE="$tag_value" python3 - <<'PY' "$metadata_path"
+import json
+import os
+import sys
+
+metadata_path = sys.argv[1]
+tag_key = os.environ.get('TAG_KEY')
+tag_value = os.environ.get('TAG_VALUE')
+
+try:
+    with open(metadata_path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh) or {}
+except Exception:
+    data = {}
+
+tags = data.get('tags')
+if not isinstance(tags, dict):
+    tags = {}
+
+tags[tag_key] = tag_value
+
+data['tags'] = tags
+
+tmp_path = metadata_path + '.tmp'
+with open(tmp_path, 'w', encoding='utf-8') as fh:
+    json.dump(data, fh, indent=2, ensure_ascii=False)
+    fh.write('\n')
+os.replace(tmp_path, metadata_path)
+PY
+
         log "INFO" "Added tag $tag_key:$tag_value to config: $config_file"
         return 0
-    else
-        log "ERROR" "Failed to add tag to config: $config_file"
-        return 1
-    fi
 }
 
-# Remove tag from config
 remove_config_tag() {
     local config_file="$1"
     local tag_key="$2"
     
-    if [[ -z "$config_file" ]] || [[ -z "$tag_key" ]]; then
-        log "ERROR" "Usage: remove_config_tag <config_file> <tag_key>"
+    if [[ -z "$tag_key" ]]; then
+        log "ERROR" "Tag key is required"
         return 1
     fi
     
-    if ! check_sqlite3; then
+    if [[ ! -f "$config_file" ]]; then
+        log "ERROR" "Config file not found: $config_file"
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "ERROR" "Index database not found. Please initialize index first."
+    if ! check_python3; then
         return 1
     fi
     
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted"
+    local metadata_path
+    metadata_path=$(metadata_path_for_config "$config_file")
+
+    if [[ ! -f "$metadata_path" ]]; then
+        log "ERROR" "Config file not indexed: $config_file"
         return 1
     fi
     
-    local escaped_path=$(printf '%s\n' "$config_file" | sed "s/'/''/g")
-    local escaped_key=$(printf '%s\n' "$tag_key" | sed "s/'/''/g")
-    
-    local config_id=$(sqlite3 "$db_path" "SELECT id FROM config_index WHERE file_path='$escaped_path';" 2>/dev/null || echo "")
-    
-    if [[ -z "$config_id" ]]; then
-        log "ERROR" "Config file not found in index: $config_file"
-        return 1
-    fi
-    
-    sqlite3 "$db_path" "DELETE FROM service_tags WHERE config_id=$config_id AND tag_key='$escaped_key';" 2>/dev/null
-    
-    if [[ $? -eq 0 ]]; then
+    TAG_KEY="$tag_key" python3 - <<'PY' "$metadata_path"
+import json
+import os
+import sys
+
+metadata_path = sys.argv[1]
+tag_key = os.environ.get('TAG_KEY')
+
+try:
+    with open(metadata_path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh) or {}
+except Exception:
+    data = {}
+
+tags = data.get('tags')
+if isinstance(tags, dict) and tag_key in tags:
+    del tags[tag_key]
+    data['tags'] = tags
+    tmp_path = metadata_path + '.tmp'
+    with open(tmp_path, 'w', encoding='utf-8') as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
+        fh.write('\n')
+    os.replace(tmp_path, metadata_path)
+PY
+
         log "INFO" "Removed tag $tag_key from config: $config_file"
         return 0
-    else
-        log "ERROR" "Failed to remove tag from config: $config_file"
-        return 1
-    fi
 }
 
-# List tags for config
 list_config_tags() {
     local config_file="$1"
     
-    if [[ -z "$config_file" ]]; then
-        log "ERROR" "Usage: list_config_tags <config_file>"
+    if [[ ! -f "$config_file" ]]; then
+        log "ERROR" "Config file not found: $config_file"
         return 1
     fi
     
-    if ! check_sqlite3; then
+    if ! check_python3; then
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
+    local metadata_path
+    metadata_path=$(metadata_path_for_config "$config_file")
     
-    if [[ ! -f "$db_path" ]]; then
-        log "ERROR" "Index database not found. Please initialize index first."
+    if [[ ! -f "$metadata_path" ]]; then
+        log "WARN" "Config file not indexed: $config_file"
         return 1
     fi
     
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted"
-        return 1
-    fi
-    
-    local escaped_path=$(printf '%s\n' "$config_file" | sed "s/'/''/g")
-    
-    local config_id=$(sqlite3 "$db_path" "SELECT id FROM config_index WHERE file_path='$escaped_path';" 2>/dev/null || echo "")
-    
-    if [[ -z "$config_id" ]]; then
-        log "WARN" "Config file not found in index: $config_file"
-        return 1
-    fi
-    
-    sqlite3 -separator ':' "$db_path" \
-        "SELECT tag_key, tag_value FROM service_tags WHERE config_id=$config_id ORDER BY tag_key;" 2>/dev/null
-    
-    return $?
-}
+    python3 - <<'PY' "$metadata_path"
+import json
+import sys
 
-# Bulk tag configs
-bulk_tag_configs() {
-    local tag_key="$1"
-    local tag_value="$2"
-    local filter="${3:-all}"
-    
-    if [[ -z "$tag_key" ]] || [[ -z "$tag_value" ]]; then
-        log "ERROR" "Usage: bulk_tag_configs <tag_key> <tag_value> [filter]"
-        log "INFO" "Filter types: all, type:server, type:client, tag:X, name:pattern"
-        return 1
-    fi
-    
-    if ! check_sqlite3; then
-        return 1
-    fi
-    
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "ERROR" "Index database not found. Please initialize index first."
-        return 1
-    fi
-    
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted"
-        return 1
-    fi
-    
-    local config_files=()
-    local configs_output
-    
-    if type get_configs_by_filter &>/dev/null; then
-        source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-config.sh" 2>/dev/null || true
-        configs_output=$(get_configs_by_filter "$filter" 2>/dev/null || true)
-    else
-        log "ERROR" "get_configs_by_filter() not available (requires Story 2.2)"
-        return 1
-    fi
-    
-    if [[ -z "$configs_output" ]]; then
-        log "WARN" "No config files found matching filter: $filter"
-        return 1
-    fi
-    
-    while IFS= read -r config_file; do
-        [[ -n "$config_file" ]] && [[ -f "$config_file" ]] && config_files+=("$config_file")
-    done <<< "$configs_output"
-    
-    if [[ ${#config_files[@]} -eq 0 ]]; then
-        log "WARN" "No valid config files found matching filter: $filter"
-        return 1
-    fi
-    
-    log "INFO" "Bulk tagging ${#config_files[@]} config file(s) with tag $tag_key:$tag_value (filter: $filter)"
-    
-    local success_count=0
-    local fail_count=0
-    
-    for config_file in "${config_files[@]}"; do
-        if add_config_tag "$config_file" "$tag_key" "$tag_value"; then
-            ((success_count++))
-        else
-            ((fail_count++))
-        fi
-    done
-    
-    log "INFO" "Bulk tagging complete: $success_count succeeded, $fail_count failed"
-    
-    if [[ $fail_count -gt 0 ]]; then
-        return 1
-    fi
-    
+path = sys.argv[1]
+try:
+    with open(path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh) or {}
+except Exception:
+    data = {}
+
+tags = data.get('tags')
+if isinstance(tags, dict):
+    for key in sorted(tags):
+        print(f"{key}:{tags[key]}")
+PY
     return 0
 }
 
-# Query configs by tag
-query_configs_by_tag() {
-    local tag_query="$1"
-    
-    if [[ -z "$tag_query" ]]; then
-        log "ERROR" "Usage: query_configs_by_tag <tag_query>"
-        log "INFO" "Tag query format: 'key:value' for exact match, or 'key' for key-only match"
-        return 1
-    fi
-    
-    if ! check_sqlite3; then
-        return 1
-    fi
-    
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "DEBUG" "Index not available, falling back to file parsing"
-        return 1
-    fi
-    
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted, falling back to file parsing"
-        return 1
-    fi
-    
-    local tag_key=""
-    local tag_value=""
-    
-    if [[ "$tag_query" == *":"* ]]; then
-        tag_key="${tag_query%%:*}"
-        tag_value="${tag_query#*:}"
-    else
-        tag_key="$tag_query"
-    fi
-    
-    local escaped_key=$(printf '%s\n' "$tag_key" | sed "s/'/''/g")
-    local escaped_value=""
-    
-    if [[ -n "$tag_value" ]]; then
-        escaped_value=$(printf '%s\n' "$tag_value" | sed "s/'/''/g")
-        sqlite3 "$db_path" \
-            "SELECT DISTINCT ci.file_path FROM config_index ci
-             JOIN service_tags st ON ci.id = st.config_id
-             WHERE st.tag_key='$escaped_key' AND st.tag_value='$escaped_value'
-             ORDER BY ci.file_path;" 2>/dev/null
-    else
-        sqlite3 "$db_path" \
-            "SELECT DISTINCT ci.file_path FROM config_index ci
-             JOIN service_tags st ON ci.id = st.config_id
-             WHERE st.tag_key='$escaped_key'
-             ORDER BY ci.file_path;" 2>/dev/null
-    fi
-    
-    return $?
-}
-
-# List all tags in use
 list_all_tags() {
-    if ! check_sqlite3; then
+    if ! check_python3; then
         return 1
     fi
     
-    local db_path="$INDEX_DB_PATH"
-    
-    if [[ ! -f "$db_path" ]]; then
-        log "ERROR" "Index database not found. Please initialize index first."
-        return 1
-    fi
-    
-    if ! verify_index_integrity; then
-        log "WARN" "Index corrupted"
-        return 1
-    fi
-    
-    sqlite3 -separator ':' "$db_path" \
-        "SELECT DISTINCT st.tag_key, st.tag_value, COUNT(*) as count
-         FROM service_tags st
-         GROUP BY st.tag_key, st.tag_value
-         ORDER BY st.tag_key, st.tag_value;" 2>/dev/null
-    
-    return $?
+    python3 - <<'PY' "$INDEX_DATA_ROOT"
+import json
+import os
+import sys
+
+root = sys.argv[1]
+counts = {}
+for name in os.listdir(root):
+    if not name.endswith('.json'):
+        continue
+    path = os.path.join(root, name)
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        continue
+    tags = data.get('tags')
+    if not isinstance(tags, dict):
+        continue
+    for key, value in tags.items():
+        counts.setdefault((key, str(value)), 0)
+        counts[(key, str(value))] += 1
+
+for (key, value), count in sorted(counts.items()):
+    print(f"{key}:{value}:{count}")
+PY
+    return 0
 }
 
-# Tag management menu
+bulk_tag_configs() {
+    local tag_key="$1"
+    local tag_value="$2"
+    local filter="$3"
+    
+    if [[ -z "$tag_key" || -z "$tag_value" ]]; then
+        log "ERROR" "Tag key and value are required"
+        return 1
+    fi
+    
+    local configs=($(get_configs_by_filter "$filter"))
+
+    log "INFO" "Bulk tagging ${#configs[@]} configuration(s) with $tag_key:$tag_value"
+
+    local updated=0
+    for config in "${configs[@]}"; do
+        if [[ -n "$config" ]]; then
+            if add_config_tag "$config" "$tag_key" "$tag_value" >/dev/null 2>&1; then
+                ((updated++))
+            fi
+        fi
+    done
+    
+    log "INFO" "Bulk tagging complete: $updated updated"
+    return 0
+}
+
 tag_management_menu() {
     while true; do
-        if [[ "${MENU_STATE["ctrl_c_pressed"]:-false}" == "true" ]]; then
-            MENU_STATE["ctrl_c_pressed"]="false"
-            return
-        fi
-        
         clear
-        echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
-        echo -e "${PURPLE}║        MoonFRP Tag Management        ║${NC}"
-        echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
-        echo
-        
-        echo -e "${CYAN}Tag Management Options:${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${CYAN}           Tag Management Console            ${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo "1. Add tag to config"
         echo "2. Remove tag from config"
         echo "3. List tags for config"
         echo "4. Bulk tag configs"
         echo "5. List all tags"
-        echo "6. Operations by tag"
-        echo "0. Back to Main Menu"
+        echo "6. Show services for tag"
+        echo "0. Back"
         echo
-        
-        safe_read "Enter your choice" "choice" "0"
+        safe_read "Choice" "choice" "0"
         
         case "$choice" in
             1)
-                echo -e "${CYAN}Add Tag to Config${NC}"
-                echo
-                safe_read "Config file path" "config_file" ""
-                if [[ -n "$config_file" ]]; then
-                    safe_read "Tag key (e.g., env)" "tag_key" ""
-                    if [[ -n "$tag_key" ]]; then
-                        safe_read "Tag value (e.g., prod)" "tag_value" ""
-                        if [[ -n "$tag_value" ]]; then
-                            add_config_tag "$config_file" "$tag_key" "$tag_value"
-                        fi
-                    fi
+                safe_read "Config file path" "cfg" ""
+                safe_read "Tag key" "tag_key" ""
+                safe_read "Tag value" "tag_value" ""
+                if [[ -n "$cfg" && -n "$tag_key" && -n "$tag_value" ]]; then
+                    add_config_tag "$cfg" "$tag_key" "$tag_value"
+                else
+                    log "ERROR" "All fields are required"
                 fi
                 read -p "Press Enter to continue..."
                 ;;
             2)
-                echo -e "${CYAN}Remove Tag from Config${NC}"
-                echo
-                safe_read "Config file path" "config_file" ""
-                if [[ -n "$config_file" ]]; then
-                    safe_read "Tag key to remove" "tag_key" ""
-                    if [[ -n "$tag_key" ]]; then
-                        remove_config_tag "$config_file" "$tag_key"
-                    fi
+                safe_read "Config file path" "cfg" ""
+                safe_read "Tag key" "tag_key" ""
+                if [[ -n "$cfg" && -n "$tag_key" ]]; then
+                    remove_config_tag "$cfg" "$tag_key"
+                else
+                    log "ERROR" "All fields are required"
                 fi
                 read -p "Press Enter to continue..."
                 ;;
             3)
-                echo -e "${CYAN}List Tags for Config${NC}"
-                echo
-                safe_read "Config file path" "config_file" ""
-                if [[ -n "$config_file" ]]; then
-                    echo
-                    echo "Tags for $config_file:"
-                    local tags_output
-                    if tags_output=$(list_config_tags "$config_file"); then
-                        while IFS=':' read -r key value; do
-                            [[ -n "$key" ]] && echo "  $key: $value"
-                        done <<< "$tags_output"
-                    else
-                        echo "  (no tags)"
-                    fi
+                safe_read "Config file path" "cfg" ""
+                if [[ -n "$cfg" ]]; then
+                    list_config_tags "$cfg" || true
                 fi
                 read -p "Press Enter to continue..."
                 ;;
             4)
-                echo -e "${CYAN}Bulk Tag Configs${NC}"
-                echo
-                safe_read "Tag key (e.g., env)" "tag_key" ""
-                if [[ -n "$tag_key" ]]; then
-                    safe_read "Tag value (e.g., prod)" "tag_value" ""
-                    if [[ -n "$tag_value" ]]; then
-                        safe_read "Filter (all, type:server, type:client, tag:X, name:pattern)" "filter" "all"
-                        bulk_tag_configs "$tag_key" "$tag_value" "${filter:-all}"
-                    fi
-                fi
+                safe_read "Tag key" "tag_key" ""
+                safe_read "Tag value" "tag_value" ""
+                safe_read "Filter (all | type:client | type:server | tag:key:value | name:pattern)" "filter" "all"
+                bulk_tag_configs "$tag_key" "$tag_value" "$filter"
                 read -p "Press Enter to continue..."
                 ;;
             5)
-                echo -e "${CYAN}All Tags in Use${NC}"
-                echo
-                local all_tags_output
-                if all_tags_output=$(list_all_tags); then
-                    echo "Tag Key:Tag Value (Count)"
-                    echo "─────────────────────────"
-                    while IFS=':' read -r key value count; do
-                        [[ -n "$key" ]] && echo "$key:$value ($count config(s))"
-                    done <<< "$all_tags_output"
-                else
-                    echo "  (no tags in use)"
-                fi
+                list_all_tags || true
                 read -p "Press Enter to continue..."
                 ;;
             6)
-                echo -e "${CYAN}Operations by Tag${NC}"
-                echo
-                safe_read "Tag query (key:value or key)" "tag_query" ""
+                safe_read "Tag query (key or key:value)" "tag_query" ""
                 if [[ -n "$tag_query" ]]; then
                     echo
-                    echo "Services matching tag '$tag_query':"
-                    source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-services.sh" 2>/dev/null || true
-                    local services_output
-                    if services_output=$(get_services_by_tag "$tag_query" 2>/dev/null); then
-                        while IFS= read -r service; do
-                            [[ -n "$service" ]] && echo "  - $service"
-                        done <<< "$services_output"
-                        echo
-                        echo "Available operations:"
-                        echo "  - Start: moonfrp service start --tag=$tag_query"
-                        echo "  - Stop: moonfrp service stop --tag=$tag_query"
-                        echo "  - Restart: moonfrp service restart --tag=$tag_query"
+                    echo "Matching services:"
+                    if command -v get_services_by_tag >/dev/null 2>&1; then
+                        local services
+                        services=($(get_services_by_tag "$tag_query" 2>/dev/null))
+                        if [[ ${#services[@]} -eq 0 ]]; then
+                            echo "  (none)"
+                        else
+                            for svc in "${services[@]}"; do
+                                echo "  - $svc"
+                            done
+                        fi
                     else
-                        echo "  (no services found)"
+                        echo "  Tag-based service lookup unavailable"
                     fi
                 fi
                 read -p "Press Enter to continue..."
                 ;;
             0)
-                return
+                return 0
                 ;;
             *)
                 log "ERROR" "Invalid choice"
+                read -p "Press Enter to continue..."
                 ;;
         esac
     done
 }
 
-# Export functions
-export -f check_sqlite3 init_config_index index_config_file rebuild_config_index
-export -f check_and_update_index verify_index_integrity
+#==============================================================================
+# EXPORTS
+#==============================================================================
+
+export -f check_python3 ensure_index_dirs init_config_index index_config_file rebuild_config_index
+export -f check_and_update_index verify_index_integrity list_indexed_configs get_config_metadata_json get_config_metadata_field
 export -f query_configs_by_type query_total_proxy_count query_configs_by_server_addr get_index_stats
-export -f query_configs_by_type_fallback query_total_proxy_count_fallback
-export -f add_config_tag remove_config_tag list_config_tags query_configs_by_tag bulk_tag_configs
-export -f list_all_tags tag_management_menu
+export -f query_configs_by_tag add_config_tag remove_config_tag list_config_tags list_all_tags bulk_tag_configs tag_management_menu
 

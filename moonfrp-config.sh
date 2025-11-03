@@ -27,7 +27,7 @@ get_toml_value() {
         return 1
     fi
     # Extract value after '=' and trim spaces
-    echo "$line" | sed -E 's/^[^=]+=\\s*//'
+    echo "$line" | sed -E 's/^[^=]+=[[:space:]]*//'
 }
 
 # Set or add a TOML key=value (preserves file, replaces first occurrence, adds if missing)
@@ -83,6 +83,22 @@ set_toml_value() {
 generate_server_config() {
     local config_file="$CONFIG_DIR/frps.toml"
     local auth_token="${1:-$DEFAULT_SERVER_AUTH_TOKEN}"
+    
+    # Ensure required directories exist before writing
+    if [[ ! -d "$CONFIG_DIR" ]]; then
+        if ! mkdir -p "$CONFIG_DIR" 2>/dev/null; then
+            log "ERROR" "Cannot create configuration directory: $CONFIG_DIR"
+            return 1
+        fi
+        chmod 755 "$CONFIG_DIR" 2>/dev/null || true
+    fi
+    if [[ ! -d "$LOG_DIR" ]]; then
+        if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+            log "ERROR" "Cannot create log directory: $LOG_DIR"
+            return 1
+        fi
+        chmod 755 "$LOG_DIR" 2>/dev/null || true
+    fi
     
     # Generate token if not provided
     if [[ -z "$auth_token" ]]; then
@@ -712,12 +728,10 @@ else
     # Already set (e.g., by test), make it readonly if not already
     readonly BACKUP_DIR
 fi
-# Backup limit per file: 10
-# Allow override via environment variable (for testing)
 if [[ -z "${MAX_BACKUPS_PER_FILE:-}" ]]; then
     readonly MAX_BACKUPS_PER_FILE=10
 else
-    # Already set (e.g., by test), make it readonly if not already
+    # Already set (e.g., by environment or tests), make it readonly if not already
     readonly MAX_BACKUPS_PER_FILE
 fi
 
@@ -1117,7 +1131,7 @@ config_server_wizard() {
         safe_read "Server bind port" "bind_port" "$DEFAULT_SERVER_BIND_PORT"
     done
     
-    safe_read "Auth token (leave empty to keep/generate)" "auth_token" "$def_auth_token"
+    safe_read "Auth token (leave empty to keep/generate)" "auth_token" "$def_auth_token" true
     
     safe_read "Dashboard port" "dashboard_port" "$def_dash_port"
     while ! validate_port "$dashboard_port"; do
@@ -1126,7 +1140,7 @@ config_server_wizard() {
     done
     
     safe_read "Dashboard username" "dashboard_user" "$def_dash_user"
-    safe_read "Dashboard password (leave empty to keep/generate)" "dashboard_password" ""
+    safe_read "Dashboard password (leave empty to keep/generate)" "dashboard_password" "" true
     
     # If no existing config, generate new; else update keys in place
     if [[ ! -f "$existing_file" ]]; then
