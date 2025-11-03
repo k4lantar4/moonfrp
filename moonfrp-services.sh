@@ -141,7 +141,7 @@ disable_service() {
 get_detailed_service_status() {
     local service_name="$1"
     
-    if ! systemctl list-unit-files | grep -q "$service_name.service"; then
+    if ! systemctl list-unit-files "$service_name.service" &>/dev/null; then
         echo "not_installed"
         return 0
     fi
@@ -186,8 +186,7 @@ list_frp_services() {
     
     # Get all MoonFRP services from systemd in one query (faster, always fresh)
     local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
-        awk '{print $1}' | \
+        awk '/moonfrp-/{print $1}' | \
         sed 's/.service$//' | \
         sort))
     
@@ -317,8 +316,7 @@ start_all_services() {
     
     # Get all MoonFRP services in one query
     local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
-        awk '{print $1}' | \
+        awk '/moonfrp-/{print $1}' | \
         sed 's/.service$//' | \
         sort))
     
@@ -359,8 +357,7 @@ stop_all_services() {
     
     # Get all MoonFRP services in one query
     local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
-        awk '{print $1}' | \
+        awk '/moonfrp-/{print $1}' | \
         sed 's/.service$//' | \
         sort -r))  # Reverse sort to stop visitors/clients before server
     
@@ -417,8 +414,7 @@ restart_all_services() {
 # Get all MoonFRP services
 get_moonfrp_services() {
     systemctl list-units --type=service --all --no-pager --no-legend \
-        | grep -E "moonfrp-(server|client|visitor)" \
-        | awk '{print $1}' \
+        | awk '/moonfrp-/{print $1}' \
         | sed 's/.service$//'
 }
 
@@ -701,7 +697,10 @@ view_service_logs() {
     
     echo -e "${CYAN}Logs for $service_name (last $lines lines):${NC}"
     echo
-    journalctl -u "$service_name" -n "$lines" --no-pager
+    if ! journalctl -u "$service_name" -n "$lines" --no-pager; then
+        log "ERROR" "Failed to read logs for $service_name. Try running with elevated privileges."
+        return 1
+    fi
 }
 
 # Follow service logs
@@ -715,49 +714,171 @@ follow_service_logs() {
     
     echo -e "${CYAN}Following logs for $service_name (Ctrl+C to stop):${NC}"
     echo
-    journalctl -u "$service_name" -f
+    if ! journalctl -u "$service_name" -f; then
+        log "ERROR" "Failed to follow logs for $service_name. Try running with elevated privileges."
+        return 1
+    fi
 }
 
-# Health check (simplified - uses same logic as list_frp_services)
+# Health check helpers
+get_service_config_path() {
+    local service_name="$1"
+
+    if [[ -z "$service_name" ]]; then
+        return 1
+    fi
+
+    if [[ "$service_name" == "$SERVER_SERVICE" ]]; then
+        echo "$CONFIG_DIR/frps.toml"
+        return 0
+    fi
+
+    if [[ "$service_name" == ${CLIENT_SERVICE_PREFIX}* ]]; then
+        local suffix="${service_name#${CLIENT_SERVICE_PREFIX}}"
+        echo "$CONFIG_DIR/frpc${suffix}.toml"
+        return 0
+    fi
+
+    if [[ "$service_name" == moonfrp-visitor* ]]; then
+        local suffix="${service_name#moonfrp-visitor}"
+        echo "$CONFIG_DIR/visitor${suffix}.toml"
+        return 0
+    fi
+
+    return 1
+}
+
+describe_admin_health() {
+    local service_name="$1"
+    local config_path
+    config_path=$(get_service_config_path "$service_name" 2>/dev/null || true)
+
+    if [[ -z "$config_path" ]]; then
+        echo "Unknown service type"
+        return 2
+    fi
+
+    if [[ ! -f "$config_path" ]]; then
+        echo "Config missing at $config_path"
+        return 2
+    fi
+
+    local admin_addr
+    admin_addr=$(get_toml_value "$config_path" "webServer.addr" 2>/dev/null | tr -d '"' | tr -d "'" || echo "")
+    local admin_port
+    admin_port=$(get_toml_value "$config_path" "webServer.port" 2>/dev/null | tr -d '"' | tr -d "'" || echo "")
+
+    if [[ -z "$admin_addr" ]]; then
+        admin_addr="127.0.0.1"
+    fi
+
+    if [[ -z "$admin_port" ]]; then
+        if [[ "$service_name" == "$SERVER_SERVICE" ]]; then
+            admin_port="$DEFAULT_SERVER_DASHBOARD_PORT"
+        else
+            admin_port="7400"
+        fi
+    fi
+
+    local health_url="http://${admin_addr}:${admin_port}/healthz"
+    if curl -sf --max-time 3 "$health_url" >/dev/null; then
+        echo "Reachable at $health_url"
+        return 0
+    fi
+
+    echo "Failed to reach $health_url"
+    return 1
+}
+
+# Health check leveraging FRP admin endpoints when available
 health_check() {
     local all_healthy=true
     local checked_count=0
-    
+
     echo -e "${CYAN}MoonFRP Health Check:${NC}"
     echo
-    
-    # Get all MoonFRP services in one query
+
     local all_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-        grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
-        awk '{print $1}' | \
+        awk '/moonfrp-/{print $1}' | \
         sed 's/.service$//' | \
         sort))
-    
+
     if [[ ${#all_services[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No services found to check.${NC}"
         return 1
     fi
-    
-    # Check each service
+
     for service in "${all_services[@]}"; do
         ((checked_count++))
-        local status=$(get_detailed_service_status "$service")
-        if [[ "$status" == "active_enabled" ]]; then
-            echo -e "${GREEN}✓${NC} $service (healthy)"
+        local status
+        status=$(get_detailed_service_status "$service")
+
+        local status_icon="${GRAY}○${NC}"
+        local status_note="unknown"
+        case "$status" in
+            active_enabled)
+                status_icon="${GREEN}●${NC}"
+                status_note="running, enabled"
+                ;;
+            active_disabled)
+                status_icon="${YELLOW}●${NC}"
+                status_note="running, disabled"
+                ;;
+            inactive_enabled)
+                status_icon="${RED}●${NC}"
+                status_note="stopped, enabled"
+                all_healthy=false
+                ;;
+            inactive_disabled)
+                status_icon="${GRAY}●${NC}"
+                status_note="stopped, disabled"
+                all_healthy=false
+                ;;
+            not_installed)
+                status_icon="${GRAY}○${NC}"
+                status_note="not installed"
+                all_healthy=false
+                ;;
+            *)
+                status_icon="${RED}?${NC}"
+                status_note="unknown status"
+                all_healthy=false
+                ;;
+        esac
+
+        echo -e "  $status_icon $service (${status_note})"
+
+        if [[ "$status" == active_* ]]; then
+            local admin_msg
+            admin_msg=$(describe_admin_health "$service")
+            local admin_rc=$?
+            case $admin_rc in
+                0)
+                    echo -e "     Admin endpoint: ${GREEN}${admin_msg}${NC}"
+                    ;;
+                1)
+                    echo -e "     Admin endpoint: ${RED}${admin_msg}${NC}"
+                    all_healthy=false
+                    ;;
+                2)
+                    echo -e "     Admin endpoint: ${YELLOW}${admin_msg}${NC}"
+                    all_healthy=false
+                    ;;
+            esac
         else
-            echo -e "${RED}✗${NC} $service (unhealthy - status: $status)"
-            all_healthy=false
+            echo -e "     Admin endpoint: ${GRAY}Skipped (service inactive)${NC}"
         fi
+
+        echo
     done
-    
-    echo
+
     if $all_healthy; then
-        echo -e "${GREEN}All $checked_count service(s) are healthy!${NC}"
+        echo -e "${GREEN}All ${checked_count} service(s) passed health checks.${NC}"
         return 0
-    else
-        echo -e "${RED}Some services are not healthy!${NC}"
-        return 1
     fi
+
+    echo -e "${RED}Health check detected issues. Review the details above.${NC}"
+    return 1
 }
 
 # Service management menu
@@ -775,9 +896,6 @@ service_management_menu() {
         echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
         echo
         
-        list_frp_services
-        echo
-        
         echo -e "${CYAN}Service Management Options:${NC}"
         echo "1. Start All Services"
         echo "2. Stop All Services"
@@ -786,6 +904,7 @@ service_management_menu() {
         echo "5. Health Check"
         echo "6. View Service Logs"
         echo "7. Remove All Services"
+        echo "8. Show Service Status"
         echo "0. Back to Main Menu"
         echo
         
@@ -793,65 +912,68 @@ service_management_menu() {
         
         case "$choice" in
             1)
-                # Validate: Check if any services exist
                 local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                    awk '/moonfrp-/{print}' | wc -l)
                 if [[ $services_count -eq 0 ]]; then
                     log "WARN" "No services found. Use option 4 (Setup All Services) first."
-                    read -p "Press Enter to continue..."
                 else
-                    start_all_services
-                    echo
-                    read -p "Press Enter to continue..."
+                    if ! start_all_services; then
+                        log "WARN" "Start operation reported failures. Review service logs for details."
+                    fi
                 fi
+                echo
+                read -p "Press Enter to continue..."
                 ;;
             2)
-                # Validate: Check if any services exist
                 local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                    awk '/moonfrp-/{print}' | wc -l)
                 if [[ $services_count -eq 0 ]]; then
                     log "WARN" "No services found to stop."
-                    read -p "Press Enter to continue..."
                 else
-                    stop_all_services
-                    echo
-                    read -p "Press Enter to continue..."
+                    if ! stop_all_services; then
+                        log "WARN" "Stop operation reported failures. Check service status for details."
+                    fi
                 fi
+                echo
+                read -p "Press Enter to continue..."
                 ;;
             3)
-                # Validate: Check if any services exist
                 local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                    awk '/moonfrp-/{print}' | wc -l)
                 if [[ $services_count -eq 0 ]]; then
                     log "WARN" "No services found to restart."
-                    read -p "Press Enter to continue..."
                 else
-                    restart_all_services
-                    echo
-                    read -p "Press Enter to continue..."
+                    if ! restart_all_services; then
+                        log "WARN" "Restart operation reported failures. Review service logs for more information."
+                    fi
                 fi
+                echo
+                read -p "Press Enter to continue..."
                 ;;
             4)
-                # Validate: Check if config files exist
                 if [[ ! -f "$CONFIG_DIR/frps.toml" ]] && [[ $(find "$CONFIG_DIR" -name "frpc*.toml" -o -name "visitor*.toml" 2>/dev/null | wc -l) -eq 0 ]]; then
                     log "WARN" "No configuration files found. Please create configs first (Main Menu -> 3)."
-                    read -p "Press Enter to continue..."
                 else
-                    setup_all_services
-                    echo
-                    read -p "Press Enter to continue..."
+                    if ! setup_all_services; then
+                        log "WARN" "Service setup encountered issues. Some units may require manual review or root privileges."
+                    fi
                 fi
+                echo
+                read -p "Press Enter to continue..."
                 ;;
             5)
-                health_check
+                if ! health_check; then
+                    log "WARN" "Health check reported issues. See details above."
+                else
+                    log "INFO" "All services passed health checks."
+                fi
                 echo
                 read -p "Press Enter to continue..."
                 ;;
             6)
                 # Get available services
                 local available_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | \
-                    awk '{print $1}' | \
+                    awk '/moonfrp-/{print $1}' | \
                     sed 's/.service$//' | \
                     sort))
                 
@@ -873,11 +995,14 @@ service_management_menu() {
                         continue
                     elif [[ "$service_input" =~ ^[0-9]+$ ]] && [[ "$service_input" -ge 1 ]] && [[ "$service_input" -le ${#available_services[@]} ]]; then
                         local service_name="${available_services[$((service_input - 1))]}"
-                        view_service_logs "$service_name"
+                        if ! view_service_logs "$service_name"; then
+                            log "WARN" "Unable to display logs for $service_name."
+                        fi
                     elif [[ -n "$service_input" ]]; then
-                        # User entered service name directly
                         if [[ " ${available_services[*]} " =~ " ${service_input} " ]]; then
-                            view_service_logs "$service_input"
+                            if ! view_service_logs "$service_input"; then
+                                log "WARN" "Unable to display logs for $service_input."
+                            fi
                         else
                             log "ERROR" "Service not found: $service_input"
                         fi
@@ -889,23 +1014,29 @@ service_management_menu() {
             7)
                 # Validate: Check if any services exist
                 local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-                    grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | wc -l)
+                    awk '/moonfrp-/{print}' | wc -l)
                 if [[ $services_count -eq 0 ]]; then
                     log "WARN" "No services found to remove."
-                    read -p "Press Enter to continue..."
                 else
                     echo -e "${RED}⚠ WARNING: This will remove ALL MoonFRP services!${NC}"
                     echo -e "${YELLOW}This action cannot be undone.${NC}"
                     echo
                     safe_read "Type 'yes' to confirm removal" "confirm" "no"
                     if [[ "$confirm" == "yes" ]]; then
-                        remove_all_services
+                        if ! remove_all_services; then
+                            log "WARN" "Failed to remove one or more services. Check permissions."
+                        fi
                     else
                         log "INFO" "Removal cancelled."
                     fi
-                    echo
-                    read -p "Press Enter to continue..."
                 fi
+                echo
+                read -p "Press Enter to continue..."
+                ;;
+            8)
+                list_frp_services
+                echo
+                read -p "Press Enter to continue..."
                 ;;
             0)
                 return

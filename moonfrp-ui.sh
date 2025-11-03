@@ -404,7 +404,9 @@ advanced_tools_menu() {
                 install_frp_with_version
                 ;;
             2)
-                health_check
+                if ! health_check; then
+                    log "WARN" "Health check reported issues."
+                fi
                 read -p "Press Enter to continue..."
                 ;;
             3)
