@@ -885,8 +885,6 @@ async_connection_test() {
     echo -e "${CYAN}Testing connectivity to $total servers...${NC}"
     echo
     
-    local db_path="$INDEX_DB_PATH"
-    local i=0
     local total_tests=0
     
     # Start all tests
@@ -900,11 +898,11 @@ async_connection_test() {
             sleep 0.05
         done
         
-        # Extract server_addr and server_port from index
-        local server_addr=$(sqlite3 "$db_path" \
-            "SELECT server_addr FROM config_index WHERE file_path='$config'" 2>/dev/null || echo "")
-        local server_port=$(sqlite3 "$db_path" \
-            "SELECT server_port FROM config_index WHERE file_path='$config'" 2>/dev/null || echo "")
+        # Extract server_addr and server_port from metadata
+        local server_addr
+        server_addr=$(get_config_metadata_field "$config" "server_addr")
+        local server_port
+        server_port=$(get_config_metadata_field "$config" "server_port")
         
         # Skip if no server info
         if [[ -z "$server_addr" || -z "$server_port" ]]; then
@@ -1015,3 +1013,19 @@ export -f get_moonfrp_services bulk_service_operation
 export -f bulk_start_services bulk_stop_services bulk_restart_services bulk_reload_services
 export -f bulk_operation_filtered
 export -f async_connection_test check_completed_tests run_connection_tests_all
+
+get_services_by_tag() {
+    local tag_query="$1"
+    if [[ -z "$tag_query" ]]; then
+        return 0
+    fi
+    local configs
+    configs=($(query_configs_by_tag "$tag_query" 2>/dev/null || echo ""))
+    local services=()
+    for cfg in "${configs[@]}"; do
+        [[ -n "$cfg" ]] || continue
+        local name="moonfrp-$(basename "$cfg" .toml)"
+        services+=("$name")
+    done
+    printf '%s\n' "${services[@]}"
+}
