@@ -247,14 +247,19 @@ quick_multi_ip_setup() {
     safe_read "Client ports (comma-separated)" "client_ports" "8080,8081,8082"
     safe_read "Auth token" "auth_token" ""
     
-    # Generate multi-IP configurations
-    generate_multi_ip_configs "$server_ips" "$server_ports" "$client_ports" "$auth_token"
+    if ! generate_multi_ip_configs "$server_ips" "$server_ports" "$client_ports" "$auth_token"; then
+        log "ERROR" "Failed to generate multi-IP configurations. Please review inputs and try again."
+        read -p "Press Enter to continue..."
+        return 1
+    fi
     
-    # Setup all services
-    setup_all_services
+    if ! setup_all_services; then
+        log "WARN" "Service setup encountered issues (root privileges and systemd support are required)."
+    fi
     
-    # Start all services
-    start_all_services
+    if ! start_all_services; then
+        log "WARN" "Some services failed to start. You can review logs via 'MoonFRP → Service Management'."
+    fi
     
     echo
     echo -e "${GREEN}Multi-IP setup complete!${NC}"
