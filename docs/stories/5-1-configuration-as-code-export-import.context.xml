@@ -1,0 +1,56 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>5</epicId>
+    <storyId>1</storyId>
+    <title>Configuration as Code (Export/Import)</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-03</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/5-1-configuration-as-code-export-import.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer</asA>
+    <iWant>export and import MoonFRP configuration as YAML</iWant>
+    <soThat>configurations are version-controlled and consistently deployed across environments</soThat>
+    <tasks>- Implement `moonfrp-iac.sh` module with export/import functions (AC: 1,2,3,4,5,7)
+  - Implement `export_config_yaml` (AC: 1,6,7)
+  - Implement `export_server_yaml` and `export_client_yaml` (AC: 1,6)
+  - Implement `import_config_yaml` with backup and index rebuild (AC: 2,3,5)
+  - Implement `validate_yaml_file` using `yq` with fallback (AC: 5)
+  - Implement partial import path (server/clients selection) (AC: 4)
+- Integrate CLI commands: `moonfrp export`, `moonfrp import` (AC: 1,2,3,4,5,7)
+  - Wire `moonfrp_export` and `moonfrp_import` in main CLI (AC: 1,2)
+  - Add `--dry-run` preview for import (AC: 3)
+- Tests (AC: 1–7)
+  - `test_export_all_configs_to_yaml`
+  - `test_import_yaml_creates_configs`
+  - `test_import_idempotent`
+  - `test_import_validation`
+  - `test_export_import_roundtrip`
+  - `test_partial_import`
+  - `test_yaml_git_friendly_format`</tasks>
+  </story>
+
+  <acceptanceCriteria>1. Export all configs to a single YAML file
+2. Import YAML recreates exact configuration
+3. Idempotent: running import twice produces same result
+4. Supports partial imports (specific configs only)
+5. Validates YAML before import
+6. Git-friendly format (readable diffs)
+7. Export/import completes in &lt;2s for 50 configs</acceptanceCriteria>
+
+  <artifacts>
+    <docs></docs>
+    <code></code>
+    <dependencies></dependencies>
+  </artifacts>
+
+  <constraints>Use `moonfrp-core.sh` helpers; preserve tags/metadata; ensure sorted keys and stable ordering; back up configs prior to import; auto-rollback on failure.</constraints>
+  <interfaces></interfaces>
+  <tests>
+    <standards></standards>
+    <locations></locations>
+    <ideas></ideas>
+  </tests>
+</story-context>

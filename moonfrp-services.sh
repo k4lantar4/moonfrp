@@ -206,9 +206,15 @@ list_frp_services() {
 setup_server_service() {
     local config_file="$CONFIG_DIR/frps.toml"
     
+    # Ensure directories exist before checking for config
+    if [[ ! -d "$CONFIG_DIR" ]] || [[ ! -d "$LOG_DIR" ]]; then
+        mkdir -p "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
+        chmod 755 "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
+    fi
+    
     if [[ ! -f "$config_file" ]]; then
         log "ERROR" "Server configuration not found: $config_file"
-        log "INFO" "Please run the configuration wizard first"
+        log "INFO" "Use 'moonfrp setup server' or run the configuration wizard to generate it"
         return 1
     fi
     

@@ -151,10 +151,28 @@ quick_server_setup() {
     echo -e "${CYAN}Setting up FRP server for Iran server...${NC}"
     echo
     
-    # Generate server configuration
-    local auth_token=$(generate_server_config)
+    # Generate server configuration with smart error handling
+    local auth_token
+    if ! auth_token=$(generate_server_config); then
+        log "WARN" "Automatic server config generation failed. Attempting to prepare directories..."
+        mkdir -p "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
+        chmod 755 "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
+        if ! auth_token=$(generate_server_config); then
+            log "ERROR" "Failed to generate server configuration automatically. Launching Server Configuration Wizard."
+            config_server_wizard
+            # After wizard, verify file exists
+            if [[ ! -f "$CONFIG_DIR/frps.toml" ]]; then
+                log "ERROR" "Server configuration not created. Aborting quick setup."
+                read -p "Press Enter to continue..."
+                return 1
+            fi
+            # No auth token returned by wizard path; extract from file for display
+            auth_token=$(get_toml_value "$CONFIG_DIR/frps.toml" "auth.token" 2>/dev/null | sed 's/["\'\'']//g' || echo "")
+        fi
+    fi
     
-    # Setup service
+    # Setup service (create directories if needed before setup)
+    mkdir -p "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
     setup_server_service
     
     # Start service
@@ -308,10 +326,9 @@ main_menu() {
         echo "1. Quick Setup"
         echo "2. Service Management"
         echo "3. Configuration Management"
-        echo "4. System Status"
-        echo "5. Search & Filter"
-        echo "6. Advanced Tools"
-        echo "7. Download & Install FRP v$FRP_VERSION"
+        echo "4. Config Details (Copy-Paste Ready)"
+        echo "5. Advanced Tools"
+        echo "6. System Optimization"
         echo "r. Refresh Status"
         echo "0. Exit"
         echo
@@ -332,15 +349,10 @@ main_menu() {
                 show_config_details
                 ;;
             5)
-                search_filter_menu
-                ;;
-            6)
                 advanced_tools_menu
                 ;;
-            7)
-                show_header "Install FRP" "Download & Install FRP v$FRP_VERSION"
-                install_frp
-                read -p "Press Enter to continue..."
+            6)
+                optimize_system
                 ;;
             r|R)
                 # Manual refresh (Story 3.1)
@@ -366,15 +378,17 @@ advanced_tools_menu() {
         fi
         
         show_header "Advanced Tools" "System Utilities"
-        
+
         echo -e "${CYAN}Advanced Tools:${NC}"
-        echo "1. Health Check"
-        echo "2. View Logs"
-        echo "3. Tag Management"
-        echo "4. Backup Configurations"
-        echo "5. Restore Configurations"
-        echo "6. Update MoonFRP"
-        echo "7. Uninstall MoonFRP"
+        echo "1. Download & Install FRP (Version Selectable)"
+        echo "2. Health Check"
+        echo "3. View Logs"
+        echo "4. File Viewer & Editor"
+        echo "5. Tag Management"
+        echo "6. Backup Configurations"
+        echo "7. Restore Configurations"
+        echo "8. Update MoonFRP"
+        echo "9. Uninstall MoonFRP"
         echo "0. Back to Main Menu"
         echo
         
@@ -382,28 +396,34 @@ advanced_tools_menu() {
         
         case "$choice" in
             1)
+                install_frp_with_version
+                ;;
+            2)
                 health_check
                 read -p "Press Enter to continue..."
                 ;;
-            2)
+            3)
                 view_logs_menu
                 ;;
-            3)
+            4)
+                quick_file_viewer
+                ;;
+            5)
                 tag_management_menu
                 ;;
-            4)
+            6)
                 backup_configurations
                 read -p "Press Enter to continue..."
                 ;;
-            5)
+            7)
                 restore_configurations
                 read -p "Press Enter to continue..."
                 ;;
-            6)
+            8)
                 update_moonfrp
                 read -p "Press Enter to continue..."
                 ;;
-            7)
+            9)
                 uninstall_moonfrp
                 read -p "Press Enter to continue..."
                 ;;
@@ -1374,3 +1394,106 @@ export -f backup_configurations restore_configurations update_moonfrp uninstall_
 export -f show_config_details display_config_summary export_config_summary
 export -f get_cached_status refresh_status_cache_sync refresh_status_cache_background
 export -f generate_quick_status get_frp_version_cached display_cached_status init_status_cache
+
+#===============================================================================
+# MINIMAL WRAPPERS (Versioned install & File Viewer)
+#===============================================================================
+
+# Prompt for FRP version and install
+install_frp_with_version() {
+    show_header "Install FRP" "Download & Install FRP Binaries"
+    
+    safe_read "FRP Version (default: 0.65.0)" "frp_version" "0.65.0"
+    
+    if [[ ! "$frp_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log "ERROR" "Invalid version format. Use X.Y.Z (e.g., 0.65.0)"
+        read -p "Press Enter to continue..."
+        return 1
+    fi
+    
+    local old_version="${FRP_VERSION:-}"
+    export FRP_VERSION="$frp_version"
+    install_frp
+    local rc=$?
+    if [[ -n "$old_version" ]]; then
+        export FRP_VERSION="$old_version"
+    fi
+    read -p "Press Enter to continue..."
+    return $rc
+}
+
+# Minimal file viewer (view-only)
+quick_file_viewer() {
+    show_header "File Viewer" "View Configuration & Service Files"
+    
+    echo -e "${CYAN}Available Files:${NC}"
+    echo "1. Server Config (frps.toml)"
+    echo "2. Client Configs (frpc*.toml)"
+    echo "3. Systemd Service Files"
+    echo "4. Custom File Path"
+    echo "0. Back"
+    echo
+    
+    safe_read "Select option" "choice" "0"
+    case "$choice" in
+        1)
+            if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+                echo -e "${CYAN}File: $CONFIG_DIR/frps.toml${NC}"; echo
+                cat "$CONFIG_DIR/frps.toml" || true
+            else
+                log "ERROR" "Server config not found"
+            fi
+            ;;
+        2)
+            local configs=($(find "$CONFIG_DIR" -maxdepth 1 -name "frpc*.toml" -type f | sort))
+            if [[ ${#configs[@]} -eq 0 ]]; then
+                log "WARN" "No client configs found"
+            else
+                local idx=1
+                for f in "${configs[@]}"; do
+                    echo "$idx. $f"; idx=$((idx+1))
+                done
+                echo "0. Back"
+                safe_read "Select config" "sel" "0"
+                if [[ "$sel" =~ ^[0-9]+$ ]] && [[ "$sel" -ge 1 ]] && [[ "$sel" -le ${#configs[@]} ]]; then
+                    local file="${configs[$((sel-1))]}"
+                    echo -e "${CYAN}File: $file${NC}"; echo
+                    cat "$file" || true
+                fi
+            fi
+            ;;
+        3)
+            local services=($(find /etc/systemd/system -maxdepth 1 -name "moonfrp*.service" -type f 2>/dev/null | sort))
+            if [[ ${#services[@]} -eq 0 ]]; then
+                log "WARN" "No service files found"
+            else
+                local idx=1
+                for f in "${services[@]}"; do
+                    echo "$idx. $f"; idx=$((idx+1))
+                done
+                echo "0. Back"
+                safe_read "Select service file" "sel" "0"
+                if [[ "$sel" =~ ^[0-9]+$ ]] && [[ "$sel" -ge 1 ]] && [[ "$sel" -le ${#services[@]} ]]; then
+                    local file="${services[$((sel-1))]}"
+                    echo -e "${CYAN}File: $file${NC}"; echo
+                    cat "$file" || true
+                fi
+            fi
+            ;;
+        4)
+            safe_read "Enter file path" "custom_path" ""
+            if [[ -n "$custom_path" ]] && [[ -f "$custom_path" ]]; then
+                echo -e "${CYAN}File: $custom_path${NC}"; echo
+                cat "$custom_path" || true
+            else
+                log "ERROR" "File not found"
+            fi
+            ;;
+        0)
+            return ;;
+    esac
+    echo
+    read -p "Press Enter to continue..."
+}
+
+export -f install_frp_with_version quick_file_viewer

@@ -24,6 +24,7 @@ source "$SCRIPT_DIR/moonfrp-services.sh"
 source "$SCRIPT_DIR/moonfrp-ui.sh"
 source "$SCRIPT_DIR/moonfrp-templates.sh"
 source "$SCRIPT_DIR/moonfrp-search.sh"
+source "$SCRIPT_DIR/moonfrp-optimize.sh"
 
 #==============================================================================
 # MAIN EXECUTION

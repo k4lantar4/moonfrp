@@ -244,6 +244,7 @@ safe_read() {
     local prompt="$1"
     local var_name="$2"
     local default_value="${3:-}"
+    local allow_empty="${4:-false}"
     
     while true; do
         if [[ -n "$default_value" ]]; then
@@ -257,6 +258,8 @@ safe_read() {
                 eval "$var_name=\"$input\""
             elif [[ -n "$default_value" ]]; then
                 eval "$var_name=\"$default_value\""
+            elif [[ "$allow_empty" == "true" ]]; then
+                eval "$var_name=\"\""
             else
                 log "WARN" "Input cannot be empty"
                 continue
