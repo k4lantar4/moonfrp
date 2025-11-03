@@ -79,10 +79,48 @@ development_status:
     effort: 1.5 days
   
   2-4-configuration-templates:
-    status: review
+    status: done
     story_id: MOONFRP-E02-S04
     epic: 2
     title: Configuration Templates
     priority: P1
     effort: 1.5 days
+  
+  # Epic 3: Performance & UX at Scale
+  epic-3:
+    status: backlog
+    epic_id: MOONFRP-E03
+    title: Performance & UX at Scale
+  
+  3-1-cached-status-display:
+    status: done
+    story_id: MOONFRP-E03-S01
+    epic: 3
+    title: Cached Status Display
+    priority: P1
+    effort: 1.5 days
+  
+  3-2-search-filter-interface:
+    status: done
+    story_id: MOONFRP-E03-S02
+    epic: 3
+    title: Search & Filter Interface
+    priority: P1
+    effort: 1.5 days
+  
+  3-3-enhanced-config-details-view:
+    status: done
+    story_id: MOONFRP-E03-S03
+    epic: 3
+    title: Enhanced Config Details View
+    priority: P1
+    effort: 1 day
+  
+  3-4-async-connection-testing:
+    status: done
+    story_id: MOONFRP-E03-S04
+    epic: 3
+    title: Async Connection Testing
+    priority: P1
+    effort: 1 day
 

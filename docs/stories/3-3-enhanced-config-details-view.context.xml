@@ -1,0 +1,207 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3</storyId>
+    <title>Enhanced Config Details View</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T22:10:00.000Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/3-3-enhanced-config-details-view.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer managing 50+ tunnels</asA>
+    <iWant>a one-screen summary of all configs grouped by server with copy-paste ready format</iWant>
+    <soThat>I can quickly share config information (server IPs, ports, tokens) with team members without manually extracting from files</soThat>
+    <tasks>
+      - Enhance show_config_details() function (AC: 1, 2, 3, 4)
+        - Update function in moonfrp-ui.sh
+        - Query SQLite index for all configs
+        - Group configs by server IP using associative array
+        - Display grouped configs with server headers
+        - Format output for copy-paste readiness
+      - Implement config summary display (AC: 4)
+        - Create display_config_summary() function
+        - Query index for config details: type, server_addr, server_port, bind_port, proxy_count
+        - Get auth token from TOML file (masked display: first 8 chars + last 4 chars)
+        - Get service status using systemctl is-active
+        - Display status icon: green dot (active), red dot (failed), gray dot (inactive)
+        - Display tags if available (use Story 2.3 tagging)
+      - Implement server grouping (AC: 3)
+        - Create server_groups associative array
+        - Iterate through all configs and group by server_addr
+        - Sort server IPs for consistent display
+        - Display server section headers with visual separators
+      - Implement token masking (AC: 4)
+        - Extract auth token from TOML config file
+        - Mask display: show first 8 characters and last 4 characters
+        - Format: `${token:0:8}...${token: -4}`
+      - Implement overall statistics display (AC: 1)
+        - Query index for total_configs (COUNT)
+        - Query index for total_proxies (SUM)
+        - Query index for unique_servers (COUNT DISTINCT server_addr)
+        - Display statistics section at bottom
+      - Implement export functionality (AC: 6)
+        - Create export_config_summary() function
+        - Support text format: redirect show_config_details() output to file
+        - Support JSON format: Use sqlite3 -json to export index data
+        - Save exports to $HOME/.moonfrp/config-summary.{format}
+        - Add export options menu after config details display
+      - Integrate connection test option (AC: 5)
+        - Add "Run connection tests" option to config details menu
+        - Call run_connection_tests_all() from Story 3.4 (when available)
+        - Show connection test results if available
+      - Update main menu integration (AC: 1)
+        - Update main menu option 4 to call enhanced show_config_details()
+        - Ensure menu integration works correctly
+      - Testing (AC: 1, 2, 3, 4, 5, 6)
+        - Create test_config_details_grouped_by_server() test
+        - Create test_config_details_display_all_fields() test
+        - Create test_export_to_text() test
+        - Create test_export_to_json() test
+        - Create test_copy_paste_format() test
+        - Test token masking display
+        - Test service status indicator
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. One-screen summary of all configs
+    2. Copy-paste ready format for sharing
+    3. Grouped by server IP for clarity
+    4. Shows: server IPs, ports, token (masked), proxy count
+    5. Quick connection test indicator
+    6. Export to text/JSON/YAML
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics/epic-03-performance-ux.md" title="Epic 3: Performance &amp; UX at Scale" section="Story 3.3: Enhanced Config Details View">
+        Provides complete problem statement, acceptance criteria, detailed technical specification with implementation patterns, show_config_details() enhancement, display_config_summary() function, server grouping logic, token masking pattern, statistics queries, export functionality, and display format examples. Includes complete code examples for all functions.
+      </doc>
+      <doc path="docs/stories/3-3-enhanced-config-details-view.md" title="Story 3.3: Enhanced Config Details View">
+        Complete story definition with requirements context, implementation patterns, dependencies, integration points, display format specifications, token masking security considerations, export format details, and testing strategy. Specifies file locations, function modifications, and menu integration requirements.
+      </doc>
+      <doc path="docs/epics/epic-01-scale-foundation.md" title="Epic 1: Critical Fixes &amp; Scale Foundation" section="Story 1.2: Implement Config Index">
+        Establishes SQLite index foundation used by this story for fast config queries. Documents database schema, query patterns for config details, and performance characteristics required for statistics queries.
+      </doc>
+    </docs>
+    <code>
+      <file path="moonfrp-ui.sh" kind="ui-module" symbol="show_system_status" lines="34-96" reason="Current status display function that may have similar patterns - reference for display formatting but will be replaced with enhanced show_config_details()">
+        Shows current status display pattern. Will be enhanced by this story to provide one-screen summary with grouping and export functionality. Reference for display formatting patterns.
+      </file>
+      <file path="moonfrp-index.sh" kind="index-module" symbol="get_index_stats" lines="378-408" reason="Function demonstrates SQLite query patterns for statistics - shows COUNT(*), SUM(), COUNT(DISTINCT) patterns needed for statistics display">
+        Demonstrates SQLite query patterns for statistics: COUNT(*), SUM(proxy_count), COUNT(DISTINCT server_addr). Patterns to use in show_config_details() for overall statistics section.
+      </file>
+      <file path="moonfrp-index.sh" kind="index-module" symbol="query_configs_by_type" lines="287-319" reason="Function demonstrates SQLite query pattern for getting configs - shows SELECT file_path FROM config_index pattern">
+        Shows SQLite query pattern for getting all configs: SELECT file_path FROM config_index ORDER BY ... Pattern to use in show_config_details() for querying all configs.
+      </file>
+      <file path="moonfrp-index.sh" kind="index-module" symbol="list_config_tags" lines="553-590" reason="Tag listing function from Story 2.3 - used by display_config_summary() to display tags for each config">
+        Tag listing function that returns colon-separated tag:value pairs for a config file. Used by display_config_summary() to display tags. Format: tag_key:tag_value (multiple lines).
+      </file>
+      <file path="moonfrp-config.sh" kind="config-management" symbol="get_toml_value" lines="16-31" reason="TOML value extraction function used to get auth.token from config files - needed for token masking display">
+        TOML value extraction function. Used to extract auth.token from config files for masking display. Pattern: get_toml_value "$config" "auth.token".
+      </file>
+      <file path="moonfrp-services.sh" kind="service-module" symbol="get_detailed_service_status" lines="141-153" reason="Service status function that demonstrates systemctl is-active pattern - used for service status indicator">
+        Shows service status checking pattern using systemctl is-active. Used by display_config_summary() to get service status for status icon display. Returns status string (active, inactive, etc.).
+      </file>
+      <file path="moonfrp-ui.sh" kind="ui-module" symbol="show_header" lines="19-32" reason="Header display function used in show_config_details() for formatted header display">
+        Header display function with title and subtitle parameters. Used by show_config_details() for formatted header. Provides consistent UI formatting.
+      </file>
+      <file path="moonfrp-ui.sh" kind="ui-module" symbol="safe_read" reason="Safe input reading function used throughout UI - needed for export options menu in show_config_details()">
+        Safe input reading function with prompt, variable name, and default value parameters. Used by show_config_details() for export options menu. Provides consistent input handling.
+      </file>
+      <file path="moonfrp-ui.sh" kind="ui-module" symbol="main_menu" lines="294-363" reason="Main menu function where show_config_details() is already integrated as option 4 - verify integration works correctly">
+        Main menu function that already has option 4 for config details. Verify integration works correctly with enhanced show_config_details() function.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="log" reason="Logging function used throughout codebase for error/info/warn messages - used in export_config_summary()">
+        Standard logging function for all modules. Used in export_config_summary() for export confirmation messages.
+      </file>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash">Bash shell scripting (system dependency)</package>
+        <package name="sqlite3">SQLite3 command-line tool for fast index queries and JSON export (required for config queries and JSON export)</package>
+        <package name="systemctl">Systemd service manager for service status checks (required for status indicator)</package>
+        <package name="basename">Basename command for extracting config names (coreutils)</package>
+      </ecosystem>
+      <ecosystem name="database">
+        <package name="SQLite3">Embedded SQL database engine for config index queries (from Story 1.2)</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="file-location">Enhanced show_config_details() function must be in moonfrp-ui.sh - modify existing function</constraint>
+    <constraint type="performance">Display should load quickly using index queries - avoid file parsing for config details</constraint>
+    <constraint type="performance">Token extraction from TOML files should be fast (&lt;100ms per config) - use get_toml_value() efficiently</constraint>
+    <constraint type="dependency">Requires Story 1.2 config index (SQLite database) for fast config queries - uses query patterns from index module</constraint>
+    <constraint type="dependency">Requires Story 2.3 tagging system (list_config_tags() function) for tag display - fallback gracefully if not available</constraint>
+    <constraint type="dependency">Requires Story 3.4 connection testing (run_connection_tests_all() function) for connection test option - fallback gracefully if not available</constraint>
+    <constraint type="token-masking">Token masking format: show first 8 characters and last 4 characters - format: `${auth_token:0:8}...${auth_token: -4}`</constraint>
+    <constraint type="server-grouping">Group configs by server_addr using associative array - handle empty server_addr as "server" group</constraint>
+    <constraint type="export-format">Text export: redirect show_config_details() output to file. JSON export: use sqlite3 -json flag for structured data</constraint>
+    <constraint type="export-location">Export files saved to $HOME/.moonfrp/config-summary.{format} - directory must be writable</constraint>
+    <constraint type="menu-integration">Must update main menu option 4 to use enhanced show_config_details() - verify integration works correctly</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="show_config_details" kind="bash-function" signature="show_config_details() - Enhanced config details view with grouping and export" path="moonfrp-ui.sh">
+      Enhanced config details display function. Queries SQLite index for all configs, groups by server IP, displays grouped config summaries, shows overall statistics, provides export options menu. Integrates with connection testing from Story 3.4.
+    </interface>
+    <interface name="display_config_summary" kind="bash-function" signature="display_config_summary(config_file) - Display individual config summary with all fields" path="moonfrp-ui.sh">
+      Individual config summary display function. Queries index for config details, extracts token from TOML file, checks service status, displays formatted summary with status icon, token masking, and tags. Called by show_config_details() for each config.
+    </interface>
+    <interface name="export_config_summary" kind="bash-function" signature="export_config_summary(format) - Export config summary to file" path="moonfrp-ui.sh">
+      Export function accepting format (text|json). Text export redirects show_config_details() output. JSON export uses sqlite3 -json flag. Saves to $HOME/.moonfrp/config-summary.{format}.
+    </interface>
+    <interface name="sqlite3 config query" kind="database-query" signature="SELECT file_path FROM config_index ORDER BY config_type, server_addr" path="moonfrp-index.sh via sqlite3">
+      SQL query pattern for getting all configs ordered by type and server. Execute via: sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr".
+    </interface>
+    <interface name="sqlite3 config details query" kind="database-query" signature="SELECT config_type, server_addr, server_port, bind_port, proxy_count FROM config_index WHERE file_path='...'" path="moonfrp-index.sh via sqlite3">
+      SQL query pattern for getting config details. Execute via: sqlite3 "$db_path" "SELECT column FROM config_index WHERE file_path='...'". Used multiple times in display_config_summary().
+    </interface>
+    <interface name="sqlite3 statistics queries" kind="database-query" signature="SELECT COUNT(*), SUM(proxy_count), COUNT(DISTINCT server_addr) FROM config_index" path="moonfrp-index.sh via sqlite3">
+      SQL queries for statistics: COUNT(*) for total configs, SUM(proxy_count) for total proxies, COUNT(DISTINCT server_addr) for unique servers. Execute separately for each statistic.
+    </interface>
+    <interface name="sqlite3 JSON export" kind="database-query" signature="sqlite3 -json &quot;$db_path&quot; &quot;SELECT * FROM config_index&quot;" path="sqlite3">
+      JSON export pattern using sqlite3 -json flag. Execute via: sqlite3 -json "$db_path" "SELECT * FROM config_index" > "$output_file". Used by export_config_summary() for JSON format.
+    </interface>
+    <interface name="list_config_tags" kind="bash-function" signature="list_config_tags(config_file) - List tags for config from Story 2.3" path="moonfrp-index.sh">
+      Tag listing function from Story 2.3. Returns colon-separated tag:value pairs (multiple lines). Used by display_config_summary() to display tags. Must check availability before calling.
+    </interface>
+    <interface name="get_toml_value" kind="bash-function" signature="get_toml_value(file, key) - Extract TOML value from file" path="moonfrp-config.sh">
+      TOML value extraction function. Used to extract auth.token from config files for masking display. Pattern: get_toml_value "$config" "auth.token" | sed 's/["'\'']//g'.
+    </interface>
+    <interface name="systemctl is-active" kind="system-command" signature="systemctl is-active service_name" path="systemctl">
+      Service status check command. Used by display_config_summary() to get service status for status icon. Returns 0 if active, non-zero if inactive. Pattern: systemctl is-active "moonfrp-$config_name".
+    </interface>
+    <interface name="run_connection_tests_all" kind="bash-function" signature="run_connection_tests_all() - Run connection tests on all client configs from Story 3.4" path="moonfrp-services.sh">
+      Connection testing function from Story 3.4 (when available). Called from show_config_details() export options menu. Must check availability before calling.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows bash unit testing patterns established in previous stories. Functional tests must verify server grouping, all field display, token masking, export formats, copy-paste format, and service status indicators. Tests should follow pattern from tests/test_config_index.sh with focus on display formatting and export functionality.
+    </standards>
+    <locations>
+      Test file location: tests/test_enhanced_config_details_view.sh (create following pattern from tests/test_config_index.sh)
+    </locations>
+    <ideas>
+      <test ac="3">test_config_details_grouped_by_server - Functional test: verify show_config_details() groups configs by server_addr correctly, displays server headers, handles empty server_addr as "server" group.</test>
+      <test ac="4">test_config_details_display_all_fields - Functional test: verify display_config_summary() displays all required fields: type, server, ports, token (masked), proxy count, tags, service status icon.</test>
+      <test ac="4">test_token_masking_display - Functional test: verify token masking shows only first 8 characters and last 4 characters, format: `${token:0:8}...${token: -4}`.</test>
+      <test ac="4">test_service_status_indicator - Functional test: verify service status icon displays correctly: green dot (active), red dot (failed), gray dot (inactive).</test>
+      <test ac="1">test_statistics_display - Functional test: verify overall statistics section displays total_configs (COUNT), total_proxies (SUM), unique_servers (COUNT DISTINCT) correctly.</test>
+      <test ac="2">test_copy_paste_format - Functional test: verify output format is readable and copy-paste ready, includes all necessary information, properly formatted for sharing.</test>
+      <test ac="6">test_export_to_text - Functional test: verify text export saves show_config_details() output to $HOME/.moonfrp/config-summary.txt, file is readable, contains all information.</test>
+      <test ac="6">test_export_to_json - Functional test: verify JSON export uses sqlite3 -json flag, saves to $HOME/.moonfrp/config-summary.json, JSON is valid, contains all config_index data.</test>
+      <test ac="5">test_connection_test_option - Functional test: verify connection test option appears in menu, calls run_connection_tests_all() when available, handles gracefully when Story 3.4 not available.</test>
+      <test ac="3">test_server_grouping_sort_order - Functional test: verify server groups are displayed in consistent order (sorted), configs within groups are ordered correctly.</test>
+      <test ac="4">test_tag_display - Functional test: verify tags are displayed correctly when available using list_config_tags(), handles gracefully when Story 2.3 not available.</test>
+      <test ac="1">test_one_screen_summary - Functional test: verify all configs can be displayed in one screen summary, grouped appropriately, statistics section included.</test>
+    </ideas>
+  </tests>
+</story-context>
+

@@ -1,0 +1,194 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>4</storyId>
+    <title>Async Connection Testing</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T22:15:00.000Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/3-4-async-connection-testing.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer managing 50+ tunnels</asA>
+    <iWant>to test connectivity to all tunnel servers in parallel with live results</iWant>
+    <soThat>I can verify all connections are working in &lt;5 seconds instead of 100+ seconds of sequential tests</soThat>
+    <tasks>
+      - Implement parallel connection test framework (AC: 1, 3, 4)
+        - Create async_connection_test() function in moonfrp-services.sh
+        - Accept configs array as parameter
+        - Set max_parallel=20 concurrent tests
+        - Set timeout=1s per test
+        - Use background processes with PID tracking
+        - Implement job queue management (wait when max_parallel reached)
+      - Implement connection test per config (AC: 1, 3)
+        - Extract server_addr and server_port from index for each config
+        - Use bash TCP test: `timeout 1 bash -c "echo &gt; /dev/tcp/$server_addr/$server_port"`
+        - Write result to temporary file: "$tmp_dir/$i.result" (OK or FAIL)
+        - Handle timeout and connection failures
+      - Implement live result display (AC: 2, 5)
+        - Create check_completed_tests() function
+        - Poll background processes using `kill -0` to check completion
+        - Read result files as they complete
+        - Display results immediately: `server:port ✓ OK` or `server:port ✗ FAIL`
+        - Update progress indicator
+      - Implement progress tracking (AC: 5)
+        - Track started tests count
+        - Track completed tests count
+        - Display progress: "Testing X/Y servers..."
+        - Update display as tests complete
+      - Implement completion summary (AC: 6)
+        - Count successful connections (OK results)
+        - Count failed connections (FAIL results)
+        - Display summary: "✓ Reachable: X | ✗ Unreachable: Y"
+        - Format summary with visual separators
+      - Implement user-facing function (AC: 1, 2, 4)
+        - Create run_connection_tests_all() function
+        - Query index for all client configs
+        - Call async_connection_test() with configs
+        - Handle empty config list gracefully
+        - Provide clear header and prompt
+      - Implement cancellation support (AC: 4)
+        - Handle SIGINT (Ctrl+C) gracefully
+        - Clean up background processes on cancel
+        - Clean up temporary directory on exit
+        - Use trap for cleanup: `trap "rm -rf $tmp_dir" EXIT`
+      - Integrate with config details view (AC: 1)
+        - Add connection test option to Story 3.3 config details menu
+        - Call run_connection_tests_all() from menu option
+      - Performance testing (AC: 1, 3)
+        - Create test_async_connection_test_50_servers_under_5s() test
+        - Create test_async_connection_test_timeout() test
+        - Verify 50 servers tested in &lt;5 seconds
+        - Verify timeout per test is 1s
+      - Functional testing (AC: 2, 4, 5, 6)
+        - Create test_async_connection_test_live_results() test
+        - Create test_async_connection_test_cancellation() test
+        - Create test_async_connection_test_summary() test
+        - Test progress indicator updates
+        - Test cleanup on cancellation
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. Test 50 IPs in &lt;5 seconds total
+    2. Results display as they complete (live updates)
+    3. Timeout per test: 1s
+    4. Non-blocking: can cancel anytime
+    5. Visual progress indicator
+    6. Summary: X reachable, Y unreachable
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics/epic-03-performance-ux.md" title="Epic 3: Performance &amp; UX at Scale" section="Story 3.4: Async Connection Testing">
+        Provides complete problem statement, acceptance criteria, detailed technical specification with implementation patterns, async_connection_test() framework, connection test per config, live result display, progress tracking, completion summary, cancellation support, and performance requirements. Includes complete code examples for all functions.
+      </doc>
+      <doc path="docs/stories/3-4-async-connection-testing.md" title="Story 3.4: Async Connection Testing">
+        Complete story definition with requirements context, implementation patterns, dependencies, integration points, parallel execution design, background test patterns, completion checking patterns, and testing strategy. Specifies file locations, new functions, and integration requirements.
+      </doc>
+      <doc path="docs/epics/epic-01-scale-foundation.md" title="Epic 1: Critical Fixes &amp; Scale Foundation" section="Story 1.2: Implement Config Index">
+        Establishes SQLite index foundation used by this story for extracting server_addr and server_port. Documents database schema, query patterns, and performance characteristics required for fast config queries.
+      </doc>
+      <doc path="docs/epics/epic-02-bulk-operations.md" title="Epic 2: Bulk Operations" section="Story 2.1: Parallel Service Management">
+        Establishes parallel execution framework used by this story. Documents background process patterns, PID tracking, job queue management, completion checking, and polling patterns.
+      </doc>
+    </docs>
+    <code>
+      <file path="moonfrp-services.sh" kind="service-module" symbol="bulk_service_operation" lines="366-512" reason="Parallel execution framework from Story 2.1 - demonstrates background process pattern, PID tracking, job queue management, completion checking, and polling pattern needed for async_connection_test()">
+        Parallel execution framework demonstrating background processes with PID tracking, job queue management (wait when max_parallel reached), completion checking using kill -0, result file pattern, polling pattern (sleep 0.1), and temporary directory management with trap cleanup.
+      </file>
+      <file path="moonfrp-index.sh" kind="index-module" symbol="query_configs_by_type" lines="287-319" reason="Function to query configs by type - used by run_connection_tests_all() to get all client configs">
+        Query function for getting configs by type. Used by run_connection_tests_all() to get all client configs. Pattern: query_configs_by_type "client" returns pipe-separated config file paths.
+      </file>
+      <file path="moonfrp-index.sh" kind="index-module" symbol="INDEX_DB_PATH" reason="Database path constant used by all functions - defines location of SQLite index database">
+        Index database path: $HOME/.moonfrp/index.db. Used by async_connection_test() to query server_addr and server_port for each config.
+      </file>
+      <file path="moonfrp-ui.sh" kind="ui-module" symbol="show_header" lines="19-32" reason="Header display function used by run_connection_tests_all() for formatted header display">
+        Header display function with title and subtitle parameters. Used by run_connection_tests_all() for formatted header. Provides consistent UI formatting.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="log" reason="Logging function used throughout codebase for error/info/warn messages - used in connection test functions">
+        Standard logging function for all modules. Used in connection test functions for error handling and debug messages.
+      </file>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash">Bash shell scripting with TCP support (system dependency - requires /dev/tcp support)</package>
+        <package name="sqlite3">SQLite3 command-line tool for fast index queries (required for extracting server_addr and server_port)</package>
+        <package name="timeout">Timeout command for per-test timeout (coreutils or timeout package)</package>
+        <package name="mktemp">Temporary directory creation for result files (coreutils)</package>
+      </ecosystem>
+      <ecosystem name="database">
+        <package name="SQLite3">Embedded SQL database engine for config index queries (from Story 1.2)</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="file-location">Connection testing functions must be in moonfrp-services.sh - following existing service module structure</constraint>
+    <constraint type="performance">50 servers tested in &lt;5 seconds total (vs 100+ seconds sequential - 20x improvement required)</constraint>
+    <constraint type="performance">Parallel execution: max 20 concurrent tests - balance between speed and system load</constraint>
+    <constraint type="performance">Timeout per test: 1s - timeout command with 1 second limit</constraint>
+    <constraint type="performance">Live result display: results shown as they complete - non-blocking display updates</constraint>
+    <constraint type="dependency">Requires Story 1.2 config index (SQLite database) for extracting server_addr and server_port - uses query patterns from index module</constraint>
+    <constraint type="dependency">Requires Story 2.1 parallel execution patterns - uses background process, PID tracking, job queue management patterns</constraint>
+    <constraint type="dependency">Requires Story 3.3 config details view integration - adds connection test option to config details menu</constraint>
+    <constraint type="tcp-test">Bash TCP test pattern: `timeout 1 bash -c "echo &gt; /dev/tcp/$server_addr/$server_port"` - requires bash with /dev/tcp support</constraint>
+    <constraint type="result-storage">Test results stored in temporary files: "$tmp_dir/$i.result" with OK or FAIL values - allows background process communication</constraint>
+    <constraint type="cleanup">Must use trap for cleanup: `trap "rm -rf $tmp_dir" EXIT` - ensures temporary directory removed on exit or cancellation</constraint>
+    <constraint type="cancellation">Must handle SIGINT (Ctrl+C) gracefully - clean up background processes and temporary files on cancellation</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="async_connection_test" kind="bash-function" signature="async_connection_test(configs...) - Core parallel connection testing framework" path="moonfrp-services.sh">
+      Core parallel connection testing framework accepting config array. Sets max_parallel=20, timeout=1s per test, uses background processes with PID tracking, implements job queue management, displays live results, generates summary. Performance target: 50 servers in &lt;5 seconds.
+    </interface>
+    <interface name="check_completed_tests" kind="bash-function" signature="check_completed_tests(pids, results, tmp_dir) - Check and display completed test results" path="moonfrp-services.sh">
+      Completion checking function that polls background processes using kill -0, reads result files as they complete, displays results immediately with server:port and ✓ OK or ✗ FAIL indicators, updates progress tracking. Called repeatedly during test execution.
+    </interface>
+    <interface name="run_connection_tests_all" kind="bash-function" signature="run_connection_tests_all() - User-facing function for testing all client configs" path="moonfrp-services.sh">
+      User-facing function that queries index for all client configs, calls async_connection_test() with configs, handles empty config list gracefully, provides clear header and prompt. Integrates with Story 3.3 config details menu.
+    </interface>
+    <interface name="bash TCP test" kind="system-command" signature="timeout 1 bash -c &quot;echo &gt; /dev/tcp/$server_addr/$server_port&quot;" path="bash">
+      Bash built-in TCP connection test. Requires bash with /dev/tcp support. Used in background process for each connection test. Returns 0 on success, non-zero on failure or timeout. Pattern: timeout 1 bash -c "echo &gt; /dev/tcp/$server_addr/$server_port" 2&gt;/dev/null.
+    </interface>
+    <interface name="sqlite3 server query" kind="database-query" signature="SELECT server_addr, server_port FROM config_index WHERE file_path='...'" path="moonfrp-index.sh via sqlite3">
+      SQL query pattern for extracting server_addr and server_port for each config. Execute via: sqlite3 "$db_path" "SELECT server_addr, server_port FROM config_index WHERE file_path='...'". Used in async_connection_test() for each config.
+    </interface>
+    <interface name="query_configs_by_type" kind="bash-function" signature="query_configs_by_type(config_type) - Query configs by type from Story 1.2" path="moonfrp-index.sh">
+      Query function for getting configs by type. Used by run_connection_tests_all() to get all client configs. Returns pipe-separated file paths. Pattern: query_configs_by_type "client".
+    </interface>
+    <interface name="kill -0" kind="system-command" signature="kill -0 $pid" path="kill">
+      Process status check command. Returns 0 if process exists, non-zero if process has terminated. Used by check_completed_tests() to poll for completion. Pattern: kill -0 "$pid" 2&gt;/dev/null.
+    </interface>
+    <interface name="mktemp" kind="system-command" signature="mktemp -d" path="mktemp">
+      Temporary directory creation command. Used to create temporary directory for result files. Pattern: tmp_dir=$(mktemp -d). Must clean up with trap.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows bash unit testing patterns established in previous stories. Performance testing is critical - must verify &lt;5 seconds total time for 50 servers, 1s timeout per test, max 20 concurrent tests. Functional tests must verify live result display, cancellation handling, progress indicator updates, and summary generation. Tests should follow pattern from tests/test_bulk_service_operations.sh with performance test helpers using date +%s%N timing and mock TCP connections.
+    </standards>
+    <locations>
+      Test file location: tests/test_async_connection_testing.sh (create following pattern from tests/test_bulk_service_operations.sh with mock TCP connections)
+    </locations>
+    <ideas>
+      <test ac="1">test_async_connection_test_50_servers_under_5s - Performance test: async_connection_test() with 50 configs must complete in &lt;5 seconds total. Measure end-to-end time including parallel execution.</test>
+      <test ac="3">test_async_connection_test_timeout - Functional test: verify timeout per test is 1s, tests timeout correctly for unreachable servers, timeout command works as expected.</test>
+      <test ac="1">test_max_parallel_20_concurrent - Performance test: verify max 20 concurrent tests running simultaneously, job queue management waits when max_parallel reached.</test>
+      <test ac="2">test_async_connection_test_live_results - Functional test: verify results display as they complete (not all at end), check_completed_tests() updates display immediately, live updates work correctly.</test>
+      <test ac="5">test_progress_indicator_updates - Functional test: verify progress indicator displays "Testing X/Y servers...", updates as tests complete, shows correct counts.</test>
+      <test ac="6">test_async_connection_test_summary - Functional test: verify summary displays correct counts: "✓ Reachable: X | ✗ Unreachable: Y", counts match actual test results.</test>
+      <test ac="4">test_async_connection_test_cancellation - Functional test: verify Ctrl+C (SIGINT) handled gracefully, background processes cleaned up, temporary directory removed, cancellation works anytime.</test>
+      <test ac="4">test_cleanup_on_exit - Functional test: verify trap cleanup removes temporary directory on exit, background processes cleaned up, no orphaned files or processes.</test>
+      <test ac="1">test_run_connection_tests_all - Functional test: verify run_connection_tests_all() queries index for client configs correctly, handles empty config list gracefully, provides clear header.</test>
+      <test ac="1">test_server_addr_port_extraction - Functional test: verify server_addr and server_port extracted correctly from index for each config, handles missing values gracefully.</test>
+      <test ac="2">test_live_result_formatting - Functional test: verify live results display with correct format: "server:port ✓ OK" or "server:port ✗ FAIL", colors and indicators correct.</test>
+      <test ac="3">test_tcp_test_pattern - Functional test: verify bash TCP test pattern works correctly: timeout 1 bash -c "echo &gt; /dev/tcp/$server_addr/$server_port", handles success and failure cases.</test>
+      <test ac="1">test_result_file_pattern - Functional test: verify result files written correctly to "$tmp_dir/$i.result" with OK or FAIL values, files readable, format correct.</test>
+      <test ac="1">test_integration_with_config_details - Functional test: verify integration with Story 3.3 config details menu, connection test option appears, calls run_connection_tests_all() correctly.</test>
+    </ideas>
+  </tests>
+</story-context>
+

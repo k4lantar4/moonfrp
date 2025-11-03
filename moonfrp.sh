@@ -23,6 +23,7 @@ source "$SCRIPT_DIR/moonfrp-index.sh"
 source "$SCRIPT_DIR/moonfrp-services.sh"
 source "$SCRIPT_DIR/moonfrp-ui.sh"
 source "$SCRIPT_DIR/moonfrp-templates.sh"
+source "$SCRIPT_DIR/moonfrp-search.sh"
 
 #==============================================================================
 # MAIN EXECUTION
@@ -602,6 +603,112 @@ if [[ $# -gt 0 ]]; then
                     log "INFO" "  moonfrp tag remove <config> <key>"
                     log "INFO" "  moonfrp tag list <config>"
                     log "INFO" "  moonfrp tag bulk --key=X --value=Y --filter=all"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        "template")
+            case "${2:-}" in
+                "list")
+                    echo "Available templates:"
+                    list_templates | while read -r template; do
+                        echo "  - $template"
+                    done
+                    ;;
+                "create")
+                    local template_name="${3:-}"
+                    local template_file="${4:-}"
+                    if [[ -z "$template_name" ]] || [[ -z "$template_file" ]]; then
+                        log "ERROR" "Usage: moonfrp template create <name> <file>"
+                        log "INFO" "Example: moonfrp template create my-template /path/to/template.toml"
+                        exit 1
+                    fi
+                    if ! create_template_from_file "$template_name" "$template_file"; then
+                        exit 1
+                    fi
+                    ;;
+                "view")
+                    local template_name="${3:-}"
+                    if [[ -z "$template_name" ]]; then
+                        log "ERROR" "Usage: moonfrp template view <name>"
+                        log "INFO" "Example: moonfrp template view my-template"
+                        exit 1
+                    fi
+                    if ! view_template "$template_name"; then
+                        exit 1
+                    fi
+                    ;;
+                "instantiate")
+                    local template_name="${3:-}"
+                    local output_file="${4:-}"
+                    shift 4 2>/dev/null || shift 3
+                    local variables=()
+                    while [[ $# -gt 0 ]]; do
+                        if [[ "$1" == --var=* ]]; then
+                            variables+=("${1#*=}")
+                        elif [[ "$1" == --var ]] && [[ -n "${2:-}" ]]; then
+                            variables+=("$2")
+                            shift
+                        else
+                            log "ERROR" "Unknown option: $1"
+                            log "INFO" "Usage: moonfrp template instantiate <name> <output> --var=KEY=VALUE [--var=KEY2=VALUE2 ...]"
+                            exit 1
+                        fi
+                        shift
+                    done
+                    if [[ -z "$template_name" ]] || [[ -z "$output_file" ]]; then
+                        log "ERROR" "Usage: moonfrp template instantiate <name> <output> --var=KEY=VALUE"
+                        log "INFO" "Example: moonfrp template instantiate my-template /etc/frp/frpc.toml --var=SERVER_ADDR=1.1.1.1 --var=PORT=8080"
+                        exit 1
+                    fi
+                    if ! instantiate_template "$template_name" "$output_file" "${variables[@]}"; then
+                        exit 1
+                    fi
+                    ;;
+                "bulk-instantiate")
+                    local template_name="${3:-}"
+                    local csv_file="${4:-}"
+                    if [[ -z "$template_name" ]] || [[ -z "$csv_file" ]]; then
+                        log "ERROR" "Usage: moonfrp template bulk-instantiate <name> <csv-file>"
+                        log "INFO" "Example: moonfrp template bulk-instantiate my-template instances.csv"
+                        exit 1
+                    fi
+                    if ! bulk_instantiate_template "$template_name" "$csv_file"; then
+                        exit 1
+                    fi
+                    ;;
+                "version")
+                    local template_name="${3:-}"
+                    if [[ -z "$template_name" ]]; then
+                        log "ERROR" "Usage: moonfrp template version <name>"
+                        log "INFO" "Example: moonfrp template version my-template"
+                        exit 1
+                    fi
+                    local version=$(get_template_version "$template_name")
+                    if [[ $? -eq 0 ]]; then
+                        echo "Template version: $version"
+                    else
+                        exit 1
+                    fi
+                    ;;
+                "delete")
+                    local template_name="${3:-}"
+                    if [[ -z "$template_name" ]]; then
+                        log "ERROR" "Usage: moonfrp template delete <name>"
+                        log "INFO" "Example: moonfrp template delete my-template"
+                        exit 1
+                    fi
+                    if ! delete_template "$template_name"; then
+                        exit 1
+                    fi
+                    ;;
+                *)
+                    log "ERROR" "Invalid template command. Use: list, create, view, instantiate, bulk-instantiate, version, or delete"
+                    log "INFO" "Examples:"
+                    log "INFO" "  moonfrp template list"
+                    log "INFO" "  moonfrp template create <name> <file>"
+                    log "INFO" "  moonfrp template view <name>"
+                    log "INFO" "  moonfrp template instantiate <name> <output> --var=KEY=VALUE"
                     exit 1
                     ;;
             esac

@@ -1,0 +1,209 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>1</storyId>
+    <title>Cached Status Display</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-02T22:00:00.000Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/3-1-cached-status-display.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>DevOps engineer managing 50+ tunnels</asA>
+    <iWant>the menu to load instantly with cached status information</iWant>
+    <soThat>I can access the system quickly without waiting 2-3 seconds for status checks on every menu render</soThat>
+    <tasks>
+      - Implement cache management system (AC: 1, 2, 6)
+        - Create STATUS_CACHE associative array in moonfrp-ui.sh
+        - Initialize cache with timestamp, data, ttl, refreshing fields
+        - Implement cache persistence across menu navigation (use global variable or cache file)
+        - Create get_cached_status() function that checks cache age vs TTL
+      - Implement synchronous cache refresh (AC: 2)
+        - Create refresh_status_cache_sync() function
+        - Generate status data using generate_quick_status()
+        - Update cache timestamp and data
+        - Set refreshing flag to false
+      - Implement background cache refresh (AC: 3)
+        - Create refresh_status_cache_background() function
+        - Set refreshing flag to true
+        - Generate status in background process
+        - Update cache file in $HOME/.moonfrp/status.cache
+        - Update timestamp file $HOME/.moonfrp/status.cache.timestamp
+        - Poll for completion and update in-memory cache
+        - Set refreshing flag to false when complete
+      - Implement optimized status generation (AC: 1)
+        - Create generate_quick_status() function
+        - Query SQLite index for total_configs and total_proxies (use COUNT and SUM)
+        - Use systemctl batch query for service status (list-units with grep)
+        - Count active/failed/inactive services from batch query
+        - Use get_frp_version_cached() for version (separate cache)
+        - Format output as JSON
+      - Implement FRP version caching (AC: 1)
+        - Create get_frp_version_cached() function
+        - Cache version in $HOME/.moonfrp/frp_version.cache
+        - TTL: 1 hour (version changes rarely)
+        - Return cached version if fresh, otherwise refresh and cache
+      - Integrate cached status into main menu (AC: 1, 3, 4, 6)
+        - Update main_menu() to call display_cached_status() instead of generating status synchronously
+        - Add 'r' option for manual refresh (calls refresh_status_cache_sync)
+        - Ensure cache persists across menu navigation loops
+      - Implement cached status display function (AC: 4)
+        - Create display_cached_status() function
+        - Call get_cached_status() to retrieve status JSON
+        - Parse JSON using jq if available, fallback to grep for basic parsing
+        - Display formatted status: FRP version, config count, proxy count, service status
+        - Show staleness indicator when cache_age &gt; ttl and refreshing == true
+        - Display "Refreshing..." message when cache is refreshing
+      - Performance testing (AC: 1)
+        - Create test_menu_load_under_200ms_with_50_configs() test
+        - Create test_cached_status_query_under_50ms() test
+        - Create test_background_refresh_non_blocking() test
+        - Verify menu renders in &lt;200ms with 50 configs
+      - Functional testing (AC: 2, 3, 4, 5, 6)
+        - Create test_cache_ttl_expiration() test
+        - Create test_manual_refresh_works() test
+        - Create test_cache_survives_menu_navigation() test
+        - Create test_stale_cache_display_while_refreshing() test
+        - Test cache file persistence
+        - Test background refresh doesn't block UI
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. Menu renders in &lt;200ms with 50 configs
+    2. Status cached with 5s TTL (configurable)
+    3. Background refresh: updates cache without blocking UI
+    4. Visual indicator when cache is stale/refreshing
+    5. Manual refresh option
+    6. Cache survives across menu navigation
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics/epic-03-performance-ux.md" title="Epic 3: Performance &amp; UX at Scale" section="Story 3.1: Cached Status Display">
+        Provides complete problem statement, acceptance criteria, detailed technical specification with implementation patterns, cache management code, optimized status generation, background refresh pattern, and performance requirements. Includes complete function implementations for get_cached_status(), refresh_status_cache_sync(), refresh_status_cache_background(), generate_quick_status(), get_frp_version_cached(), and display_cached_status().
+      </doc>
+      <doc path="docs/stories/3-1-cached-status-display.md" title="Story 3.1: Cached Status Display">
+        Complete story definition with requirements context, implementation patterns, dependencies, integration points, cache strategy, testing strategy, and learnings from previous stories. Specifies file locations, new functions to create, cache files, and menu integration requirements.
+      </doc>
+      <doc path="docs/epics/epic-01-scale-foundation.md" title="Epic 1: Critical Fixes &amp; Scale Foundation" section="Story 1.2: Implement Config Index">
+        Establishes SQLite index foundation used by this story for fast config/proxy counts. Documents database schema, query patterns, and performance characteristics required for status generation.
+      </doc>
+    </docs>
+    <code>
+      <file path="moonfrp-ui.sh" kind="ui-module" symbol="main_menu" lines="294-363" reason="Main menu function that currently displays status synchronously - needs to be updated to use display_cached_status() instead">
+        Current main menu implementation shows lightweight status summary. Needs integration with cached status system. Status display happens at lines 304-317 with synchronous get_frp_version() call and systemctl checks.
+      </file>
+      <file path="moonfrp-ui.sh" kind="ui-module" symbol="show_system_status" lines="34-96" reason="Current status display function that uses synchronous queries - demonstrates pattern to replace with cached version">
+        Shows current synchronous status generation pattern using check_and_update_index(), query_configs_by_type(), and individual service status checks. This pattern is slow with 50 configs and needs to be replaced with cached approach.
+      </file>
+      <file path="moonfrp-index.sh" kind="index-module" symbol="query_total_proxy_count" lines="321-342" reason="Fast SQLite query function used by generate_quick_status() to get total proxy count - returns SUM(proxy_count) from index">
+        Provides fast aggregate query for total proxy count. Used in generate_quick_status() for optimized status generation. Query executes in &lt;50ms even with 50 configs.
+      </file>
+      <file path="moonfrp-index.sh" kind="index-module" symbol="get_index_stats" lines="378-408" reason="Function demonstrates pattern for querying config counts from index - shows COUNT(*) pattern needed in generate_quick_status()">
+        Demonstrates SQLite query pattern for getting config counts: SELECT COUNT(*) FROM config_index. Pattern to use in generate_quick_status() for total_configs.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="get_frp_version" lines="284-336" reason="Function to detect FRP version - used by get_frp_version_cached() as fallback when cache is stale">
+        Returns FRP version using three detection methods with fallback chain. Used by get_frp_version_cached() wrapper function. Performance: &lt;100ms, suitable for caching.
+      </file>
+      <file path="moonfrp-core.sh" kind="core-utility" symbol="log" reason="Logging function used throughout codebase for error/info/warn messages - used in cache functions">
+        Standard logging function for all modules. Used in cache management functions for error handling and debugging.
+      </file>
+      <file path="moonfrp-services.sh" kind="service-module" symbol="get_moonfrp_services" lines="358-363" reason="Function demonstrates batch systemctl query pattern needed in generate_quick_status() - shows list-units with grep pattern">
+        Demonstrates batch systemctl query pattern: systemctl list-units --type=service --all --no-pager --no-legend | grep -E "moonfrp-(server|client)". This exact pattern needed in generate_quick_status() for service status counting.
+      </file>
+      <file path="moonfrp-services.sh" kind="service-module" symbol="bulk_service_operation" lines="366-367" reason="Function demonstrates background process pattern needed for refresh_status_cache_background() - shows ( command ) &amp; pattern">
+        Shows background process execution pattern used in bulk operations. Demonstrates pattern for spawn background process, write results to file, poll for completion - needed for refresh_status_cache_background().
+      </file>
+    </code>
+    <dependencies>
+      <ecosystem name="bash">
+        <package name="bash">Bash shell scripting (system dependency)</package>
+        <package name="sqlite3">SQLite3 command-line tool for fast index queries (required for generate_quick_status())</package>
+        <package name="systemctl">Systemd service manager for batch service status queries (required)</package>
+        <package name="jq">JSON parser for parsing cached status JSON (optional, fallback to grep available)</package>
+        <package name="date">Date command for timestamp operations (coreutils)</package>
+        <package name="stat">File stat command for cache file modification time (coreutils)</package>
+      </ecosystem>
+      <ecosystem name="database">
+        <package name="SQLite3">Embedded SQL database engine for config index queries (from Story 1.2)</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="file-location">Cache management functions must be added to moonfrp-ui.sh - following existing module structure</constraint>
+    <constraint type="cache-location">Cache files location: $HOME/.moonfrp/ - directory must be writable. Files: status.cache, status.cache.timestamp, frp_version.cache</constraint>
+    <constraint type="performance">Menu render: &lt;200ms with 50 configs (vs 2-3s current - 10-15x improvement required)</constraint>
+    <constraint type="performance">Cache query: &lt;50ms from in-memory cache or stale cache return</constraint>
+    <constraint type="performance">Background refresh: completely non-blocking - must return stale cache immediately while refreshing</constraint>
+    <constraint type="cache-strategy">Two-level caching: in-memory (STATUS_CACHE array) for fast access, file-based for persistence and background refresh</constraint>
+    <constraint type="cache-ttl">Status cache TTL: 5 seconds (configurable). FRP version cache TTL: 1 hour (version changes rarely)</constraint>
+    <constraint type="integration">Must update main_menu() to call display_cached_status() instead of synchronous status generation</constraint>
+    <constraint type="dependency">Requires Story 1.2 config index (SQLite database) for fast config/proxy counts - uses query_total_proxy_count() and COUNT(*) queries</constraint>
+    <constraint type="dependency">Requires Story 1.1 get_frp_version() function - wrapped by get_frp_version_cached() with 1-hour cache</constraint>
+    <constraint type="background-process">Background refresh must use ( command ) &amp; pattern with result file writing and polling for completion - following pattern from Story 2.1</constraint>
+    <constraint type="compatibility">Must maintain backward compatibility - if cache fails, falls back to synchronous status generation (performance degrades but functionality preserved)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="get_cached_status" kind="bash-function" signature="get_cached_status() - Retrieve cached status or trigger refresh, returns JSON string" path="moonfrp-ui.sh">
+      Core cache retrieval function. Checks cache age vs TTL. Returns cached data if fresh, triggers background refresh if stale, returns stale cache while refreshing, or forces synchronous refresh on first load. Returns JSON status string.
+    </interface>
+    <interface name="refresh_status_cache_sync" kind="bash-function" signature="refresh_status_cache_sync() - Synchronous cache refresh (blocking, first load only)" path="moonfrp-ui.sh">
+      Synchronous cache refresh function. Calls generate_quick_status() to generate fresh status data, updates STATUS_CACHE array with data and timestamp, sets refreshing flag to false. Used for first load and manual refresh.
+    </interface>
+    <interface name="refresh_status_cache_background" kind="bash-function" signature="refresh_status_cache_background() - Non-blocking background cache refresh" path="moonfrp-ui.sh">
+      Non-blocking background refresh. Sets refreshing flag to true, spawns background process to generate status, writes to cache files ($HOME/.moonfrp/status.cache and .timestamp), polls for completion and updates in-memory cache. Never blocks UI.
+    </interface>
+    <interface name="generate_quick_status" kind="bash-function" signature="generate_quick_status() - Optimized status generation using index, returns JSON string" path="moonfrp-ui.sh">
+      Optimized status generation function. Queries SQLite index for total_configs (COUNT) and total_proxies (SUM), uses systemctl batch query for service status counts, calls get_frp_version_cached() for version, formats as JSON. Performance target: &lt;200ms with 50 configs.
+    </interface>
+    <interface name="get_frp_version_cached" kind="bash-function" signature="get_frp_version_cached() - Cached FRP version retrieval, returns version string" path="moonfrp-ui.sh">
+      FRP version caching wrapper. Checks $HOME/.moonfrp/frp_version.cache file age (1 hour TTL). Returns cached version if fresh, otherwise calls get_frp_version() and updates cache. Version changes rarely so 1-hour cache is appropriate.
+    </interface>
+    <interface name="display_cached_status" kind="bash-function" signature="display_cached_status() - Display cached status in menu with formatting" path="moonfrp-ui.sh">
+      Status display function for menu. Calls get_cached_status() to retrieve JSON, parses using jq if available (fallback to grep), displays formatted status with colors, shows refreshing indicator when cache is stale and refreshing. Called from main_menu().
+    </interface>
+    <interface name="query_total_proxy_count" kind="bash-function" signature="query_total_proxy_count() - Get total proxy count from index" path="moonfrp-index.sh">
+      Fast aggregate query returning SUM(proxy_count) from config index. Used by generate_quick_status() for total proxy count. Performance: &lt;50ms even with 50 configs.
+    </interface>
+    <interface name="sqlite3 COUNT query" kind="database-query" signature="SELECT COUNT(*) FROM config_index" path="moonfrp-index.sh via sqlite3">
+      SQL query pattern for getting total config count. Used in generate_quick_status() for total_configs value. Execute via: sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index"
+    </interface>
+    <interface name="systemctl batch query" kind="system-command" signature="systemctl list-units --type=service --all --no-pager --no-legend | grep moonfrp-" path="systemctl">
+      Batch systemctl query for service status. Used in generate_quick_status() to count active/failed/inactive services efficiently instead of individual service checks. Pattern: systemctl list-units --type=service --all --no-pager --no-legend | grep -E "moonfrp-(server|client)" | awk '{print $1, $3}'
+    </interface>
+    <interface name="get_frp_version" kind="bash-function" signature="get_frp_version() - Detect FRP version using three methods" path="moonfrp-core.sh">
+      FRP version detection function with three-method fallback chain. Used by get_frp_version_cached() when cache is stale. Performance: &lt;100ms.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows bash unit testing patterns established in previous stories. Performance testing is critical - must verify &lt;200ms menu render with 50 configs, &lt;50ms cached status query, non-blocking background refresh. Functional tests must verify cache TTL expiration, manual refresh, cache persistence, stale cache display, and background refresh completion. Tests should follow pattern from tests/test_config_index.sh and tests/test_bulk_service_operations.sh with performance test helpers using date +%s%N timing.
+    </standards>
+    <locations>
+      Test file location: tests/test_cached_status_display.sh (create following pattern from tests/test_config_index.sh and tests/test_bulk_service_operations.sh)
+    </locations>
+    <ideas>
+      <test ac="1">test_menu_load_under_200ms_with_50_configs - Performance test: menu render must complete in &lt;200ms with 50 configs loaded. Measure time from menu entry to status display completion.</test>
+      <test ac="1">test_cached_status_query_under_50ms - Performance test: get_cached_status() must return cached data in &lt;50ms when cache is fresh.</test>
+      <test ac="3">test_background_refresh_non_blocking - Performance test: refresh_status_cache_background() must return immediately (measure blocking time should be &lt;10ms) and update cache asynchronously.</test>
+      <test ac="2">test_cache_ttl_expiration - Functional test: wait &gt;5 seconds after cache creation, verify get_cached_status() triggers background refresh when cache age exceeds TTL.</test>
+      <test ac="5">test_manual_refresh_works - Functional test: call refresh_status_cache_sync() manually, verify cache timestamp updated, verify cache data refreshed, verify refreshing flag set to false.</test>
+      <test ac="6">test_cache_survives_menu_navigation - Functional test: navigate menu (enter submenu, return), verify cache persists and is reused (check cache timestamp unchanged after navigation).</test>
+      <test ac="4">test_stale_cache_display_while_refreshing - Functional test: allow cache to expire, call get_cached_status(), verify stale cache returned immediately while refreshing flag is true, verify background refresh completes and updates cache.</test>
+      <test ac="2">test_cache_file_persistence - Functional test: verify status.cache and status.cache.timestamp files created in $HOME/.moonfrp/, verify background refresh updates files, verify cache data can be read from files.</test>
+      <test ac="3">test_background_refresh_doesnt_block_ui - Functional test: measure time for get_cached_status() call when cache is stale, verify returns immediately with stale data (&lt;10ms), verify background process completes asynchronously.</test>
+      <test ac="1">test_generate_quick_status_under_200ms - Performance test: generate_quick_status() must complete in &lt;200ms with 50 configs. Measure full status generation including SQLite queries and systemctl batch query.</test>
+      <test ac="1">test_frp_version_cached_ttl_1_hour - Functional test: verify get_frp_version_cached() uses 1-hour TTL, verify cached version returned within TTL, verify refresh after TTL expiration.</test>
+      <test ac="4">test_display_cached_status_formatting - Functional test: verify display_cached_status() parses JSON correctly (with jq if available, fallback to grep), displays all fields (FRP version, config count, proxy count, service status), shows refreshing indicator when appropriate.</test>
+      <test ac="1">test_sqlite_queries_performance - Performance test: verify COUNT(*) and SUM(proxy_count) queries execute in &lt;50ms with 50 configs. Part of generate_quick_status() performance requirements.</test>
+      <test ac="1">test_systemctl_batch_query_performance - Performance test: verify systemctl list-units batch query with grep executes in &lt;50ms. Part of generate_quick_status() performance requirements.</test>
+      <test ac="6">test_cache_persistence_across_processes - Functional test: simulate background refresh by spawning separate process, verify cache files updated, verify in-memory cache updated from files after background refresh completes.</test>
+    </ideas>
+  </tests>
+</story-context>
+
