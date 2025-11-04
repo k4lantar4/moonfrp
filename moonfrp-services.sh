@@ -58,8 +58,12 @@ LimitNPROC=4096
 WantedBy=multi-user.target
 EOF
     
-    systemctl daemon-reload
-    log "INFO" "Created systemd service: $service_name"
+    if systemctl daemon-reload 2>/dev/null; then
+        log "INFO" "Created systemd service: $service_name"
+    else
+        log "ERROR" "Failed to reload systemd daemon after creating service: $service_name"
+        return 1
+    fi
 }
 
 # Start service
@@ -653,9 +657,13 @@ remove_service() {
     stop_service "$service_name"
     disable_service "$service_name"
     rm -f "/etc/systemd/system/${service_name}.service"
-    systemctl daemon-reload
     
-    log "INFO" "Removed service: $service_name"
+    if systemctl daemon-reload 2>/dev/null; then
+        log "INFO" "Removed service: $service_name"
+    else
+        log "ERROR" "Failed to reload systemd daemon after removing service: $service_name"
+        return 1
+    fi
 }
 
 # Remove all services
