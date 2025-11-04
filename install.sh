@@ -149,7 +149,7 @@ install_moonfrp() {
     mkdir -p "$TEMP_DIR"
     
     # Download all required files
-    local files=("moonfrp-core.sh" "moonfrp-config.sh" "moonfrp-services.sh" "moonfrp-ui.sh" "moonfrp.sh")
+    local files=("moonfrp-core.sh" "moonfrp-config.sh" "moonfrp-index.sh" "moonfrp-services.sh" "moonfrp-ui.sh" "moonfrp-templates.sh" "moonfrp-search.sh" "moonfrp-optimize.sh" "moonfrp.sh")
     
     for file in "${files[@]}"; do
         local url="$REPO_URL/$file"
