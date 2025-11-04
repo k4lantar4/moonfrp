@@ -201,13 +201,18 @@ create_config_file() {
         *) frp_arch="linux_amd64" ;;
     esac
     
-    cat > "$config_file" << EOF
+    cat > "$config_file" << 'EOFCONFIG'
 # MoonFRP Configuration
-# Generated on $(date)
+# Generated on DATE_PLACEHOLDER
 
 # FRP Version
-FRP_VERSION="${FRP_VERSION:-0.65.0}"
-FRP_ARCH="${FRP_ARCH:-$frp_arch}"
+# Only set if not already set (allows override from environment or if already readonly)
+if [[ -z "${FRP_VERSION:-}" ]]; then
+    FRP_VERSION="0.65.0"
+fi
+if [[ -z "${FRP_ARCH:-}" ]]; then
+    FRP_ARCH="ARCH_PLACEHOLDER"
+fi
 
 # Installation Directories
 FRP_DIR="${FRP_DIR:-/opt/frp}"
@@ -249,9 +254,66 @@ MOONFRP_LOG_DISABLE_COLOR="${MOONFRP_LOG_DISABLE_COLOR:-false}"
 MOONFRP_SERVER_IPS="${MOONFRP_SERVER_IPS:-}"
 MOONFRP_SERVER_PORTS="${MOONFRP_SERVER_PORTS:-}"
 MOONFRP_CLIENT_PORTS="${MOONFRP_CLIENT_PORTS:-}"
-EOF
+EOFCONFIG
+    
+    # Replace placeholders
+    sed -i "s|DATE_PLACEHOLDER|$(date)|g" "$config_file"
+    sed -i "s|ARCH_PLACEHOLDER|$frp_arch|g" "$config_file"
     
     log "INFO" "Created configuration file: $config_file"
+}
+
+# Stop FRP services and processes before installing binaries
+stop_frp_processes() {
+    local frp_dir="${1:-/opt/frp}"
+    
+    # Stop systemd services if they exist
+    local services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+        awk '/moonfrp-/{print $1}' | sed 's/.service$//' || true))
+    
+    if [[ ${#services[@]} -gt 0 ]]; then
+        log "INFO" "Stopping MoonFRP services before binary installation..."
+        for service in "${services[@]}"; do
+            if systemctl is-active --quiet "$service" 2>/dev/null; then
+                systemctl stop "$service" 2>/dev/null || true
+                log "INFO" "Stopped service: $service"
+            fi
+        done
+        # Wait for services to fully stop
+        sleep 2
+    fi
+    
+    # Kill any direct frpc/frps processes that might be running
+    local pids=($(pgrep -f "(frpc|frps)" 2>/dev/null || true))
+    if [[ ${#pids[@]} -gt 0 ]]; then
+        log "INFO" "Stopping FRP processes..."
+        for pid in "${pids[@]}"; do
+            kill -TERM "$pid" 2>/dev/null || true
+        done
+        # Wait for processes to terminate
+        sleep 2
+        # Force kill if still running
+        pids=($(pgrep -f "(frpc|frps)" 2>/dev/null || true))
+        if [[ ${#pids[@]} -gt 0 ]]; then
+            for pid in "${pids[@]}"; do
+                kill -KILL "$pid" 2>/dev/null || true
+            done
+            sleep 1
+        fi
+    fi
+    
+    # Check if binaries are still in use and wait if needed
+    local max_wait=10
+    local wait_count=0
+    while [[ $wait_count -lt $max_wait ]]; do
+        if lsof "$frp_dir/frpc" 2>/dev/null || lsof "$frp_dir/frps" 2>/dev/null; then
+            log "WARN" "Binaries still in use, waiting..."
+            sleep 1
+            ((wait_count++))
+        else
+            break
+        fi
+    done
 }
 
 # Install FRP binaries
@@ -280,6 +342,9 @@ install_frp_binaries() {
     
     log "INFO" "Installing FRP v$frp_version ($frp_arch)..."
     
+    # Stop any running FRP processes before installing binaries
+    stop_frp_processes "$frp_dir"
+    
     # Download URL
     local download_url="https://github.com/fatedier/frp/releases/download/v${frp_version}/frp_${frp_version}_${frp_arch}.tar.gz"
     local temp_file="$TEMP_DIR/frp_${frp_version}_${frp_arch}.tar.gz"
@@ -297,7 +362,18 @@ install_frp_binaries() {
         return 1
     fi
     
-    # Install binaries
+    # Install binaries (use install command which handles busy files better, or use mv)
+    if [[ -f "$frp_dir/frps" ]] && lsof "$frp_dir/frps" &>/dev/null; then
+        log "WARN" "frps is still in use, attempting to replace..."
+        rm -f "$frp_dir/frps" 2>/dev/null || true
+        sleep 1
+    fi
+    if [[ -f "$frp_dir/frpc" ]] && lsof "$frp_dir/frpc" &>/dev/null; then
+        log "WARN" "frpc is still in use, attempting to replace..."
+        rm -f "$frp_dir/frpc" 2>/dev/null || true
+        sleep 1
+    fi
+    
     cp "$TEMP_DIR/frp_${frp_version}_${frp_arch}/frps" "$frp_dir/"
     cp "$TEMP_DIR/frp_${frp_version}_${frp_arch}/frpc" "$frp_dir/"
     chmod +x "$frp_dir/frps" "$frp_dir/frpc"
