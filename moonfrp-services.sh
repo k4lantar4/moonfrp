@@ -666,31 +666,72 @@ remove_service() {
     fi
 }
 
-# Remove all services
+# Remove all services (using *frp* pattern to catch all frp-related services)
 remove_all_services() {
     local removed_count=0
     
-    # Remove visitor services
-    local visitor_services=($(systemctl list-unit-files | grep "moonfrp-visitor-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${visitor_services[@]}"; do
-        remove_service "$service"
-        ((removed_count++))
-    done
+    # Find all services matching *frp* pattern
+    local all_frp_services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
+        awk '/frp/{print $1}' | \
+        sed 's/.service$//' | \
+        sort))
     
-    # Remove client services
-    local client_services=($(systemctl list-unit-files | grep "${CLIENT_SERVICE_PREFIX}-" | awk '{print $1}' | sed 's/.service$//'))
-    for service in "${client_services[@]}"; do
-        remove_service "$service"
-        ((removed_count++))
-    done
-    
-    # Remove server service
-    if [[ -f "/etc/systemd/system/${SERVER_SERVICE}.service" ]]; then
-        remove_service "$SERVER_SERVICE"
-        ((removed_count++))
+    if [[ ${#all_frp_services[@]} -eq 0 ]]; then
+        log "WARN" "No FRP services found to remove"
+        return 0
     fi
     
-    log "INFO" "Removed $removed_count services"
+    echo -e "${CYAN}Removing ${#all_frp_services[@]} FRP service(s)...${NC}"
+    
+    for service in "${all_frp_services[@]}"; do
+        if remove_service "$service"; then
+            ((removed_count++))
+            echo -e "  ${GREEN}✓${NC} $service"
+        else
+            echo -e "  ${RED}✗${NC} $service"
+        fi
+    done
+    
+    echo
+    log "INFO" "Removed $removed_count service(s)"
+}
+
+# Remove all config files from /etc/frp matching frp* pattern
+remove_all_config_files() {
+    local removed_count=0
+    local failed_count=0
+    
+    if [[ ! -d "$CONFIG_DIR" ]]; then
+        log "WARN" "Config directory not found: $CONFIG_DIR"
+        return 0
+    fi
+    
+    # Find all config files matching frp* pattern
+    local config_files=($(find "$CONFIG_DIR" -maxdepth 1 -name "frp*" -type f 2>/dev/null | sort))
+    
+    if [[ ${#config_files[@]} -eq 0 ]]; then
+        log "WARN" "No FRP config files found in $CONFIG_DIR"
+        return 0
+    fi
+    
+    echo -e "${CYAN}Removing ${#config_files[@]} config file(s) from $CONFIG_DIR...${NC}"
+    
+    for config_file in "${config_files[@]}"; do
+        if rm -f "$config_file" 2>/dev/null; then
+            ((removed_count++))
+            echo -e "  ${GREEN}✓${NC} $(basename "$config_file")"
+        else
+            ((failed_count++))
+            echo -e "  ${RED}✗${NC} $(basename "$config_file")"
+        fi
+    done
+    
+    echo
+    if [[ $failed_count -eq 0 ]]; then
+        log "INFO" "Removed $removed_count config file(s)"
+    else
+        log "WARN" "Removed $removed_count config file(s), $failed_count failed"
+    fi
 }
 
 # View service logs
@@ -913,6 +954,7 @@ service_management_menu() {
         echo "6. View Service Logs"
         echo "7. Remove All Services"
         echo "8. Show Service Status"
+        echo "9. Remove Config Files"
         echo "0. Back to Main Menu"
         echo
         
@@ -1022,17 +1064,29 @@ service_management_menu() {
             7)
                 # Validate: Check if any services exist
                 local services_count=$(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
-                    awk '/moonfrp-/{print}' | wc -l)
+                    awk '/frp/{print}' | wc -l)
                 if [[ $services_count -eq 0 ]]; then
-                    log "WARN" "No services found to remove."
+                    log "WARN" "No FRP services found to remove."
                 else
-                    echo -e "${RED}⚠ WARNING: This will remove ALL MoonFRP services!${NC}"
+                    echo -e "${RED}⚠ WARNING: This will remove ALL FRP services!${NC}"
                     echo -e "${YELLOW}This action cannot be undone.${NC}"
                     echo
-                    safe_read "Type 'yes' to confirm removal" "confirm" "no"
+                    echo -e "${CYAN}Do you also want to remove config files from $CONFIG_DIR?${NC}"
+                    echo -e "${YELLOW}Config files matching 'frp*' pattern will be removed.${NC}"
+                    echo
+                    safe_read "Remove config files? (yes/no)" "remove_configs" "no"
+                    
+                    safe_read "Type 'yes' to confirm service removal" "confirm" "no"
                     if [[ "$confirm" == "yes" ]]; then
                         if ! remove_all_services; then
                             log "WARN" "Failed to remove one or more services. Check permissions."
+                        fi
+                        
+                        if [[ "$remove_configs" == "yes" ]]; then
+                            echo
+                            if ! remove_all_config_files; then
+                                log "WARN" "Failed to remove one or more config files. Check permissions."
+                            fi
                         fi
                     else
                         log "INFO" "Removal cancelled."
@@ -1043,6 +1097,36 @@ service_management_menu() {
                 ;;
             8)
                 list_frp_services
+                echo
+                read -p "Press Enter to continue..."
+                ;;
+            9)
+                # Check if any config files exist
+                local config_count=$(find "$CONFIG_DIR" -maxdepth 1 -name "frp*" -type f 2>/dev/null | wc -l)
+                if [[ $config_count -eq 0 ]]; then
+                    log "WARN" "No FRP config files found in $CONFIG_DIR"
+                else
+                    echo -e "${RED}⚠ WARNING: This will remove ALL config files from $CONFIG_DIR!${NC}"
+                    echo -e "${YELLOW}Files matching 'frp*' pattern will be removed.${NC}"
+                    echo -e "${YELLOW}This action cannot be undone.${NC}"
+                    echo
+                    
+                    # Show what will be removed
+                    echo -e "${CYAN}Config files to be removed:${NC}"
+                    find "$CONFIG_DIR" -maxdepth 1 -name "frp*" -type f 2>/dev/null | sort | while read -r config_file; do
+                        echo -e "  - $(basename "$config_file")"
+                    done
+                    echo
+                    
+                    safe_read "Type 'yes' to confirm removal" "confirm" "no"
+                    if [[ "$confirm" == "yes" ]]; then
+                        if ! remove_all_config_files; then
+                            log "WARN" "Failed to remove one or more config files. Check permissions."
+                        fi
+                    else
+                        log "INFO" "Removal cancelled."
+                    fi
+                fi
                 echo
                 read -p "Press Enter to continue..."
                 ;;
@@ -1268,7 +1352,7 @@ export -f create_systemd_service start_service stop_service restart_service
 export -f enable_service disable_service get_detailed_service_status show_service_status
 export -f list_frp_services setup_server_service setup_client_service setup_all_services
 export -f start_all_services stop_all_services restart_all_services
-export -f remove_service remove_all_services view_service_logs follow_service_logs
+export -f remove_service remove_all_services remove_all_config_files view_service_logs follow_service_logs
 export -f health_check service_management_menu
 export -f get_moonfrp_services bulk_service_operation
 export -f bulk_start_services bulk_stop_services bulk_restart_services bulk_reload_services
