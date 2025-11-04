@@ -579,117 +579,244 @@ uninstall_moonfrp() {
 # ENHANCED CONFIG DETAILS VIEW (Story 3.3)
 #==============================================================================
 
-# Show enhanced config details with server grouping
-show_config_details() {
-    clear
-    echo -e "${PURPLE}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║$(printf "%63s" "MoonFRP Configuration Summary")║${NC}"
-    echo -e "${PURPLE}╚═══════════════════════════════════════════════════════════════╝${NC}"
-    echo
+# Helper: Check if IP is private (127.x, 10.x, 172.16-31.x, 192.168.x)
+is_private_ip() {
+    local ip="$1"
+    [[ -z "$ip" ]] && return 1
     
-    local db_path="$HOME/.moonfrp/index.db"
-    
-    check_and_update_index >/dev/null 2>&1 || true
-    
-    # Query index for all configs
-    local configs
-    configs=($(sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr" 2>/dev/null || echo ""))
-    
-    if [[ ${#configs[@]} -eq 0 ]]; then
-        echo -e "${YELLOW}No configurations found in index.${NC}"
-        echo
-        read -p "Press Enter to continue..."
+    # Check for 127.x.x.x (loopback)
+    if [[ "$ip" =~ ^127\. ]]; then
         return 0
     fi
     
-    # Group by server IP
-    declare -A server_groups
+    # Check for 10.x.x.x (private class A)
+    if [[ "$ip" =~ ^10\. ]]; then
+        return 0
+    fi
     
-    for config in "${configs[@]}"; do
-        local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
-        local server_addr
-        server_addr=$(sqlite3 "$db_path" "SELECT server_addr FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
-        
-        if [[ -z "$server_addr" ]]; then
-            server_addr="server"
+    # Check for 172.16.x.x to 172.31.x.x (private class B)
+    if [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
+        return 0
+    fi
+    
+    # Check for 192.168.x.x (private class C)
+    if [[ "$ip" =~ ^192\.168\. ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Helper: Get public IPv4 IPs from network interfaces (comma-separated, no spaces, IPv6 excluded)
+get_public_server_ips() {
+    local public_ips=()
+    local all_ips
+    all_ips=$(hostname -I 2>/dev/null | tr ' ' '\n' || echo "")
+    
+    if [[ -z "$all_ips" ]]; then
+        return 1
+    fi
+    
+    while IFS= read -r ip || [[ -n "$ip" ]]; do
+        [[ -z "$ip" ]] && continue
+        # Skip IPv6 addresses (contain colons)
+        [[ "$ip" =~ : ]] && continue
+        # Only include public (non-private) IPv4 addresses
+        if ! is_private_ip "$ip"; then
+            public_ips+=("$ip")
         fi
-        
-        server_groups["$server_addr"]+="$config "
-    done
+    done <<< "$all_ips"
     
-    # Display grouped configs (sorted by server IP)
-    local sorted_servers
-    sorted_servers=($(printf '%s\n' "${!server_groups[@]}" | sort))
+    if [[ ${#public_ips[@]} -gt 0 ]]; then
+        IFS=','
+        echo "${public_ips[*]}"
+        unset IFS
+    fi
+}
+
+# Show enhanced config details - Fast, copy-paste ready format
+show_config_details() {
+    clear
     
-    for server_ip in "${sorted_servers[@]}"; do
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${CYAN}🖥️  Server: $server_ip${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    # Check for frps configuration
+    if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
+        echo -e "${CYAN}[frps]${NC}"
+        echo
         
-        local configs_for_server
-        configs_for_server=(${server_groups[$server_ip]})
+        # Get server port
+        local server_port
+        server_port=$(get_toml_value "$CONFIG_DIR/frps.toml" "bindPort" 2>/dev/null | tr -d '"' || echo "7000")
         
-        for config in "${configs_for_server[@]}"; do
-            display_config_summary "$config" "$db_path"
+        # Get auth token
+        local auth_token
+        auth_token=$(get_toml_value "$CONFIG_DIR/frps.toml" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
+        
+        # Get public IPs (comma-separated, no spaces, IPv4 only)
+        local public_ips
+        public_ips=$(get_public_server_ips)
+        
+        if [[ -n "$public_ips" ]]; then
+            echo "Server IPs: $public_ips"
+        fi
+        if [[ -n "$server_port" ]]; then
+            echo "Server Port: $server_port"
+        fi
+        if [[ -n "$auth_token" ]]; then
+            echo "Token: $auth_token"
+        fi
+        echo
+        
+        echo -e "${CYAN}[Web Dashboard]${NC}"
+        echo
+        
+        # Get web dashboard info
+        local web_addr
+        web_addr=$(get_toml_value "$CONFIG_DIR/frps.toml" "webServer.addr" 2>/dev/null | tr -d '"' || echo "0.0.0.0")
+        local web_port
+        web_port=$(get_toml_value "$CONFIG_DIR/frps.toml" "webServer.port" 2>/dev/null | tr -d '"' || echo "7500")
+        local web_user
+        web_user=$(get_toml_value "$CONFIG_DIR/frps.toml" "webServer.user" 2>/dev/null | tr -d '"' || echo "admin")
+        local web_password
+        web_password=$(get_toml_value "$CONFIG_DIR/frps.toml" "webServer.password" 2>/dev/null | tr -d '"' || echo "")
+        
+        echo "address: ${web_addr}:${web_port}"
+        echo "username: ${web_user}"
+        if [[ -n "$web_password" ]]; then
+            echo "password: ${web_password}"
+        fi
+        echo
+    fi
+    
+    # Check for frpc configurations
+    local client_configs=($(find "$CONFIG_DIR" -maxdepth 1 -name "frpc*.toml" -type f 2>/dev/null | sort))
+    
+    if [[ ${#client_configs[@]} -gt 0 ]]; then
+        echo -e "${CYAN}[frpc]${NC}"
+        echo
+        
+        local total_configs=${#client_configs[@]}
+        echo "Total Configs: $total_configs"
+        
+        # Collect unique server IPs, ports, tokens, and proxy ports from frpc configs
+        declare -A unique_ips
+        declare -A unique_ports
+        declare -A local_ports
+        declare -A remote_ports
+        local auth_tokens=()
+        local total_proxies=0
+        
+        for config in "${client_configs[@]}"; do
+            # Get server address from frpc config
+            local server_addr
+            server_addr=$(get_toml_value "$config" "serverAddr" 2>/dev/null | sed 's/["'\'']//g' || echo "")
+            
+            # Get server port
+            local server_port
+            server_port=$(get_toml_value "$config" "serverPort" 2>/dev/null | tr -d '"' || echo "")
+            
+            # Get auth token
+            local auth_token
+            auth_token=$(get_toml_value "$config" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
+            
+            # Store unique server IPs
+            [[ -n "$server_addr" ]] && unique_ips["$server_addr"]=1
+            
+            # Store unique server ports
+            [[ -n "$server_port" ]] && unique_ports["$server_port"]=1
+            
+            # Store auth token (use first one found)
+            if [[ -n "$auth_token" ]] && [[ ${#auth_tokens[@]} -eq 0 ]]; then
+                auth_tokens+=("$auth_token")
+            fi
+            
+            # Extract local and remote ports from proxies
+            local in_proxy=false
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                # Skip empty lines and comments
+                [[ -z "${line// }" ]] && continue
+                [[ "$line" =~ ^[[:space:]]*# ]] && continue
+                
+                if [[ "$line" =~ ^\[\[proxies\]\] ]]; then
+                    in_proxy=true
+                    continue
+                fi
+                if [[ "$in_proxy" == true ]]; then
+                    # Exit proxy section if we hit a new section
+                    if [[ "$line" =~ ^\[\[ ]]; then
+                        in_proxy=false
+                        continue
+                    fi
+                    # Match localPort (handles quoted and unquoted values)
+                    if [[ "$line" =~ ^localPort[[:space:]]*=[[:space:]]*(.*) ]]; then
+                        local value="${BASH_REMATCH[1]}"
+                        # Remove quotes and whitespace, extract number
+                        value=$(echo "$value" | sed "s/^[\"']//;s/[\"']$//;s/^[[:space:]]*//;s/[[:space:]]*$//")
+                        if [[ "$value" =~ ^([0-9]+)$ ]]; then
+                            local port="${BASH_REMATCH[1]}"
+                            [[ -n "$port" ]] && local_ports["$port"]=1
+                        fi
+                    fi
+                    # Match remotePort (handles quoted and unquoted values)
+                    if [[ "$line" =~ ^remotePort[[:space:]]*=[[:space:]]*(.*) ]]; then
+                        local value="${BASH_REMATCH[1]}"
+                        # Remove quotes and whitespace, extract number
+                        value=$(echo "$value" | sed "s/^[\"']//;s/[\"']$//;s/^[[:space:]]*//;s/[[:space:]]*$//")
+                        if [[ "$value" =~ ^([0-9]+)$ ]]; then
+                            local port="${BASH_REMATCH[1]}"
+                            [[ -n "$port" ]] && remote_ports["$port"]=1
+                        fi
+                    fi
+                fi
+            done < "$config"
+            
+            # Count proxies
+            local proxy_count=0
+            proxy_count=$(grep -c '^\[\[proxies\]\]' "$config" 2>/dev/null || echo "0")
+            # Ensure proxy_count is numeric
+            if [[ ! "$proxy_count" =~ ^[0-9]+$ ]]; then
+                proxy_count=0
+            fi
+            total_proxies=$((total_proxies + proxy_count))
         done
         
+        # Display server IPs (comma-separated, no spaces)
+        if [[ ${#unique_ips[@]} -gt 0 ]]; then
+            local ip_list
+            ip_list=$(IFS=','; echo "${!unique_ips[*]}")
+            echo "Server IPs: $ip_list"
+        fi
+        
+        # Display server ports (comma-separated if multiple, single if same)
+        if [[ ${#unique_ports[@]} -gt 0 ]]; then
+            local port_list
+            port_list=$(IFS=','; echo "${!unique_ports[*]}")
+            echo "Server Ports: $port_list"
+        fi
+        
+        # Display auth token
+        if [[ ${#auth_tokens[@]} -gt 0 ]]; then
+            echo "Auth Token: ${auth_tokens[0]}"
+        fi
+        
+        # Display local and remote ports
+        if [[ ${#local_ports[@]} -gt 0 ]]; then
+            local local_list
+            local_list=$(IFS=','; echo "${!local_ports[*]}")
+            echo -e "${GREEN}local:${NC} $local_list"
+        fi
+        
+        if [[ ${#remote_ports[@]} -gt 0 ]]; then
+            local remote_list
+            remote_list=$(IFS=','; echo "${!remote_ports[*]}")
+            echo -e "${GREEN}remote:${NC} $remote_list"
+        fi
+        
+        # Display total proxies
+        echo "Total Proxies: $total_proxies"
         echo
-    done
+    fi
     
-    # Overall statistics
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}📊 Overall Statistics${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    
-    local total_configs
-    total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index" 2>/dev/null || echo "0")
-    local total_proxies
-    total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index" 2>/dev/null || echo "0")
-    local unique_servers
-    unique_servers=$(sqlite3 "$db_path" "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''" 2>/dev/null || echo "0")
-    
-    echo "  Total Configs: $total_configs"
-    echo "  Total Proxies: $total_proxies"
-    echo "  Unique Servers: $unique_servers"
-    echo
-    
-    # Export options menu
-    echo -e "${CYAN}Options:${NC}"
-    echo "1. Export to text file"
-    echo "2. Export to JSON"
-    echo "3. Export to YAML"
-    echo "4. Run connection tests"
-    echo "0. Back"
-    echo
-    
-    safe_read "Enter your choice" "choice" "0"
-    
-    case "$choice" in
-        1)
-            export_config_summary "text"
-            ;;
-        2)
-            export_config_summary "json"
-            ;;
-        3)
-            export_config_summary "yaml"
-            ;;
-        4)
-            # Check if run_connection_tests_all exists (Story 3.4)
-            if command -v run_connection_tests_all &>/dev/null || type run_connection_tests_all &>/dev/null 2>&1; then
-                run_connection_tests_all
-            else
-                log "WARN" "Connection testing not available. Story 3.4 not yet implemented."
-                read -p "Press Enter to continue..."
-            fi
-            ;;
-        0)
-            return
-            ;;
-        *)
-            log "ERROR" "Invalid choice"
-            ;;
-    esac
+    read -p "Press Enter to continue..."
 }
 
 # Display individual config summary

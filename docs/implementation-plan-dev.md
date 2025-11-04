@@ -259,7 +259,7 @@ show_config_details() {
         echo "  📋 Share with clients:"
         echo "     • Server IPs: $(get_server_ips_for_sharing)"
         echo "     • Server Port: $server_port"
-        echo "     • Token: ${auth_token:0:12}..."
+        echo "     • Token: ${auth_token}"
         
         local server_status=$(get_service_status "$SERVER_SERVICE")
         if [[ "$server_status" == "active" ]]; then
@@ -305,7 +305,7 @@ show_config_details() {
             echo "  Server Ports: $(IFS=','; echo "${unique_ports[*]}")"
         fi
         if [[ ${#auth_tokens[@]} -gt 0 ]]; then
-            echo "  Auth Token: ${auth_tokens[0]:0:12}..."
+            echo "  Auth Token: ${auth_tokens[0]"
         fi
         echo "  Total Proxies: $total_proxies"
         echo
