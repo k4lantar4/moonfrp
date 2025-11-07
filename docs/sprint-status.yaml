@@ -15,7 +15,7 @@ development_status:
     status: backlog
     epic_id: MOONFRP-E01
     title: Critical Fixes & Scale Foundation
-  
+
   1-1-fix-frp-version-detection:
     status: done
     story_id: MOONFRP-E01-S01
@@ -23,7 +23,7 @@ development_status:
     title: Fix FRP Version Detection
     priority: P0
     effort: 0.5 days
-  
+
   1-2-implement-config-index:
     status: done
     story_id: MOONFRP-E01-S02
@@ -31,7 +31,7 @@ development_status:
     title: Implement Config Index
     priority: P0
     effort: 1.5 days
-  
+
   1-3-config-validation-framework:
     status: done
     story_id: MOONFRP-E01-S03
@@ -39,7 +39,7 @@ development_status:
     title: Config Validation Framework
     priority: P0
     effort: 1 day
-  
+
   1-4-automatic-backup-system:
     status: done
     story_id: MOONFRP-E01-S04
@@ -47,13 +47,13 @@ development_status:
     title: Automatic Backup System
     priority: P0
     effort: 0.5 days
-  
+
   # Epic 2: Bulk Operations
   epic-2:
     status: backlog
     epic_id: MOONFRP-E02
     title: Bulk Operations
-  
+
   2-1-parallel-service-management:
     status: done
     story_id: MOONFRP-E02-S01
@@ -61,7 +61,7 @@ development_status:
     title: Parallel Service Management
     priority: P0
     effort: 2 days
-  
+
   2-2-bulk-configuration-operations:
     status: done
     story_id: MOONFRP-E02-S02
@@ -69,7 +69,7 @@ development_status:
     title: Bulk Configuration Operations
     priority: P0
     effort: 1.5 days
-  
+
   2-3-service-grouping-tagging:
     status: done
     story_id: MOONFRP-E02-S03
@@ -77,7 +77,7 @@ development_status:
     title: Service Grouping & Tagging
     priority: P0
     effort: 1.5 days
-  
+
   2-4-configuration-templates:
     status: done
     story_id: MOONFRP-E02-S04
@@ -85,13 +85,13 @@ development_status:
     title: Configuration Templates
     priority: P1
     effort: 1.5 days
-  
+
   # Epic 3: Performance & UX at Scale
   epic-3:
     status: backlog
     epic_id: MOONFRP-E03
     title: Performance & UX at Scale
-  
+
   3-1-cached-status-display:
     status: done
     story_id: MOONFRP-E03-S01
@@ -99,7 +99,7 @@ development_status:
     title: Cached Status Display
     priority: P1
     effort: 1.5 days
-  
+
   3-2-search-filter-interface:
     status: done
     story_id: MOONFRP-E03-S02
@@ -107,7 +107,7 @@ development_status:
     title: Search & Filter Interface
     priority: P1
     effort: 1.5 days
-  
+
   3-3-enhanced-config-details-view:
     status: done
     story_id: MOONFRP-E03-S03
@@ -115,7 +115,7 @@ development_status:
     title: Enhanced Config Details View
     priority: P1
     effort: 1 day
-  
+
   3-4-async-connection-testing:
     status: done
     story_id: MOONFRP-E03-S04
@@ -154,7 +154,7 @@ development_status:
     title: DevOps Integration
 
   5-1-configuration-as-code-export-import:
-    status: ready-for-dev
+    status: done
     story_id: MOONFRP-E05-S01
     epic: 5
     title: Configuration as Code (Export/Import)
@@ -162,7 +162,7 @@ development_status:
     effort: 1.5 days
 
   5-2-non-interactive-cli-mode:
-    status: ready-for-dev
+    status: done
     story_id: MOONFRP-E05-S02
     epic: 5
     title: Non-Interactive CLI Mode
@@ -170,7 +170,7 @@ development_status:
     effort: 1 day
 
   5-3-structured-logging:
-    status: ready-for-dev
+    status: done
     story_id: MOONFRP-E05-S03
     epic: 5
     title: Structured Logging
