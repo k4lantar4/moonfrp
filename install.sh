@@ -30,7 +30,7 @@ log() {
     shift
     local message="$*"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     case "$level" in
         "INFO")  echo -e "${GREEN}[$timestamp] [INFO]${NC} $message" ;;
         "WARN")  echo -e "${YELLOW}[$timestamp] [WARN]${NC} $message" ;;
@@ -74,7 +74,7 @@ detect_system() {
         log "ERROR" "Cannot detect operating system"
         exit 1
     fi
-    
+
     ARCH=$(uname -m)
     case $ARCH in
         x86_64) ARCH="amd64" ;;
@@ -82,7 +82,7 @@ detect_system() {
         armv7l) ARCH="armv7" ;;
         *) log "ERROR" "Unsupported architecture: $ARCH"; exit 1 ;;
     esac
-    
+
     log "INFO" "Detected OS: $OS $VERSION"
     log "INFO" "Detected Architecture: $ARCH"
 }
@@ -91,13 +91,13 @@ detect_system() {
 check_dependencies() {
     local deps=("curl" "tar" "systemctl")
     local missing_deps=()
-    
+
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             missing_deps+=("$dep")
         fi
     done
-    
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         log "WARN" "Missing dependencies: ${missing_deps[*]}"
         install_dependencies "${missing_deps[@]}"
@@ -107,7 +107,7 @@ check_dependencies() {
 # Install dependencies
 install_dependencies() {
     local deps=("$@")
-    
+
     case "$OS" in
         ubuntu|debian)
             log "INFO" "Installing dependencies using apt..."
@@ -133,36 +133,36 @@ install_dependencies() {
 # Create directories
 create_directories() {
     local dirs=("/opt/frp" "/etc/frp" "/var/log/frp" "/etc/moonfrp" "$TEMP_DIR")
-    
+
     for dir in "${dirs[@]}"; do
         [[ ! -d "$dir" ]] && mkdir -p "$dir"
     done
-    
+
     log "INFO" "Created required directories"
 }
 
 # Download and install MoonFRP
 install_moonfrp() {
     log "INFO" "Downloading MoonFRP v$MOONFRP_VERSION..."
-    
+
     # Create temporary directory
     mkdir -p "$TEMP_DIR"
-    
+
     # Download all required files
-    local files=("moonfrp-core.sh" "moonfrp-config.sh" "moonfrp-index.sh" "moonfrp-services.sh" "moonfrp-ui.sh" "moonfrp-templates.sh" "moonfrp-search.sh" "moonfrp-optimize.sh" "moonfrp.sh")
-    
+    local files=("moonfrp-core.sh" "moonfrp-config.sh" "moonfrp-index.sh" "moonfrp-services.sh" "moonfrp-ui.sh" "moonfrp-templates.sh" "moonfrp-search.sh" "moonfrp-optimize.sh" "moonfrp.sh" "moonfrp-iac.sh" "moonfrp-metrics.sh")
+
     for file in "${files[@]}"; do
         local url="$REPO_URL/$file"
         local temp_file="$TEMP_DIR/$file"
-        
+
         if ! curl -fsSL "$url" -o "$temp_file"; then
             log "ERROR" "Failed to download $file"
             exit 1
         fi
-        
+
         chmod +x "$temp_file"
     done
-    
+
     # Create main script
     cat > "$TEMP_DIR/$SCRIPT_NAME" << 'EOF'
 #!/bin/bash
@@ -170,28 +170,28 @@ install_moonfrp() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec "$SCRIPT_DIR/moonfrp.sh" "$@"
 EOF
-    
+
     chmod +x "$TEMP_DIR/$SCRIPT_NAME"
-    
+
     # Ensure installation directory exists
     mkdir -p "$INSTALL_DIR"
-    
+
     # Install all files
     for file in "${files[@]}"; do
         cp "$TEMP_DIR/$file" "$INSTALL_DIR/"
     done
     cp "$TEMP_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$SCRIPT_NAME"
-    
+
     # Create symlink for global access
     ln -sf "$INSTALL_DIR/$SCRIPT_NAME" "/usr/bin/$SCRIPT_NAME"
-    
+
     log "INFO" "MoonFRP installed to $INSTALL_DIR"
 }
 
 # Create configuration file
 create_config_file() {
     local config_file="/etc/moonfrp/config"
-    
+
     # Normalize ARCH to FRP format
     local frp_arch="$ARCH"
     case "$frp_arch" in
@@ -200,7 +200,7 @@ create_config_file() {
         armv7) frp_arch="linux_armv7" ;;
         *) frp_arch="linux_amd64" ;;
     esac
-    
+
     cat > "$config_file" << 'EOFCONFIG'
 # MoonFRP Configuration
 # Generated on DATE_PLACEHOLDER
@@ -255,22 +255,22 @@ MOONFRP_SERVER_IPS="${MOONFRP_SERVER_IPS:-}"
 MOONFRP_SERVER_PORTS="${MOONFRP_SERVER_PORTS:-}"
 MOONFRP_CLIENT_PORTS="${MOONFRP_CLIENT_PORTS:-}"
 EOFCONFIG
-    
+
     # Replace placeholders
     sed -i "s|DATE_PLACEHOLDER|$(date)|g" "$config_file"
     sed -i "s|ARCH_PLACEHOLDER|$frp_arch|g" "$config_file"
-    
+
     log "INFO" "Created configuration file: $config_file"
 }
 
 # Stop FRP services and processes before installing binaries
 stop_frp_processes() {
     local frp_dir="${1:-/opt/frp}"
-    
+
     # Stop systemd services if they exist
     local services=($(systemctl list-unit-files --type=service --all --no-pager --no-legend 2>/dev/null | \
         awk '/moonfrp-/{print $1}' | sed 's/.service$//' || true))
-    
+
     if [[ ${#services[@]} -gt 0 ]]; then
         log "INFO" "Stopping MoonFRP services before binary installation..."
         for service in "${services[@]}"; do
@@ -282,7 +282,7 @@ stop_frp_processes() {
         # Wait for services to fully stop
         sleep 2
     fi
-    
+
     # Kill any direct frpc/frps processes that might be running
     local pids=($(pgrep -f "(frpc|frps)" 2>/dev/null || true))
     if [[ ${#pids[@]} -gt 0 ]]; then
@@ -301,7 +301,7 @@ stop_frp_processes() {
             sleep 1
         fi
     fi
-    
+
     # Check if binaries are still in use and wait if needed
     local max_wait=10
     local wait_count=0
@@ -323,9 +323,9 @@ install_frp_binaries() {
     if [[ -f "$config_file" ]]; then
         source "$config_file"
     fi
-    
+
     local frp_version="${FRP_VERSION:-0.65.0}"
-    
+
     # Determine architecture (use normalized value from config or detect)
     local frp_arch="${FRP_ARCH:-${MOONFRP_FRP_ARCH:-}}"
     if [[ -z "$frp_arch" ]]; then
@@ -336,32 +336,32 @@ install_frp_binaries() {
             *) frp_arch="linux_amd64" ;;
         esac
     fi
-    
+
     # Use FRP_DIR from config, or fallback to default
     local frp_dir="${FRP_DIR:-/opt/frp}"
-    
+
     log "INFO" "Installing FRP v$frp_version ($frp_arch)..."
-    
+
     # Stop any running FRP processes before installing binaries
     stop_frp_processes "$frp_dir"
-    
+
     # Download URL
     local download_url="https://github.com/fatedier/frp/releases/download/v${frp_version}/frp_${frp_version}_${frp_arch}.tar.gz"
     local temp_file="$TEMP_DIR/frp_${frp_version}_${frp_arch}.tar.gz"
-    
+
     # Download FRP
     if ! curl -fsSL "$download_url" -o "$temp_file"; then
         log "ERROR" "Failed to download FRP from: $download_url"
         log "WARN" "You can install FRP later by running: moonfrp (then select option 6)"
         return 1
     fi
-    
+
     # Extract FRP
     if ! tar -xzf "$temp_file" -C "$TEMP_DIR"; then
         log "ERROR" "Failed to extract FRP archive"
         return 1
     fi
-    
+
     # Install binaries (use install command which handles busy files better, or use mv)
     if [[ -f "$frp_dir/frps" ]] && lsof "$frp_dir/frps" &>/dev/null; then
         log "WARN" "frps is still in use, attempting to replace..."
@@ -373,15 +373,15 @@ install_frp_binaries() {
         rm -f "$frp_dir/frpc" 2>/dev/null || true
         sleep 1
     fi
-    
+
     cp "$TEMP_DIR/frp_${frp_version}_${frp_arch}/frps" "$frp_dir/"
     cp "$TEMP_DIR/frp_${frp_version}_${frp_arch}/frpc" "$frp_dir/"
     chmod +x "$frp_dir/frps" "$frp_dir/frpc"
-    
+
     # Cleanup extracted files
     rm -rf "$TEMP_DIR/frp_${frp_version}_${frp_arch}"
     rm -f "$temp_file"
-    
+
     log "INFO" "FRP v$frp_version installed successfully to $frp_dir"
     return 0
 }
@@ -440,9 +440,9 @@ main() {
     echo -e "${PURPLE}║         Version $MOONFRP_VERSION              ║${NC}"
     echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
     echo
-    
+
     log "INFO" "Starting MoonFRP installation..."
-    
+
     check_root
     detect_system
     check_dependencies
@@ -450,7 +450,7 @@ main() {
     install_moonfrp
     create_config_file
     install_frp_binaries
-    
+
     if verify_installation; then
         display_summary
         cleanup
