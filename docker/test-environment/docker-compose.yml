@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  test-server-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moonfrp-test-server-1
+    hostname: test-server-1
+    networks:
+      - moonfrp-test
+    volumes:
+      - ../../ansible:/workspace/ansible:ro
+      - test-data-1:/opt/moonfrp
+      - test-config-1:/etc/moonfrp
+    environment:
+      - FRP_VERSION=0.63.0
+      - FRP_DIR=/opt/moonfrp/frp
+      - MOONFRP_CONFIG_DIR=/etc/moonfrp/frp
+      - MOONFRP_LOG_DIR=/var/log/moonfrp
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    # Expose ports for testing
+    ports:
+      - "7001:7000"  # FRP server port
+      - "7501:7500"  # Dashboard port
+
+  test-server-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moonfrp-test-server-2
+    hostname: test-server-2
+    networks:
+      - moonfrp-test
+    volumes:
+      - ../../ansible:/workspace/ansible:ro
+      - test-data-2:/opt/moonfrp
+      - test-config-2:/etc/moonfrp
+    environment:
+      - FRP_VERSION=0.65.0
+      - FRP_DIR=/opt/moonfrp/frp
+      - MOONFRP_CONFIG_DIR=/etc/moonfrp/frp
+      - MOONFRP_LOG_DIR=/var/log/moonfrp
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "7002:7000"
+      - "7502:7500"
+
+networks:
+  moonfrp-test:
+    driver: bridge
+
+volumes:
+  test-data-1:
+  test-data-2:
+  test-config-1:
+  test-config-2:
+
