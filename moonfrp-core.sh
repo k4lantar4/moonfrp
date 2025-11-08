@@ -119,6 +119,7 @@ fi
 [[ -z "${DEFAULT_LOG_LEVEL:-}" ]] && readonly DEFAULT_LOG_LEVEL="${MOONFRP_LOG_LEVEL:-info}"
 [[ -z "${DEFAULT_LOG_MAX_DAYS:-}" ]] && readonly DEFAULT_LOG_MAX_DAYS="${MOONFRP_LOG_MAX_DAYS:-7}"
 [[ -z "${DEFAULT_LOG_DISABLE_COLOR:-}" ]] && readonly DEFAULT_LOG_DISABLE_COLOR="${MOONFRP_LOG_DISABLE_COLOR:-false}"
+[[ -z "${DEFAULT_LOG_FORMAT:-}" ]] && readonly DEFAULT_LOG_FORMAT="${MOONFRP_LOG_FORMAT:-text}"
 
 # Multi-IP configuration (only declare if not already set)
 [[ -z "${SERVER_IPS:-}" ]] && readonly SERVER_IPS="${MOONFRP_SERVER_IPS:-}"
@@ -143,13 +144,113 @@ fi
 # CORE FUNCTIONS
 #==============================================================================
 
+# JSON logging function - outputs structured JSON logs
+log_json() {
+    local level="$1"
+    shift
+    local message="$*"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')
+
+    # Build JSON object efficiently
+    local json="{"
+    json+="\"timestamp\":\"$timestamp\","
+    json+="\"level\":\"$level\","
+    json+="\"message\":\"$(echo -n "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')\","
+    json+="\"application\":\"moonfrp\","
+    json+="\"version\":\"$MOONFRP_VERSION\""
+
+    # Add optional context fields if provided via environment
+    if [[ -n "${MOONFRP_LOG_SERVICE:-}" ]]; then
+        json+=",\"service\":\"${MOONFRP_LOG_SERVICE}\""
+    fi
+    if [[ -n "${MOONFRP_LOG_OPERATION:-}" ]]; then
+        json+=",\"operation\":\"${MOONFRP_LOG_OPERATION}\""
+    fi
+    if [[ -n "${MOONFRP_LOG_DURATION:-}" ]]; then
+        json+=",\"duration\":${MOONFRP_LOG_DURATION}"
+    fi
+
+    # Add stack trace for errors if available
+    if [[ "$level" == "ERROR" && -n "${BASH_LINENO:-}" ]]; then
+        local stack_trace=""
+        local i
+        for ((i=${#BASH_LINENO[@]}-1; i>=0; i--)); do
+            if [[ -n "${BASH_SOURCE[$i]:-}" ]]; then
+                if [[ -n "$stack_trace" ]]; then
+                    stack_trace+=" -> "
+                fi
+                stack_trace+="${BASH_SOURCE[$i]}:${BASH_LINENO[$i]}"
+            fi
+        done
+        if [[ -n "$stack_trace" ]]; then
+            json+=",\"stack_trace\":\"$(echo -n "$stack_trace" | sed 's/\\/\\\\/g; s/"/\\"/g')\""
+        fi
+    fi
+
+    json+="}"
+
+    echo "$json"
+}
+
 # Centralized logging function
 log() {
     local level="$1"
     shift
     local message="$*"
+    # Determine log format: check MOONFRP_LOG_FORMAT first, then DEFAULT_LOG_FORMAT, then default to "text"
+    local log_format="text"
+    if [[ -n "${MOONFRP_LOG_FORMAT:-}" ]]; then
+        log_format="${MOONFRP_LOG_FORMAT}"
+    elif [[ -n "${DEFAULT_LOG_FORMAT:-}" ]]; then
+        log_format="${DEFAULT_LOG_FORMAT}"
+    fi
+
+    # Route to JSON logging if format is json
+    if [[ "$log_format" == "json" ]]; then
+        local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')
+        local json="{"
+        json+="\"timestamp\":\"$timestamp\","
+        json+="\"level\":\"$level\","
+        json+="\"message\":\"$(echo -n "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')\","
+        json+="\"application\":\"moonfrp\","
+        json+="\"version\":\"$MOONFRP_VERSION\""
+
+        # Add optional context fields if provided via environment
+        if [[ -n "${MOONFRP_LOG_SERVICE:-}" ]]; then
+            json+=",\"service\":\"${MOONFRP_LOG_SERVICE}\""
+        fi
+        if [[ -n "${MOONFRP_LOG_OPERATION:-}" ]]; then
+            json+=",\"operation\":\"${MOONFRP_LOG_OPERATION}\""
+        fi
+        if [[ -n "${MOONFRP_LOG_DURATION:-}" ]]; then
+            json+=",\"duration\":${MOONFRP_LOG_DURATION}"
+        fi
+
+        # Add stack trace for errors if available
+        if [[ "$level" == "ERROR" && -n "${BASH_LINENO:-}" ]]; then
+            local stack_trace=""
+            local i
+            for ((i=${#BASH_LINENO[@]}-1; i>=0; i--)); do
+                if [[ -n "${BASH_SOURCE[$i]:-}" ]]; then
+                    if [[ -n "$stack_trace" ]]; then
+                        stack_trace+=" -> "
+                    fi
+                    stack_trace+="${BASH_SOURCE[$i]}:${BASH_LINENO[$i]}"
+                fi
+            done
+            if [[ -n "$stack_trace" ]]; then
+                json+=",\"stack_trace\":\"$(echo -n "$stack_trace" | sed 's/\\/\\\\/g; s/"/\\"/g')\""
+            fi
+        fi
+
+        json+="}"
+        echo "$json"
+        return 0
+    fi
+
+    # Default text format logging
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     case "$level" in
         "DEBUG") echo -e "${GRAY}[$timestamp] [DEBUG]${NC} $message" ;;
         "INFO")  echo -e "${GREEN}[$timestamp] [INFO]${NC} $message" ;;
@@ -182,7 +283,7 @@ setup_signal_handlers() {
 # Create required directories
 create_directories() {
     local dirs=("$FRP_DIR" "$CONFIG_DIR" "$LOG_DIR" "$TEMP_DIR" "/etc/moonfrp")
-    
+
     for dir in "${dirs[@]}"; do
         if [[ ! -d "$dir" ]]; then
             mkdir -p "$dir"
@@ -204,13 +305,13 @@ check_root() {
 check_dependencies() {
     local deps=("curl" "tar" "systemctl" "openssl")
     local missing_deps=()
-    
+
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             missing_deps+=("$dep")
         fi
     done
-    
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         log "ERROR" "Missing dependencies: ${missing_deps[*]}"
         log "INFO" "Please install missing dependencies and try again"
@@ -257,14 +358,14 @@ safe_read() {
     local var_name="$2"
     local default_value="${3:-}"
     local allow_empty="${4:-false}"
-    
+
     while true; do
         if [[ -n "$default_value" ]]; then
             echo -n -e "${CYAN}$prompt${NC} [${GREEN}$default_value${NC}]: "
         else
             echo -n -e "${CYAN}$prompt${NC}: "
         fi
-        
+
         if read -r input; then
             if [[ -n "$input" ]]; then
                 eval "$var_name=\"$input\""
@@ -367,12 +468,12 @@ format_bytes() {
     local bytes="$1"
     local units=("B" "KB" "MB" "GB" "TB")
     local unit_index=0
-    
+
     while ((bytes >= 1024 && unit_index < 4)); do
         bytes=$((bytes / 1024))
         ((unit_index++))
     done
-    
+
     echo "${bytes}${units[$unit_index]}"
 }
 
@@ -381,7 +482,7 @@ show_spinner() {
     local pid="$1"
     local delay=0.1
     local spinstr='|/-\'
-    
+
     while kill -0 "$pid" 2>/dev/null; do
         local temp=${spinstr#?}
         printf " [%c]  " "$spinstr"
@@ -404,7 +505,7 @@ init() {
     setup_signal_handlers
     create_directories
     check_dependencies
-    
+
     # Create configuration file if it doesn't exist
     if [[ ! -f "/etc/moonfrp/config" ]]; then
         create_default_config
@@ -460,13 +561,14 @@ MOONFRP_HEARTBEAT_TIMEOUT="$DEFAULT_HEARTBEAT_TIMEOUT"
 MOONFRP_LOG_LEVEL="$DEFAULT_LOG_LEVEL"
 MOONFRP_LOG_MAX_DAYS="$DEFAULT_LOG_MAX_DAYS"
 MOONFRP_LOG_DISABLE_COLOR="$DEFAULT_LOG_DISABLE_COLOR"
+MOONFRP_LOG_FORMAT="$DEFAULT_LOG_FORMAT"
 
 # Multi-IP Configuration
 MOONFRP_SERVER_IPS="$SERVER_IPS"
 MOONFRP_SERVER_PORTS="$SERVER_PORTS"
 MOONFRP_CLIENT_PORTS="$CLIENT_PORTS"
 EOF
-    
+
     log "INFO" "Created default configuration file: /etc/moonfrp/config"
 }
 
