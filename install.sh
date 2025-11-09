@@ -18,7 +18,7 @@ readonly CYAN='\033[0;36m'
 readonly NC='\033[0m' # No Color
 
 # Global variables
-readonly MOONFRP_VERSION="2.0.0"
+readonly MOONFRP_VERSION="2.1.0"
 readonly INSTALL_DIR="/usr/local/bin"
 readonly SCRIPT_NAME="moonfrp"
 readonly REPO_URL="https://raw.githubusercontent.com/k4lantar4/moonfrp/main"
