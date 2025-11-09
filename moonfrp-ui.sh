@@ -20,7 +20,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-services.sh"
 show_header() {
     local title="$1"
     local subtitle="${2:-}"
-    
+
     clear
     echo -e "${PURPLE}╔══════════════════════════════════════╗${NC}"
     echo -e "${PURPLE}║${NC} $(printf "%-34s" "$title") ${PURPLE}║${NC}"
@@ -35,7 +35,7 @@ show_header() {
 show_system_status() {
     echo -e "${CYAN}System Status:${NC}"
     echo
-    
+
     # FRP Installation Status
     if check_frp_installation; then
         local frp_version=$(get_frp_version)
@@ -43,21 +43,21 @@ show_system_status() {
     else
         echo -e "${RED}✗${NC} FRP not installed"
     fi
-    
+
     # MoonFRP Version
     echo -e "${GREEN}✓${NC} MoonFRP v$MOONFRP_VERSION"
-    
+
     # Service Status
     echo
     echo -e "${CYAN}Service Status:${NC}"
     list_frp_services
-    
+
     # Configuration Status
     echo
     echo -e "${CYAN}Configuration Status:${NC}"
-    
+
     check_and_update_index 2>/dev/null || true
-    
+
     # Use indexed queries with fallback
     local server_count=0
     local client_count=0
@@ -67,26 +67,26 @@ show_system_status() {
     else
         [[ -f "$CONFIG_DIR/frps.toml" ]] && server_count=1
     fi
-    
+
     local client_result
     if client_result=$(query_configs_by_type "client" 2>/dev/null); then
         [[ -n "$client_result" ]] && client_count=$(echo "$client_result" | wc -l)
     else
         client_count=$(find "$CONFIG_DIR" -name "frpc*.toml" -type f 2>/dev/null | wc -l)
     fi
-    
+
     if [[ $server_count -gt 0 ]]; then
         echo -e "${GREEN}✓${NC} $server_count server configuration(s) exist"
     else
         echo -e "${GRAY}○${NC} No server configuration"
     fi
-    
+
     if [[ $client_count -gt 0 ]]; then
         echo -e "${GREEN}✓${NC} $client_count client configuration(s) exist"
     else
         echo -e "${GRAY}○${NC} No client configurations"
     fi
-    
+
     local visitor_configs=($(find "$CONFIG_DIR" -name "visitor*.toml" -type f 2>/dev/null | wc -l))
     if [[ $visitor_configs -gt 0 ]]; then
         echo -e "${GREEN}✓${NC} $visitor_configs visitor configuration(s) exist"
@@ -98,11 +98,11 @@ show_system_status() {
 # Quick setup wizard
 quick_setup_wizard() {
     show_header "MoonFRP Quick Setup" "Configuration Wizard"
-    
+
     echo -e "${CYAN}This wizard will help you quickly set up MoonFRP.${NC}"
     echo -e "${CYAN}You can press Ctrl+C at any time to cancel.${NC}"
     echo
-    
+
     # Check if FRP is installed
     if ! check_frp_installation; then
         echo -e "${YELLOW}FRP is not installed. Installing now...${NC}"
@@ -112,7 +112,7 @@ quick_setup_wizard() {
             return 1
         fi
     fi
-    
+
     # Setup type selection
     echo -e "${YELLOW}What would you like to set up?${NC}"
     echo "1. Server (frps) - Run on Iran server"
@@ -120,9 +120,9 @@ quick_setup_wizard() {
     echo "3. Multi-IP Client - Connect to multiple servers"
     echo "0. Cancel"
     echo
-    
+
     safe_read "Enter your choice" "setup_type" "1"
-    
+
     case "$setup_type" in
         1)
             quick_server_setup
@@ -131,7 +131,7 @@ quick_setup_wizard() {
             quick_client_setup
             ;;
         3)
-            quick_multi_ip_setup
+            quick_client_setup
             ;;
         0)
             log "INFO" "Setup cancelled"
@@ -147,10 +147,10 @@ quick_setup_wizard() {
 # Quick server setup
 quick_server_setup() {
     show_header "Quick Server Setup" "Iran Server Configuration"
-    
+
     echo -e "${CYAN}Setting up FRP server for Iran server...${NC}"
     echo
-    
+
     # Generate server configuration with smart error handling
     local auth_token
     if ! auth_token=$(generate_server_config); then
@@ -170,14 +170,14 @@ quick_server_setup() {
             auth_token=$(get_toml_value "$CONFIG_DIR/frps.toml" "auth.token" 2>/dev/null | sed 's/["\'\'']//g' || echo "")
         fi
     fi
-    
+
     # Setup service (create directories if needed before setup)
     mkdir -p "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
     setup_server_service
-    
+
     # Start service
     start_service "$SERVER_SERVICE"
-    
+
     echo
     echo -e "${GREEN}Server setup complete!${NC}"
     echo -e "${GREEN}Configuration:${NC} $CONFIG_DIR/frps.toml"
@@ -187,91 +187,136 @@ quick_server_setup() {
     echo -e "${GREEN}Password:${NC} $(grep 'webServer.password' "$CONFIG_DIR/frps.toml" | cut -d'"' -f2)"
     echo
     echo -e "${YELLOW}Save the auth token - you'll need it for client configurations!${NC}"
-    
+
     read -p "Press Enter to continue..."
 }
 
-# Quick client setup
+# Quick client setup (unified single and multi-IP)
 quick_client_setup() {
-    show_header "Quick Client Setup" "Foreign Client Configuration"
-    
-    echo -e "${CYAN}Setting up FRP client to connect to Iran server...${NC}"
+    local server_addr server_ips server_port server_ports client_ports auth_token client_user local_ports remote_ports
+    local use_env_vars=false
+    local is_multi_mode=false
+
+    # Check for environment variables first
+    # Priority: Check multi-IP vars first, then single-IP vars
+    if [[ -n "${MOONFRP_SERVER_IPS:-}" ]] && [[ -n "${MOONFRP_CLIENT_SERVER_PORT:-}" ]] && \
+       [[ -n "${MOONFRP_CLIENT_AUTH_TOKEN:-}" ]]; then
+        # Multi-IP mode detected via environment variables
+        server_ips="${MOONFRP_SERVER_IPS}"
+        server_port="${MOONFRP_CLIENT_SERVER_PORT}"
+        local_ports="${MOONFRP_LOCAL_PORTS:-}"
+        remote_ports="${MOONFRP_REMOTE_PORTS:-}"
+        auth_token="${MOONFRP_CLIENT_AUTH_TOKEN}"
+        use_env_vars=true
+        is_multi_mode=true
+        log "INFO" "Using environment variables for multi-IP setup"
+        show_header "Quick Client Setup" "Multiple Server Configuration"
+        echo -e "${CYAN}Setting up FRP clients for multiple Iran servers...${NC}"
+    elif [[ -n "${MOONFRP_CLIENT_SERVER_ADDR:-}" ]] && [[ -n "${MOONFRP_CLIENT_AUTH_TOKEN:-}" ]]; then
+        # Single-IP mode detected via environment variables
+        server_addr="${MOONFRP_CLIENT_SERVER_ADDR}"
+        server_port="${MOONFRP_CLIENT_SERVER_PORT:-$DEFAULT_SERVER_BIND_PORT}"
+        auth_token="${MOONFRP_CLIENT_AUTH_TOKEN}"
+        client_user="${MOONFRP_CLIENT_USER:-moonfrp}"
+        local_ports="${MOONFRP_CLIENT_LOCAL_PORTS:-}"
+        use_env_vars=true
+        is_multi_mode=false
+        log "INFO" "Using environment variables for single-IP setup"
+        show_header "Quick Client Setup" "Foreign Client Configuration"
+        echo -e "${CYAN}Setting up FRP client to connect to Iran server...${NC}"
+    else
+        # Interactive mode: prompt for values
+        show_header "Quick Client Setup" "Foreign Client Configuration"
+        echo -e "${CYAN}Setting up FRP client to connect to Iran server...${NC}"
+        echo
+
+        safe_read "Iran server IP address(es) - comma-separated for multiple" "server_addr" ""
+
+        # Detect mode by checking for comma in input
+        if [[ "$server_addr" == *","* ]]; then
+            # Multi-IP mode detected
+            is_multi_mode=true
+            server_ips="$server_addr"
+            safe_read "Server port (single port for all servers)" "server_port" "7000"
+            safe_read "Local ports (comma-separated)" "local_ports" "8080,8081"
+            safe_read "Remote ports (comma-separated)" "remote_ports" "8080,8081"
+            safe_read "Auth token" "auth_token" ""
+        else
+            # Single-IP mode
+            is_multi_mode=false
+            while ! validate_ip "$server_addr"; do
+                log "ERROR" "Invalid IP address"
+                safe_read "Iran server IP address" "server_addr" ""
+            done
+
+            safe_read "Server port" "server_port" "$DEFAULT_SERVER_BIND_PORT"
+            while ! validate_port "$server_port"; do
+                log "ERROR" "Invalid port number"
+                safe_read "Server port" "server_port" "$DEFAULT_SERVER_BIND_PORT"
+            done
+
+            safe_read "Auth token" "auth_token" ""
+            safe_read "Client username" "client_user" "moonfrp"
+            safe_read "Local ports to proxy (comma-separated)" "local_ports" "8080,8081"
+        fi
+    fi
+
     echo
-    
-    local server_addr server_port auth_token client_user local_ports
-    
-    safe_read "Iran server IP address" "server_addr" ""
-    while ! validate_ip "$server_addr"; do
-        log "ERROR" "Invalid IP address"
-        safe_read "Iran server IP address" "server_addr" ""
-    done
-    
-    safe_read "Server port" "server_port" "$DEFAULT_SERVER_BIND_PORT"
-    while ! validate_port "$server_port"; do
-        log "ERROR" "Invalid port number"
-        safe_read "Server port" "server_port" "$DEFAULT_SERVER_BIND_PORT"
-    done
-    
-    safe_read "Auth token" "auth_token" ""
-    safe_read "Client username" "client_user" "moonfrp"
-    safe_read "Local ports to proxy (comma-separated)" "local_ports" "8080,8081"
-    
-    # Generate client configuration
-    generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports"
-    
-    # Setup service
-    setup_client_service ""
-    
-    # Start service
-    start_service "${CLIENT_SERVICE_PREFIX}"
-    
-    echo
-    echo -e "${GREEN}Client setup complete!${NC}"
-    echo -e "${GREEN}Configuration:${NC} $CONFIG_DIR/frpc.toml"
-    echo -e "${GREEN}Service:${NC} ${CLIENT_SERVICE_PREFIX}"
-    
-    read -p "Press Enter to continue..."
+
+    # Handle multi-IP mode
+    if [[ "$is_multi_mode" == "true" ]]; then
+        if ! generate_multi_ip_configs "$server_ips" "$server_port" "$local_ports" "$remote_ports" "$auth_token"; then
+            log "ERROR" "Failed to generate multi-IP configurations. Please review inputs and try again."
+            if [[ "$use_env_vars" != "true" ]]; then
+                read -p "Press Enter to continue..."
+            fi
+            return 1
+        fi
+
+        if ! setup_all_services; then
+            log "WARN" "Service setup encountered issues (root privileges and systemd support are required)."
+        fi
+
+        if ! start_all_services; then
+            log "WARN" "Some services failed to start. You can review logs via 'MoonFRP → Service Management'."
+        fi
+
+        echo
+        echo -e "${GREEN}Multi-IP client setup complete!${NC}"
+        echo -e "${GREEN}Configurations:${NC} $CONFIG_DIR/moonfrp-frpc-*.toml"
+
+        if [[ "$use_env_vars" != "true" ]]; then
+            read -p "Press Enter to continue..."
+        fi
+    else
+        # Handle single-IP mode
+        # Generate client configuration with moonfrp-frpc prefix
+        # For single-IP, use local_ports as both local and remote if remote_ports not specified
+        local single_remote_ports="${MOONFRP_REMOTE_PORTS:-$local_ports}"
+        generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports" "$single_remote_ports" "moonfrp-frpc"
+
+        # Setup service
+        setup_client_service ""
+
+        # Start service
+        start_service "${CLIENT_SERVICE_PREFIX}"
+
+        echo
+        echo -e "${GREEN}Client setup complete!${NC}"
+        echo -e "${GREEN}Configuration:${NC} $CONFIG_DIR/moonfrp-frpc.toml"
+        echo -e "${GREEN}Service:${NC} ${CLIENT_SERVICE_PREFIX}"
+
+        if [[ "$use_env_vars" != "true" ]]; then
+            read -p "Press Enter to continue..."
+        fi
+    fi
 }
 
-# Quick multi-IP setup
-quick_multi_ip_setup() {
-    show_header "Quick Multi-IP Setup" "Multiple Server Configuration"
-    
-    echo -e "${CYAN}Setting up FRP clients for multiple Iran servers...${NC}"
-    echo
-    
-    local server_ips server_ports client_ports auth_token
-    
-    safe_read "Server IPs (comma-separated)" "server_ips" ""
-    safe_read "Server ports (comma-separated)" "server_ports" "7000,7000,7000"
-    safe_read "Client ports (comma-separated)" "client_ports" "8080,8081,8082"
-    safe_read "Auth token" "auth_token" ""
-    
-    if ! generate_multi_ip_configs "$server_ips" "$server_ports" "$client_ports" "$auth_token"; then
-        log "ERROR" "Failed to generate multi-IP configurations. Please review inputs and try again."
-        read -p "Press Enter to continue..."
-        return 1
-    fi
-    
-    if ! setup_all_services; then
-        log "WARN" "Service setup encountered issues (root privileges and systemd support are required)."
-    fi
-    
-    if ! start_all_services; then
-        log "WARN" "Some services failed to start. You can review logs via 'MoonFRP → Service Management'."
-    fi
-    
-    echo
-    echo -e "${GREEN}Multi-IP setup complete!${NC}"
-    echo -e "${GREEN}Configurations:${NC} $CONFIG_DIR/frpc_*.toml"
-    
-    read -p "Press Enter to continue..."
-}
 
 # Install FRP
 install_frp() {
     log "INFO" "Installing FRP v$FRP_VERSION..."
-    
+
     # Determine architecture (prefer environment/CONFIG-provided FRP_ARCH)
     local arch="${FRP_ARCH:-}"
     if [[ -z "$arch" ]]; then
@@ -283,32 +328,32 @@ install_frp() {
             *) log "ERROR" "Unsupported architecture: $arch"; return 1 ;;
         esac
     fi
-    
+
     # Download URL
     local download_url="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_${arch}.tar.gz"
     local temp_file="$TEMP_DIR/frp_${FRP_VERSION}_${arch}.tar.gz"
-    
+
     # Download FRP
     if ! curl -fsSL "$download_url" -o "$temp_file"; then
         log "ERROR" "Failed to download FRP"
         return 1
     fi
-    
+
     # Extract FRP
     if ! tar -xzf "$temp_file" -C "$TEMP_DIR"; then
         log "ERROR" "Failed to extract FRP"
         return 1
     fi
-    
+
     # Install binaries
     cp "$TEMP_DIR/frp_${FRP_VERSION}_${arch}/frps" "$FRP_DIR/"
     cp "$TEMP_DIR/frp_${FRP_VERSION}_${arch}/frpc" "$FRP_DIR/"
     chmod +x "$FRP_DIR/frps" "$FRP_DIR/frpc"
-    
+
     # Cleanup
     rm -rf "$TEMP_DIR/frp_${FRP_VERSION}_${arch}"
     rm -f "$temp_file"
-    
+
     log "INFO" "FRP v$FRP_VERSION installed successfully"
     return 0
 }
@@ -320,13 +365,13 @@ main_menu() {
             MENU_STATE["ctrl_c_pressed"]="false"
             return
         fi
-        
+
         show_header "MoonFRP" "Advanced FRP Management Tool"
-        
+
         # Display cached status (Story 3.1)
         display_cached_status
         echo
-        
+
         echo -e "${CYAN}Main Menu:${NC}"
         echo "1. Quick Setup"
         echo "2. Service Management"
@@ -337,9 +382,9 @@ main_menu() {
         echo "r. Refresh Status"
         echo "0. Exit"
         echo
-        
+
         safe_read "Enter your choice" "choice" "0"
-        
+
         case "$choice" in
             1)
                 quick_setup_wizard
@@ -381,7 +426,7 @@ advanced_tools_menu() {
             MENU_STATE["ctrl_c_pressed"]="false"
             return
         fi
-        
+
         show_header "Advanced Tools" "System Utilities"
 
         echo -e "${CYAN}Advanced Tools:${NC}"
@@ -396,9 +441,9 @@ advanced_tools_menu() {
         echo "9. Uninstall MoonFRP"
         echo "0. Back to Main Menu"
         echo
-        
+
         safe_read "Enter your choice" "choice" "0"
-        
+
         case "$choice" in
             1)
                 install_frp_with_version
@@ -447,42 +492,42 @@ advanced_tools_menu() {
 # View logs menu
 view_logs_menu() {
     show_header "View Logs" "Service Log Viewer"
-    
+
     echo -e "${CYAN}Available Services:${NC}"
     local services=($(systemctl list-unit-files | grep -E "(moonfrp-server|moonfrp-client|moonfrp-visitor)" | awk '{print $1}' | sed 's/.service$//'))
-    
+
     if [[ ${#services[@]} -eq 0 ]]; then
         echo -e "${GRAY}No MoonFRP services found${NC}"
         read -p "Press Enter to continue..."
         return
     fi
-    
+
     for i in "${!services[@]}"; do
         echo "$((i+1)). ${services[i]}"
     done
     echo "0. Back"
     echo
-    
+
     safe_read "Select service" "choice" "0"
-    
+
     if [[ "$choice" -ge 1 && "$choice" -le ${#services[@]} ]]; then
         local service_name="${services[$((choice-1))]}"
         view_service_logs "$service_name"
     fi
-    
+
     read -p "Press Enter to continue..."
 }
 
 # Backup configurations
 backup_configurations() {
     show_header "Backup Configurations" "Create Configuration Backup"
-    
+
     local backup_dir="$CONFIG_DIR/backups"
     local timestamp=$(date '+%Y%m%d_%H%M%S')
     local backup_file="$backup_dir/moonfrp_backup_$timestamp.tar.gz"
-    
+
     mkdir -p "$backup_dir"
-    
+
     if tar -czf "$backup_file" -C "$CONFIG_DIR" .; then
         log "INFO" "Configuration backup created: $backup_file"
     else
@@ -493,21 +538,21 @@ backup_configurations() {
 # Restore configurations
 restore_configurations() {
     show_header "Restore Configurations" "Restore from Backup"
-    
+
     local backup_dir="$CONFIG_DIR/backups"
-    
+
     if [[ ! -d "$backup_dir" ]]; then
         log "ERROR" "No backup directory found"
         return 1
     fi
-    
+
     local backups=($(find "$backup_dir" -name "moonfrp_backup_*.tar.gz" -type f | sort -r))
-    
+
     if [[ ${#backups[@]} -eq 0 ]]; then
         log "ERROR" "No backups found"
         return 1
     fi
-    
+
     echo -e "${CYAN}Available Backups:${NC}"
     for i in "${!backups[@]}"; do
         local backup_name=$(basename "${backups[i]}")
@@ -516,15 +561,15 @@ restore_configurations() {
     done
     echo "0. Cancel"
     echo
-    
+
     safe_read "Select backup" "choice" "0"
-    
+
     if [[ "$choice" -ge 1 && "$choice" -le ${#backups[@]} ]]; then
         local selected_backup="${backups[$((choice-1))]}"
-        
+
         echo -e "${RED}This will overwrite current configurations!${NC}"
         safe_read "Are you sure? (yes/no)" "confirm" "no"
-        
+
         if [[ "$confirm" == "yes" ]]; then
             if tar -xzf "$selected_backup" -C "$CONFIG_DIR"; then
                 log "INFO" "Configuration restored from: $selected_backup"
@@ -538,9 +583,9 @@ restore_configurations() {
 # Update MoonFRP
 update_moonfrp() {
     show_header "Update MoonFRP" "Check for Updates"
-    
+
     log "INFO" "Checking for updates..."
-    
+
     # This would typically check GitHub for new releases
     # For now, just show current version
     echo -e "${GREEN}Current version: v$MOONFRP_VERSION${NC}"
@@ -550,25 +595,25 @@ update_moonfrp() {
 # Uninstall MoonFRP
 uninstall_moonfrp() {
     show_header "Uninstall MoonFRP" "Remove MoonFRP Completely"
-    
+
     echo -e "${RED}This will completely remove MoonFRP and all its components!${NC}"
     echo -e "${RED}This action cannot be undone!${NC}"
     echo
-    
+
     safe_read "Are you sure you want to uninstall? (yes/no)" "confirm" "no"
-    
+
     if [[ "$confirm" == "yes" ]]; then
         log "INFO" "Uninstalling MoonFRP..."
-        
+
         # Stop and remove all services
         remove_all_services
-        
+
         # Remove directories
         rm -rf "$FRP_DIR" "$CONFIG_DIR" "$LOG_DIR" "/etc/moonfrp"
-        
+
         # Remove binaries
         rm -f "/usr/local/bin/moonfrp" "/usr/bin/moonfrp"
-        
+
         log "INFO" "MoonFRP has been completely uninstalled"
     else
         log "INFO" "Uninstall cancelled"
@@ -583,27 +628,27 @@ uninstall_moonfrp() {
 is_private_ip() {
     local ip="$1"
     [[ -z "$ip" ]] && return 1
-    
+
     # Check for 127.x.x.x (loopback)
     if [[ "$ip" =~ ^127\. ]]; then
         return 0
     fi
-    
+
     # Check for 10.x.x.x (private class A)
     if [[ "$ip" =~ ^10\. ]]; then
         return 0
     fi
-    
+
     # Check for 172.16.x.x to 172.31.x.x (private class B)
     if [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
         return 0
     fi
-    
+
     # Check for 192.168.x.x (private class C)
     if [[ "$ip" =~ ^192\.168\. ]]; then
         return 0
     fi
-    
+
     return 1
 }
 
@@ -612,11 +657,11 @@ get_public_server_ips() {
     local public_ips=()
     local all_ips
     all_ips=$(hostname -I 2>/dev/null | tr ' ' '\n' || echo "")
-    
+
     if [[ -z "$all_ips" ]]; then
         return 1
     fi
-    
+
     while IFS= read -r ip || [[ -n "$ip" ]]; do
         [[ -z "$ip" ]] && continue
         # Skip IPv6 addresses (contain colons)
@@ -626,7 +671,7 @@ get_public_server_ips() {
             public_ips+=("$ip")
         fi
     done <<< "$all_ips"
-    
+
     if [[ ${#public_ips[@]} -gt 0 ]]; then
         IFS=','
         echo "${public_ips[*]}"
@@ -637,24 +682,24 @@ get_public_server_ips() {
 # Show enhanced config details - Fast, copy-paste ready format
 show_config_details() {
     clear
-    
+
     # Check for frps configuration
     if [[ -f "$CONFIG_DIR/frps.toml" ]]; then
         echo -e "${CYAN}[frps]${NC}"
         echo
-        
+
         # Get server port
         local server_port
         server_port=$(get_toml_value "$CONFIG_DIR/frps.toml" "bindPort" 2>/dev/null | tr -d '"' || echo "7000")
-        
+
         # Get auth token
         local auth_token
         auth_token=$(get_toml_value "$CONFIG_DIR/frps.toml" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
-        
+
         # Get public IPs (comma-separated, no spaces, IPv4 only)
         local public_ips
         public_ips=$(get_public_server_ips)
-        
+
         if [[ -n "$public_ips" ]]; then
             echo "Server IPs: $public_ips"
         fi
@@ -665,10 +710,10 @@ show_config_details() {
             echo "Token: $auth_token"
         fi
         echo
-        
+
         echo -e "${CYAN}[Web Dashboard]${NC}"
         echo
-        
+
         # Get web dashboard info
         local web_addr
         web_addr=$(get_toml_value "$CONFIG_DIR/frps.toml" "webServer.addr" 2>/dev/null | tr -d '"' || echo "0.0.0.0")
@@ -678,7 +723,7 @@ show_config_details() {
         web_user=$(get_toml_value "$CONFIG_DIR/frps.toml" "webServer.user" 2>/dev/null | tr -d '"' || echo "admin")
         local web_password
         web_password=$(get_toml_value "$CONFIG_DIR/frps.toml" "webServer.password" 2>/dev/null | tr -d '"' || echo "")
-        
+
         echo "address: ${web_addr}:${web_port}"
         echo "username: ${web_user}"
         if [[ -n "$web_password" ]]; then
@@ -686,17 +731,17 @@ show_config_details() {
         fi
         echo
     fi
-    
+
     # Check for frpc configurations
     local client_configs=($(find "$CONFIG_DIR" -maxdepth 1 -name "frpc*.toml" -type f 2>/dev/null | sort))
-    
+
     if [[ ${#client_configs[@]} -gt 0 ]]; then
         echo -e "${CYAN}[frpc]${NC}"
         echo
-        
+
         local total_configs=${#client_configs[@]}
         echo "Total Configs: $total_configs"
-        
+
         # Collect unique server IPs, ports, tokens, and proxy ports from frpc configs
         declare -A unique_ips
         declare -A unique_ports
@@ -704,38 +749,38 @@ show_config_details() {
         declare -A remote_ports
         local auth_tokens=()
         local total_proxies=0
-        
+
         for config in "${client_configs[@]}"; do
             # Get server address from frpc config
             local server_addr
             server_addr=$(get_toml_value "$config" "serverAddr" 2>/dev/null | sed 's/["'\'']//g' || echo "")
-            
+
             # Get server port
             local server_port
             server_port=$(get_toml_value "$config" "serverPort" 2>/dev/null | tr -d '"' || echo "")
-            
+
             # Get auth token
             local auth_token
             auth_token=$(get_toml_value "$config" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
-            
+
             # Store unique server IPs
             [[ -n "$server_addr" ]] && unique_ips["$server_addr"]=1
-            
+
             # Store unique server ports
             [[ -n "$server_port" ]] && unique_ports["$server_port"]=1
-            
+
             # Store auth token (use first one found)
             if [[ -n "$auth_token" ]] && [[ ${#auth_tokens[@]} -eq 0 ]]; then
                 auth_tokens+=("$auth_token")
             fi
-            
+
             # Extract local and remote ports from proxies
             local in_proxy=false
             while IFS= read -r line || [[ -n "$line" ]]; do
                 # Skip empty lines and comments
                 [[ -z "${line// }" ]] && continue
                 [[ "$line" =~ ^[[:space:]]*# ]] && continue
-                
+
                 if [[ "$line" =~ ^\[\[proxies\]\] ]]; then
                     in_proxy=true
                     continue
@@ -768,7 +813,7 @@ show_config_details() {
                     fi
                 fi
             done < "$config"
-            
+
             # Count proxies
             local proxy_count=0
             proxy_count=$(grep -c '^\[\[proxies\]\]' "$config" 2>/dev/null || echo "0")
@@ -778,44 +823,44 @@ show_config_details() {
             fi
             total_proxies=$((total_proxies + proxy_count))
         done
-        
+
         # Display server IPs (comma-separated, no spaces)
         if [[ ${#unique_ips[@]} -gt 0 ]]; then
             local ip_list
             ip_list=$(IFS=','; echo "${!unique_ips[*]}")
             echo "Server IPs: $ip_list"
         fi
-        
+
         # Display server ports (comma-separated if multiple, single if same)
         if [[ ${#unique_ports[@]} -gt 0 ]]; then
             local port_list
             port_list=$(IFS=','; echo "${!unique_ports[*]}")
             echo "Server Ports: $port_list"
         fi
-        
+
         # Display auth token
         if [[ ${#auth_tokens[@]} -gt 0 ]]; then
             echo "Auth Token: ${auth_tokens[0]}"
         fi
-        
+
         # Display local and remote ports
         if [[ ${#local_ports[@]} -gt 0 ]]; then
             local local_list
             local_list=$(IFS=','; echo "${!local_ports[*]}")
             echo -e "${GREEN}local:${NC} $local_list"
         fi
-        
+
         if [[ ${#remote_ports[@]} -gt 0 ]]; then
             local remote_list
             remote_list=$(IFS=','; echo "${!remote_ports[*]}")
             echo -e "${GREEN}remote:${NC} $remote_list"
         fi
-        
+
         # Display total proxies
         echo "Total Proxies: $total_proxies"
         echo
     fi
-    
+
     read -p "Press Enter to continue..."
 }
 
@@ -823,13 +868,13 @@ show_config_details() {
 display_config_summary() {
     local config="$1"
     local db_path="${2:-$HOME/.moonfrp/index.db}"
-    
+
     if [[ ! -f "$config" ]]; then
         return 1
     fi
-    
+
     local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
-    
+
     local config_type
     config_type=$(sqlite3 "$db_path" "SELECT config_type FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
     local server_addr
@@ -840,14 +885,14 @@ display_config_summary() {
     bind_port=$(sqlite3 "$db_path" "SELECT bind_port FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "")
     local proxy_count
     proxy_count=$(sqlite3 "$db_path" "SELECT COALESCE(proxy_count, 0) FROM config_index WHERE file_path='$escaped_path'" 2>/dev/null || echo "0")
-    
+
     # Get auth token from TOML file (masked)
     local auth_token
     auth_token=$(get_toml_value "$config" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || echo "")
-    
+
     local config_name
     config_name=$(basename "$config" .toml)
-    
+
     # Get service status
     local service_name="moonfrp-${config_name}"
     local service_status
@@ -856,7 +901,7 @@ display_config_summary() {
     else
         service_status="inactive"
     fi
-    
+
     # Status icon
     local status_icon
     case "$service_status" in
@@ -870,10 +915,10 @@ display_config_summary() {
             status_icon="${GRAY}○${NC}"
             ;;
     esac
-    
+
     echo "  $status_icon $config_name"
     echo "     Type: $config_type"
-    
+
     if [[ "$config_type" == "client" ]]; then
         if [[ -n "$server_addr" ]] && [[ -n "$server_port" ]]; then
             echo "     Server: $server_addr:$server_port"
@@ -888,7 +933,7 @@ display_config_summary() {
             echo "     Bind Port: $bind_port"
         fi
     fi
-    
+
     # Masked token display
     if [[ -n "$auth_token" ]] && [[ ${#auth_token} -gt 12 ]]; then
         local token_display="${auth_token:0:8}...${auth_token: -4}"
@@ -896,7 +941,7 @@ display_config_summary() {
     elif [[ -n "$auth_token" ]]; then
         echo "     Token: ${auth_token:0:8}..."
     fi
-    
+
     # Tags (from Story 2.3)
     if command -v list_config_tags &>/dev/null || type list_config_tags &>/dev/null 2>&1; then
         local tags
@@ -918,24 +963,24 @@ export_config_summary() {
     local format="$1"
     local output_dir="$HOME/.moonfrp"
     local output_file="$output_dir/config-summary.${format}"
-    
+
     mkdir -p "$output_dir"
-    
+
     case "$format" in
         text)
             {
                 echo "MoonFRP Configuration Summary"
                 echo "Generated: $(date)"
                 echo ""
-                
+
                 local db_path="$HOME/.moonfrp/index.db"
                 check_and_update_index >/dev/null 2>&1 || true
                 local configs
                 configs=($(sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr" 2>/dev/null || echo ""))
-                
+
                 if [[ ${#configs[@]} -gt 0 ]]; then
                     declare -A server_groups
-                    
+
                     for config in "${configs[@]}"; do
                         local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
                         local server_addr
@@ -943,36 +988,36 @@ export_config_summary() {
                         [[ -z "$server_addr" ]] && server_addr="server"
                         server_groups["$server_addr"]+="$config "
                     done
-                    
+
                     local sorted_servers
                     sorted_servers=($(printf '%s\n' "${!server_groups[@]}" | sort))
-                    
+
                     for server_ip in "${sorted_servers[@]}"; do
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                         echo "🖥️  Server: $server_ip"
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        
+
                         local configs_for_server
                         configs_for_server=(${server_groups[$server_ip]})
-                        
+
                         for config in "${configs_for_server[@]}"; do
                             display_config_summary "$config" "$db_path" | sed 's/\x1b\[[0-9;]*m//g'
                         done
-                        
+
                         echo ""
                     done
-                    
+
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo "📊 Overall Statistics"
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    
+
                     local total_configs
                     total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index" 2>/dev/null || echo "0")
                     local total_proxies
                     total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index" 2>/dev/null || echo "0")
                     local unique_servers
                     unique_servers=$(sqlite3 "$db_path" "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''" 2>/dev/null || echo "0")
-                    
+
                     echo "  Total Configs: $total_configs"
                     echo "  Total Proxies: $total_proxies"
                     echo "  Unique Servers: $unique_servers"
@@ -991,14 +1036,14 @@ export_config_summary() {
                 echo "# MoonFRP Configuration Summary"
                 echo "# Generated: $(date)"
                 echo ""
-                
+
                 check_and_update_index >/dev/null 2>&1 || true
                 local configs
                 configs=($(sqlite3 "$db_path" "SELECT file_path FROM config_index ORDER BY config_type, server_addr" 2>/dev/null || echo ""))
-                
+
                 if [[ ${#configs[@]} -gt 0 ]]; then
                     declare -A server_groups
-                    
+
                     for config in "${configs[@]}"; do
                         local escaped_path=$(printf '%s\n' "$config" | sed "s/'/''/g")
                         local server_addr
@@ -1006,11 +1051,11 @@ export_config_summary() {
                         [[ -z "$server_addr" ]] && server_addr="server"
                         server_groups["$server_addr"]+="$config "
                     done
-                    
+
                     echo "servers:"
                     local sorted_servers
                     sorted_servers=($(printf '%s\n' "${!server_groups[@]}" | sort))
-                    
+
                     for server_ip in "${sorted_servers[@]}"; do
                         echo "  - server_ip: \"$server_ip\""
                         echo "    configs:"
@@ -1032,14 +1077,14 @@ export_config_summary() {
                             echo "        proxy_count: $proxy_count"
                         done
                     done
-                    
+
                     local total_configs
                     total_configs=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM config_index" 2>/dev/null || echo "0")
                     local total_proxies
                     total_proxies=$(sqlite3 "$db_path" "SELECT COALESCE(SUM(proxy_count), 0) FROM config_index" 2>/dev/null || echo "0")
                     local unique_servers
                     unique_servers=$(sqlite3 "$db_path" "SELECT COUNT(DISTINCT server_addr) FROM config_index WHERE server_addr IS NOT NULL AND server_addr != ''" 2>/dev/null || echo "0")
-                    
+
                     echo "statistics:"
                     echo "  total_configs: $total_configs"
                     echo "  total_proxies: $total_proxies"
@@ -1058,7 +1103,7 @@ export_config_summary() {
             return 1
             ;;
     esac
-    
+
     log "INFO" "Config summary exported: $output_file"
     read -p "Press Enter to continue..."
 }
@@ -1089,14 +1134,14 @@ init_status_cache() {
         STATUS_CACHE["ttl"]="$__ttl__"
         STATUS_CACHE["refreshing"]="false"
     fi
-    
+
     # Ensure cache directory exists
     mkdir -p "$HOME/.moonfrp"
-    
+
     # Load from file cache if available and in-memory cache is empty
     local cache_file="$HOME/.moonfrp/status.cache"
     local timestamp_file="$HOME/.moonfrp/status.cache.timestamp"
-    
+
     if [[ -f "$cache_file" ]] && [[ -f "$timestamp_file" ]]; then
         local file_timestamp=$(cat "$timestamp_file" 2>/dev/null || echo "0")
         if [[ -z "${STATUS_CACHE["data"]}" ]] || [[ "${STATUS_CACHE["timestamp"]}" -lt "$file_timestamp" ]]; then
@@ -1110,7 +1155,7 @@ init_status_cache() {
 # Checks cache age vs TTL, returns fresh cache or triggers refresh
 get_cached_status() {
     init_status_cache
-    
+
     # Check for background refresh errors
     local error_file="$HOME/.moonfrp/status.cache.error"
     if [[ -f "$error_file" ]]; then
@@ -1120,7 +1165,7 @@ get_cached_status() {
         STATUS_CACHE["refreshing"]="false"
         # Continue with stale cache or trigger sync refresh if no cache available
     fi
-    
+
     # Check if background refresh completed and update in-memory cache from files
     local cache_file="$HOME/.moonfrp/status.cache"
     local timestamp_file="$HOME/.moonfrp/status.cache.timestamp"
@@ -1133,27 +1178,27 @@ get_cached_status() {
             STATUS_CACHE["refreshing"]="false"
         fi
     fi
-    
+
     local now=$(date +%s)
     local cache_age=$((now - ${STATUS_CACHE["timestamp"]:-0}))
-    
+
     # Return cache if fresh
     if [[ $cache_age -lt ${STATUS_CACHE["ttl"]} ]] && [[ -n "${STATUS_CACHE["data"]}" ]]; then
         echo "${STATUS_CACHE["data"]}"
         return 0
     fi
-    
+
     # Cache stale - refresh in background if not already refreshing
     if [[ "${STATUS_CACHE["refreshing"]}" == "false" ]]; then
         refresh_status_cache_background
     fi
-    
+
     # Return stale cache while refreshing (better than blocking)
     if [[ -n "${STATUS_CACHE["data"]}" ]]; then
         echo "${STATUS_CACHE["data"]}"
         return 0
     fi
-    
+
     # First run - must load synchronously
     refresh_status_cache_sync
     echo "${STATUS_CACHE["data"]}"
@@ -1162,15 +1207,15 @@ get_cached_status() {
 # Synchronous cache refresh (blocking, first load only)
 refresh_status_cache_sync() {
     init_status_cache
-    
+
     STATUS_CACHE["refreshing"]="false"
-    
+
     local status_json=$(generate_quick_status)
     if [[ -n "$status_json" ]]; then
         STATUS_CACHE["data"]="$status_json"
         STATUS_CACHE["timestamp"]=$(date +%s)
         STATUS_CACHE["refreshing"]="false"
-        
+
         # Update file cache
         local cache_file="$HOME/.moonfrp/status.cache"
         local timestamp_file="$HOME/.moonfrp/status.cache.timestamp"
@@ -1182,59 +1227,59 @@ refresh_status_cache_sync() {
 # Background cache refresh (non-blocking)
 refresh_status_cache_background() {
     init_status_cache
-    
+
     # Don't start new refresh if already refreshing
     if [[ "${STATUS_CACHE["refreshing"]}" == "true" ]]; then
         return 0
     fi
-    
+
     STATUS_CACHE["refreshing"]="true"
-    
+
     # Spawn background process to generate status (truly non-blocking)
     local timestamp_file="$HOME/.moonfrp/status.cache.timestamp"
     local cache_file="$HOME/.moonfrp/status.cache"
     local error_file="$HOME/.moonfrp/status.cache.error"
-    
+
     (
         # Source required functions in background process
         local source_error=false
         source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-core.sh" 2>>"$error_file" || source_error=true
         source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh" 2>>"$error_file" || source_error=true
-        
+
         if [[ "$source_error" == "true" ]]; then
             echo "ERROR: Failed to source required scripts for background refresh" >> "$error_file"
             exit 1
         fi
-        
+
         # Generate status in background
         local status_json=$(generate_quick_status 2>>"$error_file")
         local generate_exit_code=$?
-        
+
         if [[ $generate_exit_code -ne 0 ]] || [[ -z "$status_json" ]]; then
             echo "ERROR: generate_quick_status failed or returned empty result (exit code: $generate_exit_code)" >> "$error_file"
             exit 1
         fi
-        
+
         local timestamp=$(date +%s)
-        
+
         # Write to temporary files first (atomic update)
         local tmp_json=$(mktemp "$HOME/.moonfrp/status_refresh_json_XXXXXX" 2>/dev/null || echo "/tmp/moonfrp_status_$$.json")
         local tmp_ts=$(mktemp "$HOME/.moonfrp/status_refresh_ts_XXXXXX" 2>/dev/null || echo "/tmp/moonfrp_status_$$.ts")
-        
+
         echo "$status_json" > "$tmp_json"
         echo "$timestamp" > "$tmp_ts"
-        
+
         # Atomic move to final cache files
         mv -f "$tmp_json" "$cache_file" 2>/dev/null || true
         mv -f "$tmp_ts" "$timestamp_file" 2>/dev/null || true
-        
+
         # Cleanup any remaining temp files and error file on success
         rm -f "$tmp_json" "$tmp_ts" "$error_file" 2>/dev/null || true
-        
+
         # Signal completion by removing refreshing flag (via file)
         # In-memory cache will be updated on next get_cached_status() call
     ) &
-    
+
     # Return immediately - background process updates files asynchronously
     # In-memory cache will be updated on next get_cached_status() call when files are read
     return 0
@@ -1249,7 +1294,7 @@ generate_quick_status() {
     local active_services=0
     local failed_services=0
     local inactive_services=0
-    
+
     # Populate config counts from index metadata
     check_and_update_index >/dev/null 2>&1 || true
     if command -v sqlite3 >/dev/null 2>&1; then
@@ -1259,11 +1304,11 @@ generate_quick_status() {
         total_configs=$(list_indexed_configs 2>/dev/null | wc -l | tr -d ' ')
         total_proxies=$(query_total_proxy_count 2>/dev/null || echo "0")
     fi
-    
+
     # Batch systemctl query for service status
     local services_output
     services_output=$(systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null | grep -E "moonfrp-(server|client|visitor)" || true)
-    
+
     if [[ -n "$services_output" ]]; then
         while IFS= read -r line; do
             local status=$(echo "$line" | awk '{print $3}')
@@ -1280,13 +1325,13 @@ generate_quick_status() {
             esac
         done <<< "$services_output"
     fi
-    
+
     # Get FRP version (cached)
     frp_version=$(get_frp_version_cached)
-    
+
     # Format as JSON (simple JSON without jq dependency)
     local json_output="{\"frp_version\":\"$frp_version\",\"total_configs\":$total_configs,\"total_proxies\":$total_proxies,\"active_services\":$active_services,\"failed_services\":$failed_services,\"inactive_services\":$inactive_services}"
-    
+
     # Validate JSON structure (basic validation - check for required fields and basic JSON syntax)
     if command -v jq >/dev/null 2>&1; then
         # Use jq to validate JSON if available
@@ -1309,7 +1354,7 @@ generate_quick_status() {
             return 1
         fi
     fi
-    
+
     echo "$json_output"
 }
 
@@ -1318,29 +1363,29 @@ get_frp_version_cached() {
     local cache_file="$HOME/.moonfrp/frp_version.cache"
     local cache_timestamp_file="$HOME/.moonfrp/frp_version.cache.timestamp"
     local ttl=3600  # 1 hour in seconds
-    
+
     mkdir -p "$HOME/.moonfrp"
-    
+
     # Check if cache file exists and is fresh
     if [[ -f "$cache_file" ]] && [[ -f "$cache_timestamp_file" ]]; then
         local cache_timestamp=$(cat "$cache_timestamp_file" 2>/dev/null || echo "0")
         local now=$(date +%s)
         local cache_age=$((now - cache_timestamp))
-        
+
         if [[ $cache_age -lt $ttl ]]; then
             # Cache is fresh, return cached version
             cat "$cache_file" 2>/dev/null || echo "unknown"
             return 0
         fi
     fi
-    
+
     # Cache is stale or doesn't exist, refresh
     local version=$(get_frp_version 2>/dev/null || echo "unknown")
-    
+
     # Update cache
     echo "$version" > "$cache_file"
     echo "$(date +%s)" > "$cache_timestamp_file"
-    
+
     echo "$version"
 }
 
@@ -1351,7 +1396,7 @@ display_cached_status() {
     local cache_age=$((now - ${STATUS_CACHE["timestamp"]:-0}))
     local is_stale=false
     local is_refreshing=false
-    
+
     # Check if cache is stale or refreshing
     if [[ $cache_age -ge ${STATUS_CACHE["ttl"]:-5} ]]; then
         is_stale=true
@@ -1359,7 +1404,7 @@ display_cached_status() {
     if [[ "${STATUS_CACHE["refreshing"]:-false}" == "true" ]]; then
         is_refreshing=true
     fi
-    
+
     # Parse JSON - try jq first, fallback to grep
     local frp_version=""
     local total_configs=0
@@ -1367,7 +1412,7 @@ display_cached_status() {
     local active_services=0
     local failed_services=0
     local inactive_services=0
-    
+
     if command -v jq >/dev/null 2>&1; then
         frp_version=$(echo "$status_json" | jq -r '.frp_version // "unknown"' 2>/dev/null || echo "unknown")
         total_configs=$(echo "$status_json" | jq -r '.total_configs // 0' 2>/dev/null || echo "0")
@@ -1384,22 +1429,22 @@ display_cached_status() {
         failed_services=$(echo "$status_json" | grep -o '"failed_services"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$' || echo "0")
         inactive_services=$(echo "$status_json" | grep -o '"inactive_services"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$' || echo "0")
     fi
-    
+
     # Display formatted status
     echo -e "${CYAN}Status:${NC}"
-    
+
     if [[ "$frp_version" != "unknown" ]] && [[ "$frp_version" != "not installed" ]]; then
         echo -e "  FRP: ${GREEN}Active${NC} ($frp_version)"
     else
         echo -e "  FRP: ${RED}Inactive${NC}"
     fi
-    
+
     if [[ $total_configs -gt 0 ]]; then
         echo -e "  Configs: ${GREEN}$total_configs${NC} (Proxies: $total_proxies)"
     else
         echo -e "  Configs: ${GRAY}0${NC}"
     fi
-    
+
     local service_status=""
     if [[ $active_services -gt 0 ]]; then
         service_status="${GREEN}$active_services active${NC}"
@@ -1412,11 +1457,11 @@ display_cached_status() {
         [[ -n "$service_status" ]] && service_status="$service_status, "
         service_status="${service_status}${GRAY}$inactive_services inactive${NC}"
     fi
-    
+
     if [[ -n "$service_status" ]]; then
         echo -e "  Services: $service_status"
     fi
-    
+
     # Show staleness/refreshing indicator
     if [[ "$is_refreshing" == "true" ]]; then
         echo -e "  ${YELLOW}⟳ Refreshing...${NC}"
@@ -1427,7 +1472,7 @@ display_cached_status() {
 
 # Export functions
 export -f show_header show_system_status quick_setup_wizard
-export -f quick_server_setup quick_client_setup quick_multi_ip_setup
+export -f quick_server_setup quick_client_setup
 export -f install_frp main_menu advanced_tools_menu view_logs_menu
 export -f backup_configurations restore_configurations update_moonfrp uninstall_moonfrp
 export -f show_config_details display_config_summary export_config_summary
@@ -1441,15 +1486,15 @@ export -f generate_quick_status get_frp_version_cached display_cached_status ini
 # Prompt for FRP version and install
 install_frp_with_version() {
     show_header "Install FRP" "Download & Install FRP Binaries"
-    
+
     safe_read "FRP Version (default: 0.65.0)" "frp_version" "0.65.0"
-    
+
     if [[ ! "$frp_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         log "ERROR" "Invalid version format. Use X.Y.Z (e.g., 0.65.0)"
         read -p "Press Enter to continue..."
         return 1
     fi
-    
+
     local old_version="${FRP_VERSION:-}"
     export FRP_VERSION="$frp_version"
     install_frp
@@ -1464,7 +1509,7 @@ install_frp_with_version() {
 # Minimal file viewer (view-only)
 quick_file_viewer() {
     show_header "File Viewer" "View Configuration & Service Files"
-    
+
     echo -e "${CYAN}Available Files:${NC}"
     echo "1. Server Config (frps.toml)"
     echo "2. Client Configs (frpc*.toml)"
@@ -1472,7 +1517,7 @@ quick_file_viewer() {
     echo "4. Custom File Path"
     echo "0. Back"
     echo
-    
+
     safe_read "Select option" "choice" "0"
     case "$choice" in
         1)

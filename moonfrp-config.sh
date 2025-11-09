@@ -40,7 +40,7 @@ set_toml_value() {
     tmp_file="${file}.tmp.$$"
     local escaped_key
     escaped_key=$(printf '%s' "$key" | sed 's/[].[^$*\\]/\\&/g')
-    
+
     # Determine config type from filename for validation
     local config_type=""
     local basename_file
@@ -51,7 +51,7 @@ set_toml_value() {
          [[ "$basename_file" =~ ^frpc-.*\.toml$ ]]; then
         config_type="client"
     fi
-    
+
     if grep -Eq "^${escaped_key}\\s*=" "$file"; then
         # Replace existing line
         sed -E "s|^(${escaped_key}\\s*=).*|\\1 ${value}|" "$file" > "$tmp_file"
@@ -60,7 +60,7 @@ set_toml_value() {
         cp "$file" "$tmp_file"
         echo "${key} = ${value}" >> "$tmp_file"
     fi
-    
+
     # Validate before saving if config type is known
     if [[ -n "$config_type" ]] && [[ -f "$tmp_file" ]]; then
         if ! validate_config_file "$tmp_file" "$config_type" 2>&1; then
@@ -69,12 +69,12 @@ set_toml_value() {
             return 1
         fi
     fi
-    
+
     # Backup existing config before modification (Story 1.4: AC 1)
     if [[ -f "$file" ]]; then
         backup_config_file "$file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
     fi
-    
+
     mv "$tmp_file" "$file"
 }
 
@@ -83,7 +83,7 @@ set_toml_value() {
 generate_server_config() {
     local config_file="$CONFIG_DIR/frps.toml"
     local auth_token="${1:-$DEFAULT_SERVER_AUTH_TOKEN}"
-    
+
     # Ensure required directories exist before writing
     if [[ ! -d "$CONFIG_DIR" ]]; then
         if ! mkdir -p "$CONFIG_DIR" 2>/dev/null; then
@@ -99,23 +99,23 @@ generate_server_config() {
         fi
         chmod 755 "$LOG_DIR" 2>/dev/null || true
     fi
-    
+
     # Generate token if not provided
     if [[ -z "$auth_token" ]]; then
         auth_token=$(generate_token)
         log "INFO" "Generated server auth token: $auth_token"
     fi
-    
+
     # Generate dashboard password if not provided
     local dashboard_password="${2:-$DEFAULT_SERVER_DASHBOARD_PASSWORD}"
     if [[ -z "$dashboard_password" ]]; then
         dashboard_password=$(generate_token 16)
         log "INFO" "Generated dashboard password: $dashboard_password"
     fi
-    
+
     local tmp_file
     tmp_file="${config_file}.tmp.$$"
-    
+
     cat > "$tmp_file" << EOF
 # MoonFRP Server Configuration
 # Generated on $(date)
@@ -172,19 +172,19 @@ udpPacketSize = 1500
 # NAT hole punching
 natholeAnalysisDataReserveHours = 168
 EOF
-    
+
     # Validate before saving
     if ! validate_config_file "$tmp_file" "server" 2>&1; then
         log "ERROR" "Server configuration validation failed. File not saved."
         rm -f "$tmp_file"
         return 1
     fi
-    
+
     # Backup existing config before modification (Story 1.4: AC 1)
     if [[ -f "$config_file" ]]; then
         backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
     fi
-    
+
     # Validation passed - move to final location
     mv "$tmp_file" "$config_file"
     log "INFO" "Generated server configuration: $config_file"
@@ -199,14 +199,16 @@ generate_client_config() {
     local client_user="$4"
     local config_suffix="${5:-}"
     local local_ports="${6:-}"
-    
-    local config_file="$CONFIG_DIR/frpc${config_suffix}.toml"
-    
+    local remote_ports="${7:-}"
+    local filename_prefix="${8:-frpc}"
+
+    local config_file="$CONFIG_DIR/${filename_prefix}${config_suffix}.toml"
+
     # Generate client user if not provided
     if [[ -z "$client_user" ]]; then
         client_user="moonfrp${config_suffix}"
     fi
-    
+
     # Calculate webServer port from suffix (extract numeric part)
     local web_port_offset=0
     if [[ -n "$config_suffix" ]]; then
@@ -220,7 +222,7 @@ generate_client_config() {
     local web_port=$((7400 + web_port_offset))
     local tmp_file
     tmp_file="${config_file}.tmp.$$"
-    
+
     cat > "$tmp_file" << EOF
 # MoonFRP Client Configuration
 # Generated on $(date)
@@ -234,7 +236,7 @@ auth.method = "$DEFAULT_AUTH_METHOD"
 auth.token = "$auth_token"
 
 # Logging
-log.to = "$LOG_DIR/frpc${config_suffix}.log"
+log.to = "$LOG_DIR/${filename_prefix}${config_suffix}.log"
 log.level = "$DEFAULT_LOG_LEVEL"
 log.maxDays = $DEFAULT_LOG_MAX_DAYS
 log.disablePrintColor = $DEFAULT_LOG_DISABLE_COLOR
@@ -264,37 +266,59 @@ webServer.user = "admin"
 webServer.password = "$(generate_token 16)"
 webServer.pprofEnable = false
 EOF
-    
+
     # Add proxy configurations if local ports are provided
     if [[ -n "$local_ports" ]]; then
-        IFS=',' read -ra PORTS <<< "$local_ports"
-        for port in "${PORTS[@]}"; do
-            if validate_port "$port"; then
+        # Use remote_ports if provided, otherwise use local_ports for both
+        if [[ -z "$remote_ports" ]]; then
+            remote_ports="$local_ports"
+        fi
+
+        IFS=',' read -ra LOCAL_PORTS_ARRAY <<< "$local_ports"
+        IFS=',' read -ra REMOTE_PORTS_ARRAY <<< "$remote_ports"
+
+        # Validate array lengths
+        if [[ ${#LOCAL_PORTS_ARRAY[@]} -ne ${#REMOTE_PORTS_ARRAY[@]} ]]; then
+            log "WARN" "Local ports count (${#LOCAL_PORTS_ARRAY[@]}) doesn't match remote ports count (${#REMOTE_PORTS_ARRAY[@]})"
+        fi
+
+        # Create proxies mapping local ports to remote ports
+        for i in "${!LOCAL_PORTS_ARRAY[@]}"; do
+            local local_port="${LOCAL_PORTS_ARRAY[i]}"
+            local remote_port="${REMOTE_PORTS_ARRAY[i]:-${LOCAL_PORTS_ARRAY[i]}}"
+
+            # Trim whitespace
+            local_port=$(echo "$local_port" | xargs)
+            remote_port=$(echo "$remote_port" | xargs)
+
+            if validate_port "$local_port" && validate_port "$remote_port"; then
                 cat >> "$tmp_file" << EOF
 
 [[proxies]]
-name = "tcp_${port}${config_suffix}"
+name = "tcp_${local_port}${config_suffix}"
 type = "tcp"
 localIP = "127.0.0.1"
-localPort = $port
-remotePort = $port
+localPort = $local_port
+remotePort = $remote_port
 EOF
+            else
+                log "WARN" "Skipping invalid port: local=$local_port, remote=$remote_port"
             fi
         done
     fi
-    
+
     # Validate before saving
     if ! validate_config_file "$tmp_file" "client" 2>&1; then
         log "ERROR" "Client configuration validation failed. File not saved."
         rm -f "$tmp_file"
         return 1
     fi
-    
+
     # Backup existing config before modification (Story 1.4: AC 1)
     if [[ -f "$config_file" ]]; then
         backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
     fi
-    
+
     # Validation passed - move to final location
     mv "$tmp_file" "$config_file"
     log "INFO" "Generated client configuration: $config_file"
@@ -303,54 +327,40 @@ EOF
 # Generate multi-IP client configurations
 generate_multi_ip_configs() {
     local server_ips="$1"
-    local server_ports="$2"
-    local client_ports="$3"
-    local auth_token="$4"
-    
-    if [[ -z "$server_ips" || -z "$server_ports" ]]; then
-        log "ERROR" "Server IPs and ports are required for multi-IP configuration"
+    local server_port="$2"  # Single port for all servers
+    local local_ports="$3"  # Comma-separated local ports
+    local remote_ports="$4" # Comma-separated remote ports
+    local auth_token="$5"
+
+    if [[ -z "$server_ips" || -z "$server_port" ]]; then
+        log "ERROR" "Server IPs and server port are required for multi-IP configuration"
         return 1
     fi
-    
+
     IFS=',' read -ra IPS <<< "$server_ips"
-    IFS=',' read -ra SRV_PORTS_ARRAY <<< "$server_ports"
-    
-    # Validate array lengths
-    if [[ ${#IPS[@]} -ne ${#SRV_PORTS_ARRAY[@]} ]]; then
-        log "WARN" "Server IPs count (${#IPS[@]}) doesn't match server ports count (${#SRV_PORTS_ARRAY[@]})"
+
+    # Use local_ports as remote_ports if remote_ports not specified
+    if [[ -z "$remote_ports" ]]; then
+        remote_ports="$local_ports"
     fi
-    
-    # Use server ports as client ports if not specified
-    if [[ -z "$client_ports" ]]; then
-        client_ports="$server_ports"
-    fi
-    
-    IFS=',' read -ra CLI_PORTS_ARRAY <<< "$client_ports"
-    
-    # Validate client ports array length
-    if [[ ${#IPS[@]} -ne ${#CLI_PORTS_ARRAY[@]} ]]; then
-        log "WARN" "Server IPs count (${#IPS[@]}) doesn't match client ports count (${#CLI_PORTS_ARRAY[@]})"
-    fi
-    
+
     local config_count=0
     for i in "${!IPS[@]}"; do
         local ip="${IPS[i]}"
-        local server_port="${SRV_PORTS_ARRAY[i]:-7000}"
-        local client_port="${CLI_PORTS_ARRAY[i]:-8080}"
-        
+
         if validate_ip "$ip" && validate_port "$server_port"; then
             # Extract last octet from IP for filename (e.g., 185.177.177.177 -> 177)
             local ip_last_octet=$(echo "$ip" | awk -F'.' '{print $4}')
             local config_suffix="-${ip_last_octet}"
             local client_user="moonfrp-${ip_last_octet}"
-            
+
             ((config_count++))
-            generate_client_config "$ip" "$server_port" "$auth_token" "$client_user" "$config_suffix" "$client_port"
+            generate_client_config "$ip" "$server_port" "$auth_token" "$client_user" "$config_suffix" "$local_ports" "$remote_ports" "moonfrp-frpc"
         else
             log "WARN" "Skipping invalid IP/port: $ip:$server_port"
         fi
     done
-    
+
     log "INFO" "Generated $config_count multi-IP client configurations"
 }
 
@@ -360,15 +370,15 @@ generate_visitor_config() {
     local secret_key="$2"
     local bind_port="$3"
     local config_suffix="${4:-}"
-    
+
     local config_file="$CONFIG_DIR/visitor${config_suffix}.toml"
-    
+
     # Generate secret key if not provided
     if [[ -z "$secret_key" ]]; then
         secret_key=$(generate_token)
         log "INFO" "Generated secret key: $secret_key"
     fi
-    
+
     cat > "$config_file" << EOF
 # MoonFRP Visitor Configuration
 # Generated on $(date)
@@ -401,7 +411,7 @@ secretKey = "$secret_key"
 bindAddr = "127.0.0.1"
 bindPort = $bind_port
 EOF
-    
+
     log "INFO" "Generated visitor configuration: $config_file"
     echo "$secret_key"
 }
@@ -412,12 +422,12 @@ validate_toml_syntax() {
     local config_file="$1"
     local line_num=0
     local error_count=0
-    
+
     if [[ ! -f "$config_file" ]]; then
         echo "Error: Configuration file not found: $config_file" >&2
         return 1
     fi
-    
+
     # Try using toml-validator command if available
     if command -v toml-validator &>/dev/null; then
         if toml-validator "$config_file" 2>&1; then
@@ -427,11 +437,11 @@ validate_toml_syntax() {
             return 1
         fi
     fi
-    
+
     # Fallback: Basic TOML syntax check using get_toml_value parsing test
     local test_key="__validation_test__"
     local test_value="test"
-    
+
     # Test basic parsing by trying to read a non-existent key (should not crash)
     if ! get_toml_value "$config_file" "$test_key" &>/dev/null; then
         # This is expected - the key doesn't exist, but parsing should work
@@ -440,16 +450,16 @@ validate_toml_syntax() {
             echo "Error (line 1): Empty configuration file" >&2
             return 1
         fi
-        
+
         # Check for basic TOML structure: key=value or [section] or [[array]]
         local has_valid_structure=false
         while IFS= read -r line || [[ -n "$line" ]]; do
             ((line_num++))
-            
+
             # Skip comments and empty lines
             [[ "$line" =~ ^[[:space:]]*# ]] && continue
             [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-            
+
             # Check for valid TOML patterns
             if [[ "$line" =~ ^[[:space:]]*[^=#\[]+[[:space:]]*=[[:space:]]*[^[:space:]]+ ]] || \
                [[ "$line" =~ ^[[:space:]]*\[\[.*\]\] ]] || \
@@ -466,11 +476,11 @@ validate_toml_syntax() {
                 fi
             fi
         done < "$config_file"
-        
+
         if [[ $error_count -gt 0 ]]; then
             return 1
         fi
-        
+
         if [[ "$has_valid_structure" == "true" ]]; then
             return 0
         else
@@ -489,12 +499,12 @@ validate_toml_syntax() {
 validate_server_config() {
     local config_file="$1"
     local error_count=0
-    
+
     if [[ ! -f "$config_file" ]]; then
         echo "Error: Configuration file not found: $config_file" >&2
         return 1
     fi
-    
+
     # Validate bindPort (required, must be 1-65535)
     local bind_port
     bind_port=$(get_toml_value "$config_file" "bindPort" 2>/dev/null | tr -d '"' | tr -d "'" || true)
@@ -505,7 +515,7 @@ validate_server_config() {
         echo "Error: Invalid 'bindPort' value '$bind_port' - must be between 1 and 65535" >&2
         ((error_count++))
     fi
-    
+
     # Validate auth.token (required, minimum 8 characters)
     local auth_token
     auth_token=$(get_toml_value "$config_file" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || true)
@@ -516,11 +526,11 @@ validate_server_config() {
         echo "Error: 'auth.token' must be at least 8 characters long (current: ${#auth_token})" >&2
         ((error_count++))
     fi
-    
+
     if [[ $error_count -gt 0 ]]; then
         return 1
     fi
-    
+
     return 0
 }
 
@@ -530,12 +540,12 @@ validate_client_config() {
     local config_file="$1"
     local error_count=0
     local warning_count=0
-    
+
     if [[ ! -f "$config_file" ]]; then
         echo "Error: Configuration file not found: $config_file" >&2
         return 1
     fi
-    
+
     # Validate serverAddr (required, must be valid IP or domain)
     local server_addr
     server_addr=$(get_toml_value "$config_file" "serverAddr" 2>/dev/null | sed 's/["'\'']//g' || true)
@@ -552,7 +562,7 @@ validate_client_config() {
             fi
         fi
     fi
-    
+
     # Validate serverPort (required, must be 1-65535)
     local server_port
     server_port=$(get_toml_value "$config_file" "serverPort" 2>/dev/null | tr -d '"' | tr -d "'" || true)
@@ -563,7 +573,7 @@ validate_client_config() {
         echo "Error: Invalid 'serverPort' value '$server_port' - must be between 1 and 65535" >&2
         ((error_count++))
     fi
-    
+
     # Validate auth.token (required, but no minimum length for client)
     local auth_token
     auth_token=$(get_toml_value "$config_file" "auth.token" 2>/dev/null | sed 's/["'\'']//g' || true)
@@ -571,17 +581,17 @@ validate_client_config() {
         echo "Error: Required field 'auth.token' is missing" >&2
         ((error_count++))
     fi
-    
+
     # Check for at least one proxy definition (warning, not error)
     if ! grep -q "^\[\[proxies\]\]" "$config_file" 2>/dev/null; then
         echo "Warning: No proxy definitions found in client configuration" >&2
         ((warning_count++))
     fi
-    
+
     if [[ $error_count -gt 0 ]]; then
         return 1
     fi
-    
+
     return 0
 }
 
@@ -595,12 +605,12 @@ validate_config_file() {
     local start_time
     start_time=$(date +%s%N)
     local error_count=0
-    
+
     if [[ ! -f "$config_file" ]]; then
         echo "Error: Configuration file not found: $config_file" >&2
         return 1
     fi
-    
+
     # Auto-detect config type from filename if not provided
     if [[ -z "$config_type" ]]; then
         local basename_file
@@ -615,13 +625,13 @@ validate_config_file() {
             return 1
         fi
     fi
-    
+
     # Step 1: Validate TOML syntax
     if ! validate_toml_syntax "$config_file" 2>/dev/null; then
         validate_toml_syntax "$config_file" 2>&1
         ((error_count++))
     fi
-    
+
     # Step 2: Validate config-type-specific fields
     if [[ "$config_type" == "server" ]]; then
         if ! validate_server_config "$config_file" 2>/dev/null; then
@@ -637,7 +647,7 @@ validate_config_file() {
         echo "Error: Invalid config type '$config_type'. Must be 'server' or 'client'" >&2
         return 1
     fi
-    
+
     # Step 3: Optional FRP binary validation
     if command -v frps &>/dev/null && [[ "$config_type" == "server" ]]; then
         if frps verify -c "$config_file" &>/dev/null 2>&1 || \
@@ -656,7 +666,7 @@ validate_config_file() {
             : # Optional check failed - silently continue
         fi
     fi
-    
+
     # Check performance requirement (<100ms)
     local end_time
     end_time=$(date +%s%N)
@@ -664,11 +674,11 @@ validate_config_file() {
     if [[ $elapsed_ms -gt 100 ]]; then
         echo "Warning: Validation took ${elapsed_ms}ms (target: <100ms)" >&2
     fi
-    
+
     if [[ $error_count -gt 0 ]]; then
         return 1
     fi
-    
+
     return 0
 }
 
@@ -689,7 +699,7 @@ save_config_file_with_validation() {
     local content_generator="$3"
     local tmp_file
     tmp_file="${config_file}.tmp.$$"
-    
+
     # Generate content to temporary file
     if [[ -n "$content_generator" ]] && type "$content_generator" &>/dev/null; then
         "$content_generator" > "$tmp_file"
@@ -698,19 +708,19 @@ save_config_file_with_validation() {
         log "ERROR" "Content generator function required"
         return 1
     fi
-    
+
     # Validate temporary file
     if ! validate_config_file "$tmp_file" "$config_type" 2>&1; then
         log "ERROR" "Configuration validation failed. File not saved."
         rm -f "$tmp_file"
         return 1
     fi
-    
+
     # Backup existing config before modification (Story 1.4: AC 1)
     if [[ -f "$config_file" ]]; then
         backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed, but continuing with save"
     fi
-    
+
     # Validation passed - move to final location
     mv "$tmp_file" "$config_file"
     return 0
@@ -740,23 +750,23 @@ fi
 # Returns backup file path on success, 1 on failure
 backup_config_file() {
     local config_file="$1"
-    
+
     if [[ ! -f "$config_file" ]]; then
         log "WARN" "Configuration file not found: $config_file"
         return 1
     fi
-    
+
     # Ensure backup directory exists
     mkdir -p "$BACKUP_DIR"
     if [[ ! -d "$BACKUP_DIR" ]] || [[ ! -w "$BACKUP_DIR" ]]; then
         log "WARN" "Backup directory not accessible: $BACKUP_DIR"
         return 1
     fi
-    
+
     local filename=$(basename "$config_file")
     local timestamp=$(date '+%Y%m%d-%H%M%S')
     local backup_file="$BACKUP_DIR/${filename}.${timestamp}.bak"
-    
+
     # Copy config file to backup location
     if cp "$config_file" "$backup_file" 2>/dev/null; then
         log "INFO" "Backed up configuration: $backup_file"
@@ -774,23 +784,23 @@ backup_config_file() {
 cleanup_old_backups() {
     local config_file="$1"
     local filename=$(basename "$config_file")
-    
+
     # Find all backups for this config file
     local backups=()
     while IFS= read -r backup; do
         [[ -n "$backup" ]] && [[ -f "$backup" ]] && backups+=("$backup")
     done < <(find "$BACKUP_DIR" -name "${filename}.*.bak" -type f 2>/dev/null)
-    
+
     # If we have fewer backups than the limit, no cleanup needed
     if [[ ${#backups[@]} -le $MAX_BACKUPS_PER_FILE ]]; then
         return 0
     fi
-    
+
     # Sort by filename (which contains timestamp YYYYMMDD-HHMMSS)
     # Reverse alphabetical sort will put newest first (higher timestamps)
     local sorted_backups=()
     IFS=$'\n' sorted_backups=($(printf '%s\n' "${backups[@]}" | sort -r))
-    
+
     # Remove backups beyond limit
     local count=0
     for backup in "${sorted_backups[@]}"; do
@@ -811,7 +821,7 @@ list_backups() {
     local config_file="${1:-}"
     local backups=()
     local sorted_backups=()
-    
+
     if [[ -n "$config_file" ]]; then
         local filename=$(basename "$config_file")
         # Find backups for specific config file
@@ -824,12 +834,12 @@ list_backups() {
             [[ -n "$backup" ]] && backups+=("$backup")
         done < <(find "$BACKUP_DIR" -name "*.bak" -type f 2>/dev/null)
     fi
-    
+
     # Sort by filename (which contains timestamp YYYYMMDD-HHMMSS)
     # Reverse alphabetical sort will put newest first (higher timestamps)
     sorted_backups=("${backups[@]}")
     IFS=$'\n' sorted_backups=($(printf '%s\n' "${sorted_backups[@]}" | sort -r))
-    
+
     # Print backup paths (one per line)
     printf '%s\n' "${sorted_backups[@]}"
 }
@@ -839,21 +849,21 @@ list_backups() {
 restore_config_from_backup() {
     local config_file="$1"
     local backup_file="$2"
-    
+
     if [[ ! -f "$backup_file" ]]; then
         log "ERROR" "Backup file not found: $backup_file"
         return 1
     fi
-    
+
     # Backup current config before restore (nested backup)
     if [[ -f "$config_file" ]]; then
         backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Failed to backup current config before restore"
     fi
-    
+
     # Copy backup file to config location
     if cp "$backup_file" "$config_file" 2>/dev/null; then
         log "INFO" "Restored configuration from: $backup_file"
-        
+
         # Revalidate restored config (if Story 1.3 validation available)
         if type validate_config_file &>/dev/null; then
             local config_type=""
@@ -864,19 +874,19 @@ restore_config_from_backup() {
                  [[ "$basename_file" =~ ^frpc-.*\.toml$ ]]; then
                 config_type="client"
             fi
-            
+
             if [[ -n "$config_type" ]]; then
                 if ! validate_config_file "$config_file" "$config_type" 2>&1; then
                     log "WARN" "Restored config validation failed, but restore completed"
                 fi
             fi
         fi
-        
+
         # Update index if available (Story 1.2)
         if type index_config_file &>/dev/null; then
             index_config_file "$config_file" >/dev/null 2>&1 || log "DEBUG" "Index update skipped (non-critical)"
         fi
-        
+
         return 0
     else
         log "ERROR" "Failed to restore configuration from: $backup_file"
@@ -890,28 +900,28 @@ restore_config_interactive() {
     local config_file="$1"
     local backups=()
     local backup
-    
+
     # Get list of backups
     while IFS= read -r backup; do
         [[ -n "$backup" ]] && backups+=("$backup")
     done < <(list_backups "$config_file")
-    
+
     if [[ ${#backups[@]} -eq 0 ]]; then
         log "WARN" "No backups found for: $config_file"
         return 1
     fi
-    
+
     # Display backups with formatted dates
     echo -e "${CYAN}Available backups for $(basename "$config_file"):${NC}"
     echo
-    
+
     local idx=0
     for backup in "${backups[@]}"; do
         ((idx++))
         local backup_basename=$(basename "$backup")
         local timestamp_part="${backup_basename##*.}"
         timestamp_part="${timestamp_part%.bak}"
-        
+
         # Parse timestamp (YYYYMMDD-HHMMSS) and format it
         if [[ "$timestamp_part" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})$ ]]; then
             local year="${BASH_REMATCH[1]}"
@@ -924,24 +934,24 @@ restore_config_interactive() {
         else
             local formatted_date="$timestamp_part"
         fi
-        
+
         echo -e "  ${GREEN}$idx${NC}. ${formatted_date} - ${backup_basename}"
     done
-    
+
     echo
-    
+
     # Get user selection
     local selection
     local selected_backup
-    
+
     while true; do
         safe_read "Select backup to restore (1-${#backups[@]}) or 'q' to cancel" selection ""
-        
+
         if [[ "$selection" == "q" ]] || [[ "$selection" == "Q" ]]; then
             log "INFO" "Restore cancelled by user"
             return 1
         fi
-        
+
         if [[ "$selection" =~ ^[0-9]+$ ]] && ((selection >= 1 && selection <= ${#backups[@]})); then
             selected_backup="${backups[$((selection - 1))]}"
             break
@@ -949,11 +959,11 @@ restore_config_interactive() {
             log "WARN" "Invalid selection. Please enter a number between 1 and ${#backups[@]}"
         fi
     done
-    
+
     # Confirm restore operation
     local confirm
     safe_read "Restore from backup $(basename "$selected_backup")? (yes/no)" confirm ""
-    
+
     if [[ "$confirm" =~ ^[Yy][Ee][Ss]$ ]] || [[ "$confirm" =~ ^[Yy]$ ]]; then
         restore_config_from_backup "$config_file" "$selected_backup"
         return $?
@@ -981,10 +991,10 @@ restore_config() {
 # List available configurations
 list_configurations() {
     check_and_update_index 2>/dev/null || true
-    
+
     echo -e "${CYAN}Available FRP Configurations:${NC}"
     echo
-    
+
     # Server configurations - try indexed query first, fallback to file parsing
     local server_configs
     if server_configs=$(query_configs_by_type "server" 2>/dev/null); then
@@ -1006,7 +1016,7 @@ list_configurations() {
             echo
         fi
     fi
-    
+
     # Client configurations - try indexed query first, fallback to file parsing
     local client_configs_data
     if client_configs_data=$(query_configs_by_type "client" 2>/dev/null); then
@@ -1037,7 +1047,7 @@ list_configurations() {
             done
         fi
     fi
-    
+
     # Visitor configurations (not indexed, use file parsing)
     local visitor_configs=($(find "$CONFIG_DIR" -name "visitor*.toml" -type f | sort))
     if [[ ${#visitor_configs[@]} -gt 0 ]]; then
@@ -1057,11 +1067,11 @@ config_wizard() {
     echo -e "${PURPLE}║            Setup Wizard              ║${NC}"
     echo -e "${PURPLE}╚══════════════════════════════════════╝${NC}"
     echo
-    
+
     echo -e "${CYAN}This wizard will help you configure MoonFRP.${NC}"
     echo -e "${CYAN}You can press Ctrl+C at any time to cancel.${NC}"
     echo
-    
+
     # Configuration type selection
     echo -e "${YELLOW}Select configuration type:${NC}"
     echo "1. Server (frps)"
@@ -1070,9 +1080,9 @@ config_wizard() {
     echo "4. Visitor (stcp/xtcp)"
     echo "0. Cancel"
     echo
-    
+
     safe_read "Enter your choice" "config_type" "1"
-    
+
     case "$config_type" in
         1)
             config_server_wizard
@@ -1101,10 +1111,10 @@ config_wizard() {
 config_server_wizard() {
     echo -e "${CYAN}Server Configuration Wizard${NC}"
     echo
-    
+
     local bind_addr bind_port auth_token dashboard_port dashboard_user dashboard_password
     local existing_file="$CONFIG_DIR/frps.toml"
-    
+
     # If existing config, read current values as defaults
     local def_bind_addr="$DEFAULT_SERVER_BIND_ADDR"
     local def_bind_port="$DEFAULT_SERVER_BIND_PORT"
@@ -1118,30 +1128,30 @@ config_server_wizard() {
         def_dash_port=$(get_toml_value "$existing_file" "webServer.port" | tr -d '"' || echo "$def_dash_port")
         def_dash_user=$(get_toml_value "$existing_file" "webServer.user" | sed 's/["\'']//g' || echo "$def_dash_user")
     fi
-    
+
     safe_read "Server bind address" "bind_addr" "$def_bind_addr"
     while ! validate_ip "$bind_addr" && [[ "$bind_addr" != "0.0.0.0" ]]; do
         log "ERROR" "Invalid IP address"
         safe_read "Server bind address" "bind_addr" "$DEFAULT_SERVER_BIND_ADDR"
     done
-    
+
     safe_read "Server bind port" "bind_port" "$def_bind_port"
     while ! validate_port "$bind_port"; do
         log "ERROR" "Invalid port number"
         safe_read "Server bind port" "bind_port" "$DEFAULT_SERVER_BIND_PORT"
     done
-    
+
     safe_read "Auth token (leave empty to keep/generate)" "auth_token" "$def_auth_token" true
-    
+
     safe_read "Dashboard port" "dashboard_port" "$def_dash_port"
     while ! validate_port "$dashboard_port"; do
         log "ERROR" "Invalid port number"
         safe_read "Dashboard port" "dashboard_port" "$DEFAULT_SERVER_DASHBOARD_PORT"
     done
-    
+
     safe_read "Dashboard username" "dashboard_user" "$def_dash_user"
     safe_read "Dashboard password (leave empty to keep/generate)" "dashboard_password" "" true
-    
+
     # If no existing config, generate new; else update keys in place
     if [[ ! -f "$existing_file" ]]; then
         local generated_token=$(generate_server_config "$auth_token" "$dashboard_password")
@@ -1174,10 +1184,10 @@ config_server_wizard() {
 config_client_wizard() {
     echo -e "${CYAN}Client Configuration Wizard${NC}"
     echo
-    
+
     local server_addr server_port auth_token client_user local_ports
     local existing_file="$CONFIG_DIR/frpc.toml"
-    
+
     # Read defaults from existing config if present
     local def_server_addr="$DEFAULT_CLIENT_SERVER_ADDR"
     local def_server_port="$DEFAULT_CLIENT_SERVER_PORT"
@@ -1189,26 +1199,26 @@ config_client_wizard() {
         def_auth_token=$(get_toml_value "$existing_file" "auth.token" | sed 's/["\'']//g' || echo "$def_auth_token")
         def_client_user=$(get_toml_value "$existing_file" "user" | sed 's/["\'']//g' || echo "$def_client_user")
     fi
-    
+
     safe_read "Server address" "server_addr" "$def_server_addr"
     while ! validate_ip "$server_addr"; do
         log "ERROR" "Invalid IP address"
         safe_read "Server address" "server_addr" "$DEFAULT_CLIENT_SERVER_ADDR"
     done
-    
+
     safe_read "Server port" "server_port" "$def_server_port"
     while ! validate_port "$server_port"; do
         log "ERROR" "Invalid port number"
         safe_read "Server port" "server_port" "$DEFAULT_CLIENT_SERVER_PORT"
     done
-    
+
     safe_read "Auth token" "auth_token" "$def_auth_token"
     safe_read "Client username" "client_user" "$def_client_user"
     safe_read "Local ports to proxy (comma-separated)" "local_ports" ""
-    
+
     if [[ ! -f "$existing_file" ]]; then
         # Generate configuration
-        generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports"
+        generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports" "$local_ports" "frpc"
         echo
         log "INFO" "Client configuration generated successfully!"
         echo -e "${GREEN}Configuration file:${NC} $CONFIG_DIR/frpc.toml"
@@ -1230,17 +1240,17 @@ config_client_wizard() {
 config_multi_ip_wizard() {
     echo -e "${CYAN}Multi-IP Client Configuration Wizard${NC}"
     echo
-    
+
     local server_ips server_ports client_ports auth_token
-    
+
     safe_read "Server IPs (comma-separated)" "server_ips" "$SERVER_IPS"
     safe_read "Server ports (comma-separated)" "server_ports" "$SERVER_PORTS"
     safe_read "Client ports (comma-separated)" "client_ports" "$CLIENT_PORTS"
     safe_read "Auth token" "auth_token" "$DEFAULT_CLIENT_AUTH_TOKEN"
-    
+
     # Generate configurations
     generate_multi_ip_configs "$server_ips" "$server_ports" "$client_ports" "$auth_token"
-    
+
     echo
     log "INFO" "Multi-IP client configurations generated successfully!"
 }
@@ -1249,9 +1259,9 @@ config_multi_ip_wizard() {
 config_visitor_wizard() {
     echo -e "${CYAN}Visitor Configuration Wizard${NC}"
     echo
-    
+
     local server_name secret_key bind_port
-    
+
     safe_read "Server name" "server_name" ""
     safe_read "Secret key (leave empty to generate)" "secret_key" ""
     safe_read "Bind port" "bind_port" "9000"
@@ -1259,10 +1269,10 @@ config_visitor_wizard() {
         log "ERROR" "Invalid port number"
         safe_read "Bind port" "bind_port" "9000"
     done
-    
+
     # Generate configuration
     local generated_secret=$(generate_visitor_config "$server_name" "$secret_key" "$bind_port")
-    
+
     echo
     log "INFO" "Visitor configuration generated successfully!"
     echo -e "${GREEN}Configuration file:${NC} $CONFIG_DIR/visitor.toml"
@@ -1280,16 +1290,16 @@ config_visitor_wizard() {
 get_configs_by_filter() {
     local filter="${1:-all}"
     local config_files=()
-    
+
     if [[ -z "$filter" ]]; then
         filter="all"
     fi
-    
+
     # Try to use index system first (fast)
     if type query_configs_by_type &>/dev/null; then
         source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh" 2>/dev/null || true
     fi
-    
+
     case "$filter" in
         all)
             # Get all config files
@@ -1382,12 +1392,12 @@ get_configs_by_filter() {
             return 1
             ;;
     esac
-    
+
     # Output config files (newline-separated)
     if [[ ${#config_files[@]} -eq 0 ]]; then
         return 1
     fi
-    
+
     printf '%s\n' "${config_files[@]}"
     return 0
 }
@@ -1402,50 +1412,50 @@ update_toml_field() {
     local field_path="$2"
     local new_value="$3"
     local output_file="${4:-$config_file}"
-    
+
     if [[ ! -f "$config_file" ]]; then
         log "ERROR" "Config file not found: $config_file"
         return 1
     fi
-    
+
     if [[ -z "$field_path" ]]; then
         log "ERROR" "Field path is required"
         return 1
     fi
-    
+
     # Parse field path: handle nested fields (e.g., "auth.token" -> "auth" and "token")
     local section=""
     local key="$field_path"
-    
+
     if [[ "$field_path" =~ \. ]]; then
         section="${field_path%%.*}"
         key="${field_path#*.}"
     fi
-    
+
     # Escape special regex characters
     local escaped_section=$(printf '%s' "$section" | sed 's/[].[^$*\\]/\\&/g')
     local escaped_key=$(printf '%s' "$key" | sed 's/[].[^$*\\]/\\&/g')
     local escaped_field=$(printf '%s' "$field_path" | sed 's/[].[^$*\\]/\\&/g')
-    
+
     # Create temporary file for output
     local tmp_file="${output_file}.tmp.$$"
-    
+
     # If field has a section (e.g., "auth.token"), we need to handle section headers
     if [[ -n "$section" ]]; then
         local in_section=false
         local field_found=false
         local line_num=0
-        
+
         while IFS= read -r line || [[ -n "$line" ]]; do
             ((line_num++))
-            
+
             # Check if we're entering the target section
             if [[ "$line" =~ ^[[:space:]]*\[${escaped_section}\][[:space:]]*$ ]]; then
                 in_section=true
                 echo "$line" >> "$tmp_file"
                 continue
             fi
-            
+
             # Check if we're leaving a section (entering another section or end of file)
             if [[ "$in_section" == "true" ]] && [[ "$line" =~ ^[[:space:]]*\[ ]]; then
                 # We've left the section - if field wasn't found, add it before leaving
@@ -1455,7 +1465,7 @@ update_toml_field() {
                 fi
                 in_section=false
             fi
-            
+
             # Check if this is the field we're looking for (within the section)
             if [[ "$in_section" == "true" ]] && [[ "$line" =~ ^[[:space:]]*${escaped_key}[[:space:]]*=[[:space:]]* ]]; then
                 # Replace the value, preserving formatting
@@ -1465,17 +1475,17 @@ update_toml_field() {
                     continue
                 fi
             fi
-            
+
             # Output the line as-is (preserves comments and formatting)
             echo "$line" >> "$tmp_file"
         done < "$config_file"
-        
+
         # If we ended in the section and field wasn't found, add it at the end of the section
         if [[ "$in_section" == "true" ]] && [[ "$field_found" == "false" ]]; then
             echo "${key} = ${new_value}" >> "$tmp_file"
             field_found=true
         fi
-        
+
         # If section was never found, append section and field at the end
         if [[ "$field_found" == "false" ]]; then
             echo "" >> "$tmp_file"
@@ -1485,7 +1495,7 @@ update_toml_field() {
     else
         # Simple field without section (e.g., "bindPort")
         local field_found=false
-        
+
         while IFS= read -r line || [[ -n "$line" ]]; do
             # Check if this is the field we're looking for
             if [[ "$line" =~ ^[[:space:]]*${escaped_key}[[:space:]]*=[[:space:]]* ]]; then
@@ -1496,17 +1506,17 @@ update_toml_field() {
                     continue
                 fi
             fi
-            
+
             # Output the line as-is
             echo "$line" >> "$tmp_file"
         done < "$config_file"
-        
+
         # If field wasn't found, append it at the end
         if [[ "$field_found" == "false" ]]; then
             echo "${key} = ${new_value}" >> "$tmp_file"
         fi
     fi
-    
+
     # Move temp file to output location
     mv "$tmp_file" "$output_file"
     return 0
@@ -1524,53 +1534,53 @@ bulk_update_config_field() {
     local value="$2"
     local filter="${3:-all}"
     local dry_run="${4:-false}"
-    
+
     if [[ -z "$field" ]] || [[ -z "$value" ]]; then
         log "ERROR" "Field and value are required"
         return 1
     fi
-    
+
     # Get list of config files matching filter
     local config_files=()
     local configs_output
     configs_output=$(get_configs_by_filter "$filter" 2>/dev/null || true)
-    
+
     if [[ -z "$configs_output" ]]; then
         log "WARN" "No config files found matching filter: $filter"
         return 1
     fi
-    
+
     while IFS= read -r config_file; do
         [[ -n "$config_file" ]] && [[ -f "$config_file" ]] && config_files+=("$config_file")
     done <<< "$configs_output"
-    
+
     if [[ ${#config_files[@]} -eq 0 ]]; then
         log "WARN" "No valid config files found matching filter: $filter"
         return 1
     fi
-    
+
     log "INFO" "Bulk update: ${#config_files[@]} config file(s) matching filter '$filter'"
-    
+
     # Phase 1: Prepare - Update all to temp files and validate
     local temp_files=()
     local validation_failed=0
     local updates_preview=()
-    
+
     for config_file in "${config_files[@]}"; do
         local temp_file="${config_file}.bulk_update.$$"
         temp_files+=("$temp_file")
-        
+
         # Get current value for preview
         local current_value
         current_value=$(get_toml_value "$config_file" "$field" 2>/dev/null | sed 's/["'\'']//g' || echo "<not set>")
-        
+
         # Update to temp file
         if ! update_toml_field "$config_file" "$field" "$value" "$temp_file" 2>/dev/null; then
             log "ERROR" "Failed to update field in: $config_file"
             ((validation_failed++))
             continue
         fi
-        
+
         # Determine config type for validation
         local config_type=""
         local basename_file=$(basename "$config_file")
@@ -1580,7 +1590,7 @@ bulk_update_config_field() {
              [[ "$basename_file" =~ ^frpc-.*\.toml$ ]]; then
             config_type="client"
         fi
-        
+
         # Validate temp file
         if [[ -n "$config_type" ]]; then
             if ! validate_config_file "$temp_file" "$config_type" &>/dev/null; then
@@ -1590,11 +1600,11 @@ bulk_update_config_field() {
                 continue
             fi
         fi
-        
+
         # Store preview info
         updates_preview+=("$config_file|$current_value|$value")
     done
-    
+
     # Show preview in dry-run mode
     if [[ "$dry_run" == "true" ]]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1606,56 +1616,56 @@ bulk_update_config_field() {
         done
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "Total: ${#updates_preview[@]} config file(s) would be updated"
-        
+
         # Clean up temp files
         for temp_file in "${temp_files[@]}"; do
             [[ -f "$temp_file" ]] && rm -f "$temp_file"
         done
-        
+
         return 0
     fi
-    
+
     # Check if any validation failed
     if [[ $validation_failed -gt 0 ]]; then
         log "ERROR" "Validation failed for $validation_failed file(s). Transaction aborted."
-        
+
         # Rollback: delete all temp files
         for temp_file in "${temp_files[@]}"; do
             [[ -f "$temp_file" ]] && rm -f "$temp_file"
         done
-        
+
         return 1
     fi
-    
+
     # Phase 2: Commit - All validations passed, commit changes
     local commit_failed=0
     local commit_count=0
-    
+
     for i in "${!config_files[@]}"; do
         local config_file="${config_files[$i]}"
         local temp_file="${temp_files[$i]}"
-        
+
         if [[ ! -f "$temp_file" ]]; then
             log "ERROR" "Temp file missing: $temp_file"
             ((commit_failed++))
             continue
         fi
-        
+
         # Backup existing config before modification (Story 1.4)
         if [[ -f "$config_file" ]]; then
             backup_config_file "$config_file" >/dev/null 2>&1 || log "WARN" "Backup failed for $config_file, but continuing"
         fi
-        
+
         # Move temp file to final location
         if mv "$temp_file" "$config_file" 2>/dev/null; then
             ((commit_count++))
-            
+
             # Update index after successful commit (Story 1.2)
             if type index_config_file &>/dev/null; then
                 source "$(dirname "${BASH_SOURCE[0]}")/moonfrp-index.sh" 2>/dev/null || true
                 index_config_file "$config_file" >/dev/null 2>&1 || log "DEBUG" "Index update skipped (non-critical)"
             fi
-            
+
             log "DEBUG" "Updated: $config_file"
         else
             log "ERROR" "Failed to commit changes to: $config_file"
@@ -1663,12 +1673,12 @@ bulk_update_config_field() {
             ((commit_failed++))
         fi
     done
-    
+
     if [[ $commit_failed -gt 0 ]]; then
         log "ERROR" "Commit failed for $commit_failed file(s). Some changes may have been applied."
         return 1
     fi
-    
+
     log "INFO" "Bulk update complete: $commit_count config file(s) updated successfully"
     return 0
 }
@@ -1691,16 +1701,16 @@ bulk_update_config_field() {
 bulk_update_from_file() {
     local update_file="$1"
     local dry_run="${2:-false}"
-    
+
     if [[ ! -f "$update_file" ]]; then
         log "ERROR" "Update file not found: $update_file"
         return 1
     fi
-    
+
     # Determine file type (JSON or YAML)
     local file_ext="${update_file##*.}"
     local file_type=""
-    
+
     if [[ "$file_ext" == "json" ]]; then
         file_type="json"
     elif [[ "$file_ext" == "yaml" ]] || [[ "$file_ext" == "yml" ]]; then
@@ -1716,7 +1726,7 @@ bulk_update_from_file() {
             return 1
         fi
     fi
-    
+
     # Parse JSON (using jq if available, or simple parsing)
     if [[ "$file_type" == "json" ]]; then
         if command -v jq &>/dev/null; then
@@ -1726,11 +1736,11 @@ bulk_update_from_file() {
                 if [[ -z "$update" ]]; then
                     continue
                 fi
-                
+
                 local field=$(echo "$update" | jq -r '.field // empty' 2>/dev/null || echo "")
                 local value=$(echo "$update" | jq -r '.value // empty' 2>/dev/null || echo "")
                 local filter=$(echo "$update" | jq -r '.filter // "all"' 2>/dev/null || echo "all")
-                
+
                 if [[ -n "$field" ]] && [[ -n "$value" ]]; then
                     log "INFO" "Processing update: field=$field, filter=$filter"
                     if ! bulk_update_config_field "$field" "$value" "$filter" "$dry_run"; then
@@ -1740,12 +1750,12 @@ bulk_update_from_file() {
                     ((update_count++))
                 fi
             done < <(jq -c '.updates[]?' "$update_file" 2>/dev/null || echo "")
-            
+
             if [[ $update_count -eq 0 ]]; then
                 log "WARN" "No valid updates found in file"
                 return 1
             fi
-            
+
             log "INFO" "Processed $update_count update(s) from file"
             return 0
         else
@@ -1755,7 +1765,7 @@ bulk_update_from_file() {
             field=$(grep -o '"field"[[:space:]]*:[[:space:]]*"[^"]*"' "$update_file" | sed 's/.*"field"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
             value=$(grep -o '"value"[[:space:]]*:[[:space:]]*"[^"]*"' "$update_file" | sed 's/.*"value"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
             filter=$(grep -o '"filter"[[:space:]]*:[[:space:]]*"[^"]*"' "$update_file" | sed 's/.*"filter"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1 || echo "all")
-            
+
             if [[ -n "$field" ]] && [[ -n "$value" ]]; then
                 # Remove quotes from value if present
                 value=$(echo "$value" | sed 's/^"\(.*\)"$/\1/')

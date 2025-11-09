@@ -25,6 +25,7 @@ source "$SCRIPT_DIR/moonfrp-ui.sh"
 source "$SCRIPT_DIR/moonfrp-templates.sh"
 source "$SCRIPT_DIR/moonfrp-search.sh"
 source "$SCRIPT_DIR/moonfrp-optimize.sh"
+source "$SCRIPT_DIR/moonfrp-metrics.sh"
 source "$SCRIPT_DIR/moonfrp-iac.sh"
 
 #==============================================================================
@@ -290,8 +291,7 @@ GLOBAL FLAGS:
 
 COMMANDS:
     setup server              Quick server setup
-    setup client              Quick client setup
-    setup multi-ip            Quick multi-IP client setup
+    setup client              Quick client setup (single or multi-IP, auto-detected)
 
     service start [name]      Start service(s)
     service stop [name]       Stop service(s)
@@ -342,16 +342,18 @@ EXAMPLES:
     # Quick server setup
     moonfrp setup server
 
-    # Quick client setup with environment variables
+    # Quick client setup (single IP) with environment variables
     MOONFRP_CLIENT_SERVER_ADDR="1.1.1.1" \\
     MOONFRP_CLIENT_AUTH_TOKEN="your-token" \\
     moonfrp setup client
 
-    # Multi-IP setup
+    # Multi-IP client setup (auto-detected by comma in IPs)
     MOONFRP_SERVER_IPS="1.1.1.1,2.2.2.2" \\
+    MOONFRP_CLIENT_SERVER_PORT="20000" \\
     MOONFRP_SERVER_PORTS="7000,7000" \\
     MOONFRP_CLIENT_PORTS="8080,8081" \\
-    moonfrp setup multi-ip
+    MOONFRP_CLIENT_AUTH_TOKEN="your-token" \\
+    moonfrp setup client
 
     # Service management
     moonfrp service start all
@@ -409,8 +411,8 @@ ENVIRONMENT VARIABLES:
     MOONFRP_CLIENT_AUTH_TOKEN Client auth token
     MOONFRP_CLIENT_USER       Client username (auto-generated if empty)
 
-    # Multi-IP Configuration
-    MOONFRP_SERVER_IPS        Comma-separated server IPs
+    # Multi-IP Configuration (use with setup client - auto-detected)
+    MOONFRP_SERVER_IPS        Comma-separated server IPs (triggers multi-IP mode)
     MOONFRP_SERVER_PORTS      Comma-separated server ports
     MOONFRP_CLIENT_PORTS      Comma-separated client ports
 
@@ -469,11 +471,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                 "client")
                     quick_client_setup
                     ;;
-                "multi-ip")
-                    quick_multi_ip_setup
-                    ;;
                 *)
-                    log "ERROR" "Invalid setup type. Use: server, client, or multi-ip"
+                    log "ERROR" "Invalid setup type. Use: server or client"
                     exit $EXIT_VALIDATION
                     ;;
             esac
