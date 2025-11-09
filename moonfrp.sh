@@ -42,7 +42,7 @@ readonly EXIT_TIMEOUT=5
 #==============================================================================
 # GLOBAL FLAGS (AC: 1,2,5)
 #==============================================================================
-MOONFRP_VERSION="2.1.0"
+# MOONFRP_VERSION is set in moonfrp-core.sh
 MOONFRP_YES="${MOONFRP_YES:-false}"
 MOONFRP_QUIET="${MOONFRP_QUIET:-false}"
 MOONFRP_TIMEOUT="${MOONFRP_TIMEOUT:-300}"  # Default 5 minutes
@@ -121,6 +121,17 @@ cleanup_timeout() {
 #==============================================================================
 # MAIN EXECUTION
 #==============================================================================
+
+# Check for version flags/command early (before initialization)
+# This ensures clean output without initialization messages
+if [[ ${#@} -gt 0 ]]; then
+    case "$1" in
+        -v|--version|version)
+            echo "$MOONFRP_VERSION"
+            exit $EXIT_SUCCESS
+            ;;
+    esac
+fi
 
 # Initialize MoonFRP
 init
@@ -1131,6 +1142,9 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
             ;;
         "uninstall")
             uninstall_moonfrp
+            ;;
+        "version")
+            echo "$MOONFRP_VERSION"
             ;;
         "help"|"-h"|"--help")
             show_help
