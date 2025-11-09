@@ -36,7 +36,7 @@ fi
 [[ -z "${NC:-}" ]] && readonly NC='\033[0m' # No Color
 
 # Global variables with defaults (only declare if not already set)
-[[ -z "${MOONFRP_VERSION:-}" ]] && readonly MOONFRP_VERSION="2.0.0"
+[[ -z "${MOONFRP_VERSION:-}" ]] && readonly MOONFRP_VERSION="2.1.0"
 # FRP Version: allow override via environment variable (for testing)
 # Make readonly only if not already readonly (config file may have already set it)
 if [[ -z "${FRP_VERSION:-}" ]]; then

@@ -2,7 +2,7 @@
 
 #==============================================================================
 # MoonFRP - Advanced FRP Management Tool (Refactored)
-# Version: 2.0.0
+# Version: 2.1.0
 # Author: MoonFRP Team
 # Description: Modular FRP configuration and service management tool
 # Refactored: 2025-01-26 - Complete rewrite with modular architecture
@@ -42,7 +42,7 @@ readonly EXIT_TIMEOUT=5
 #==============================================================================
 # GLOBAL FLAGS (AC: 1,2,5)
 #==============================================================================
-
+MOONFRP_VERSION="2.1.0"
 MOONFRP_YES="${MOONFRP_YES:-false}"
 MOONFRP_QUIET="${MOONFRP_QUIET:-false}"
 MOONFRP_TIMEOUT="${MOONFRP_TIMEOUT:-300}"  # Default 5 minutes
