@@ -491,8 +491,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
         "service")
             case "${2:-}" in
                 "start")
-                    local tag_filter=""
-                    local service_name="${3:-}"
+                    tag_filter=""
+                    service_name="${3:-}"
                     shift 3 2>/dev/null || shift 2
                     while [[ $# -gt 0 ]]; do
                         if [[ "$1" == --tag=* ]]; then
@@ -510,8 +510,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "stop")
-                    local tag_filter=""
-                    local service_name="${3:-}"
+                    tag_filter=""
+                    service_name="${3:-}"
                     shift 3 2>/dev/null || shift 2
                     while [[ $# -gt 0 ]]; do
                         if [[ "$1" == --tag=* ]]; then
@@ -529,8 +529,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "restart")
-                    local tag_filter=""
-                    local service_name="${3:-}"
+                    tag_filter=""
+                    service_name="${3:-}"
                     shift 3 2>/dev/null || shift 2
                     while [[ $# -gt 0 ]]; do
                         if [[ "$1" == --tag=* ]]; then
@@ -563,12 +563,12 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "bulk")
-                    local operation=""
-                    local filter=""
-                    local filter_type=""
-                    local filter_value=""
-                    local max_parallel=10
-                    local dry_run=false
+                    operation=""
+                    filter=""
+                    filter_type=""
+                    filter_value=""
+                    max_parallel=10
+                    dry_run=false
 
                     shift 2
                     while [[ $# -gt 0 ]]; do
@@ -621,7 +621,7 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                             log "INFO" "  Filter: $filter_type=$filter_value"
                         fi
                         log "INFO" "  Max parallel: $max_parallel"
-                        local services=($(get_moonfrp_services))
+                        services=($(get_moonfrp_services))
                         log "INFO" "  Services that would be affected: ${#services[@]}"
                         if [[ -n "$filter_type" ]]; then
                             log "INFO" "  Filtered services would be determined at runtime"
@@ -636,7 +636,7 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     if [[ -n "$filter_type" ]]; then
                         bulk_operation_filtered "$operation" "$filter_type" "$filter_value" "$max_parallel"
                     else
-                        local services=($(get_moonfrp_services))
+                        services=($(get_moonfrp_services))
                         bulk_service_operation "$operation" "$max_parallel" "${services[@]}"
                     fi
                     ;;
@@ -664,11 +664,11 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     # Parse bulk-update command
                     # Usage: moonfrp config bulk-update --field=X --value=Y --filter=all [--dry-run] [--file=updates.json]
                     shift 2
-                    local field=""
-                    local value=""
-                    local filter="all"
-                    local dry_run="false"
-                    local update_file=""
+                    field=""
+                    value=""
+                    filter="all"
+                    dry_run="false"
+                    update_file=""
 
                     while [[ $# -gt 0 ]]; do
                         case "$1" in
@@ -759,8 +759,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
             ;;
         "restore")
             # Parse restore command: moonfrp restore <config> --backup=<timestamp>
-            local config_file="${2:-}"
-            local backup_timestamp=""
+            config_file="${2:-}"
+            backup_timestamp=""
 
             # Parse arguments
             shift 2 2>/dev/null || true
@@ -794,14 +794,14 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
             fi
 
             # Find backup file matching timestamp
-            local filename=$(basename "$config_file")
-            local backup_dir="${BACKUP_DIR:-${HOME}/.moonfrp/backups}"
-            local backup_file="${backup_dir}/${filename}.${backup_timestamp}.bak"
+            filename=$(basename "$config_file")
+            backup_dir="${BACKUP_DIR:-${HOME}/.moonfrp/backups}"
+            backup_file="${backup_dir}/${filename}.${backup_timestamp}.bak"
 
             if [[ ! -f "$backup_file" ]]; then
                 log "ERROR" "Backup file not found: $backup_file"
                 log "INFO" "Available backups for $(basename "$config_file"):"
-                local backups=()
+                backups=()
                 while IFS= read -r backup; do
                     [[ -n "$backup" ]] && backups+=("$backup")
                 done < <(list_backups "$config_file" 2>/dev/null)
@@ -811,8 +811,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                 else
                     log "INFO" "Use one of these timestamps:"
                     for backup in "${backups[@]}"; do
-                        local backup_name=$(basename "$backup")
-                        local ts="${backup_name##*.}"
+                        backup_name=$(basename "$backup")
+                        ts="${backup_name##*.}"
                         ts="${ts%.bak}"
                         log "INFO" "  - $ts"
                     done
@@ -831,9 +831,9 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
         "tag")
             case "${2:-}" in
                 "add")
-                    local config_file="${3:-}"
-                    local tag_key="${4:-}"
-                    local tag_value="${5:-}"
+                    config_file="${3:-}"
+                    tag_key="${4:-}"
+                    tag_value="${5:-}"
                     if [[ -z "$config_file" ]] || [[ -z "$tag_key" ]] || [[ -z "$tag_value" ]]; then
                         log "ERROR" "Usage: moonfrp tag add <config> <key> <value>"
                         log "INFO" "Example: moonfrp tag add /etc/frp/frpc.toml env prod"
@@ -844,8 +844,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "remove")
-                    local config_file="${3:-}"
-                    local tag_key="${4:-}"
+                    config_file="${3:-}"
+                    tag_key="${4:-}"
                     if [[ -z "$config_file" ]] || [[ -z "$tag_key" ]]; then
                         log "ERROR" "Usage: moonfrp tag remove <config> <key>"
                         log "INFO" "Example: moonfrp tag remove /etc/frp/frpc.toml env"
@@ -856,13 +856,13 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "list")
-                    local config_file="${3:-}"
+                    config_file="${3:-}"
                     if [[ -z "$config_file" ]]; then
                         log "ERROR" "Usage: moonfrp tag list <config>"
                         log "INFO" "Example: moonfrp tag list /etc/frp/frpc.toml"
                         exit 1
                     fi
-                    local tags_output
+                    tags_output
                     if tags_output=$(list_config_tags "$config_file"); then
                         while IFS=':' read -r key value; do
                             [[ -n "$key" ]] && echo "$key: $value"
@@ -872,9 +872,9 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "bulk")
-                    local tag_key=""
-                    local tag_value=""
-                    local filter="all"
+                    tag_key=""
+                    tag_value=""
+                    filter="all"
                     shift 2
                     while [[ $# -gt 0 ]]; do
                         case "$1" in
@@ -924,8 +924,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     done
                     ;;
                 "create")
-                    local template_name="${3:-}"
-                    local template_file="${4:-}"
+                    template_name="${3:-}"
+                    template_file="${4:-}"
                     if [[ -z "$template_name" ]] || [[ -z "$template_file" ]]; then
                         log "ERROR" "Usage: moonfrp template create <name> <file>"
                         log "INFO" "Example: moonfrp template create my-template /path/to/template.toml"
@@ -936,7 +936,7 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "view")
-                    local template_name="${3:-}"
+                    template_name="${3:-}"
                     if [[ -z "$template_name" ]]; then
                         log "ERROR" "Usage: moonfrp template view <name>"
                         log "INFO" "Example: moonfrp template view my-template"
@@ -947,10 +947,10 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "instantiate")
-                    local template_name="${3:-}"
-                    local output_file="${4:-}"
+                    template_name="${3:-}"
+                    output_file="${4:-}"
                     shift 4 2>/dev/null || shift 3
-                    local variables=()
+                    variables=()
                     while [[ $# -gt 0 ]]; do
                         if [[ "$1" == --var=* ]]; then
                             variables+=("${1#*=}")
@@ -974,8 +974,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "bulk-instantiate")
-                    local template_name="${3:-}"
-                    local csv_file="${4:-}"
+                    template_name="${3:-}"
+                    csv_file="${4:-}"
                     if [[ -z "$template_name" ]] || [[ -z "$csv_file" ]]; then
                         log "ERROR" "Usage: moonfrp template bulk-instantiate <name> <csv-file>"
                         log "INFO" "Example: moonfrp template bulk-instantiate my-template instances.csv"
@@ -986,13 +986,13 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "version")
-                    local template_name="${3:-}"
+                    template_name="${3:-}"
                     if [[ -z "$template_name" ]]; then
                         log "ERROR" "Usage: moonfrp template version <name>"
                         log "INFO" "Example: moonfrp template version my-template"
                         exit 1
                     fi
-                    local version=$(get_template_version "$template_name")
+                    version=$(get_template_version "$template_name")
                     if [[ $? -eq 0 ]]; then
                         echo "Template version: $version"
                     else
@@ -1000,7 +1000,7 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
                     fi
                     ;;
                 "delete")
-                    local template_name="${3:-}"
+                    template_name="${3:-}"
                     if [[ -z "$template_name" ]]; then
                         log "ERROR" "Usage: moonfrp template delete <name>"
                         log "INFO" "Example: moonfrp template delete my-template"
@@ -1025,9 +1025,9 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
             moonfrp_export "${2:-moonfrp-configs.yaml}"
             ;;
         "import")
-            local yaml_file="${2:-}"
-            local import_type="${3:-all}"
-            local dry_run="false"
+            yaml_file="${2:-}"
+            import_type="${3:-all}"
+            dry_run="false"
 
             # Parse arguments for --dry-run
             shift 2 2>/dev/null || true
@@ -1049,13 +1049,13 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
             moonfrp_import "$yaml_file" "$import_type" "$dry_run"
             ;;
         "search")
-            local query="${2:-}"
-            local search_type="auto"
+            query="${2:-}"
+            search_type="auto"
             shift 2 2>/dev/null || shift 1
 
             # Parse --type flag if present
             while [[ $# -gt 0 ]]; do
-                local arg="$1"
+                arg="$1"
                 case "$arg" in
                     --type=*)
                         search_type="${arg#*=}"
@@ -1081,8 +1081,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
             fi
             ;;
         "optimize")
-            local preset="${2:-balanced}"
-            local dry_run="false"
+            preset="${2:-balanced}"
+            dry_run="false"
             shift 2 2>/dev/null || shift 1
 
             # Parse --dry-run flag
@@ -1107,8 +1107,8 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
             fi
             ;;
         "validate")
-            local config_file="${2:-}"
-            local config_type="${3:-auto}"
+            config_file="${2:-}"
+            config_type="${3:-auto}"
             shift 1
 
             # Check for --help
