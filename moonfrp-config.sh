@@ -283,9 +283,18 @@ EOF
         fi
 
         # Create proxies mapping local ports to remote ports
+        local last_remote_port=""
         for i in "${!LOCAL_PORTS_ARRAY[@]}"; do
             local local_port="${LOCAL_PORTS_ARRAY[i]}"
-            local remote_port="${REMOTE_PORTS_ARRAY[i]:-${LOCAL_PORTS_ARRAY[i]}}"
+            # Use remote port at index i, or last remote port if available, or local port as fallback
+            if [[ -n "${REMOTE_PORTS_ARRAY[i]:-}" ]]; then
+                local remote_port="${REMOTE_PORTS_ARRAY[i]}"
+                last_remote_port="$remote_port"
+            elif [[ -n "$last_remote_port" ]]; then
+                local remote_port="$last_remote_port"
+            else
+                local remote_port="${LOCAL_PORTS_ARRAY[i]}"
+            fi
 
             # Trim whitespace
             local_port=$(echo "$local_port" | xargs)
@@ -300,6 +309,8 @@ type = "tcp"
 localIP = "127.0.0.1"
 localPort = $local_port
 remotePort = $remote_port
+loadBalancer.group = "moonfrp_group_${local_port}"
+loadBalancer.groupKey = "moonfrp_${local_port}_static"
 EOF
             else
                 log "WARN" "Skipping invalid port: local=$local_port, remote=$remote_port"
@@ -1185,7 +1196,7 @@ config_client_wizard() {
     echo -e "${CYAN}Client Configuration Wizard${NC}"
     echo
 
-    local server_addr server_port auth_token client_user local_ports
+    local server_addr server_port auth_token client_user local_ports remote_ports
     local existing_file="$CONFIG_DIR/frpc.toml"
 
     # Read defaults from existing config if present
@@ -1214,11 +1225,14 @@ config_client_wizard() {
 
     safe_read "Auth token" "auth_token" "$def_auth_token"
     safe_read "Client username" "client_user" "$def_client_user"
-    safe_read "Local ports to proxy (comma-separated)" "local_ports" ""
+    safe_read "Source ports (comma-separated)" "local_ports" ""
+    
+    # Ask for destination ports with source ports as default
+    safe_read "Destination ports (comma-separated)" "remote_ports" "$local_ports"
 
     if [[ ! -f "$existing_file" ]]; then
         # Generate configuration
-        generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports" "$local_ports" "frpc"
+        generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports" "$remote_ports" "frpc"
         echo
         log "INFO" "Client configuration generated successfully!"
         echo -e "${GREEN}Configuration file:${NC} $CONFIG_DIR/frpc.toml"

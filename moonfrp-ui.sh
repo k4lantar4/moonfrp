@@ -238,8 +238,9 @@ quick_client_setup() {
             is_multi_mode=true
             server_ips="$server_addr"
             safe_read "Server port (single port for all servers)" "server_port" "7000"
-            safe_read "Local ports (comma-separated)" "local_ports" "8080,8081"
-            safe_read "Remote ports (comma-separated)" "remote_ports" "8080,8081"
+            safe_read "Source ports (comma-separated)" "local_ports" "8080,8081"
+            # Ask for destination ports with source ports as default
+            safe_read "Destination ports (comma-separated)" "remote_ports" "$local_ports"
             safe_read "Auth token" "auth_token" ""
         else
             # Single-IP mode
@@ -257,7 +258,9 @@ quick_client_setup() {
 
             safe_read "Auth token" "auth_token" ""
             safe_read "Client username" "client_user" "moonfrp"
-            safe_read "Local ports to proxy (comma-separated)" "local_ports" "8080,8081"
+            safe_read "Source ports (comma-separated)" "local_ports" "8080,8081"
+            # Ask for destination ports with source ports as default
+            safe_read "Destination ports (comma-separated)" "remote_ports" "$local_ports"
         fi
     fi
 
@@ -291,8 +294,8 @@ quick_client_setup() {
     else
         # Handle single-IP mode
         # Generate client configuration with moonfrp-frpc prefix
-        # For single-IP, use local_ports as both local and remote if remote_ports not specified
-        local single_remote_ports="${MOONFRP_REMOTE_PORTS:-$local_ports}"
+        # Use remote_ports if provided, otherwise use local_ports
+        local single_remote_ports="${MOONFRP_REMOTE_PORTS:-${remote_ports:-$local_ports}}"
         generate_client_config "$server_addr" "$server_port" "$auth_token" "$client_user" "" "$local_ports" "$single_remote_ports" "moonfrp-frpc"
 
         # Setup service
