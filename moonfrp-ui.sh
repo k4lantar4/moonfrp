@@ -736,7 +736,7 @@ show_config_details() {
     fi
 
     # Check for frpc configurations
-    local client_configs=($(find "$CONFIG_DIR" -maxdepth 1 -name "frpc*.toml" -type f 2>/dev/null | sort))
+    local client_configs=($(find "$CONFIG_DIR" -maxdepth 1 \( -name "frpc*.toml" -o -name "moonfrp-frpc*.toml" \) -type f 2>/dev/null | sort))
 
     if [[ ${#client_configs[@]} -gt 0 ]]; then
         echo -e "${CYAN}[frpc]${NC}"
