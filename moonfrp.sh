@@ -1149,6 +1149,9 @@ if [[ ${#remaining_args[@]} -gt 0 ]]; then
         "help"|"-h"|"--help")
             show_help
             ;;
+        "detail")
+            show_config_details
+            ;;
         *)
             log "ERROR" "Unknown command: $1"
             show_help
