@@ -245,10 +245,10 @@ log.disablePrintColor = $DEFAULT_LOG_DISABLE_COLOR
 transport.protocol = "tcp"
 transport.tcpMux = false
 transport.tcpMuxKeepaliveInterval = 10
-transport.dialServerTimeout = 10
+transport.dialServerTimeout = 5
 transport.dialServerKeepalive = 120
 transport.poolCount = 20
-transport.heartbeatInterval = 30
+transport.heartbeatInterval = 5
 transport.heartbeatTimeout = 90
 transport.tls.enable = false
 transport.quic.keepalivePeriod = 10
@@ -1226,7 +1226,7 @@ config_client_wizard() {
     safe_read "Auth token" "auth_token" "$def_auth_token"
     safe_read "Client username" "client_user" "$def_client_user"
     safe_read "Source ports (comma-separated)" "local_ports" ""
-    
+
     # Ask for destination ports with source ports as default
     safe_read "Destination ports (comma-separated)" "remote_ports" "$local_ports"
 
